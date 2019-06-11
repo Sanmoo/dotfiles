@@ -19,6 +19,8 @@ Plug 'autozimu/LanguageClient-neovim', {
     \ 'branch': 'next',
     \ 'do': 'bash install.sh',
     \ }
+Plug 'SirVer/ultisnips'
+Plug 'honza/vim-snippets'
 Plug 'neoclide/coc.nvim', {'do': { -> coc#util#install()}}
 
 " Infinite Fun 
@@ -29,6 +31,11 @@ call plug#end()
 
 " My Preferred colorscheme *--*
 colorscheme NeoSolarized
+
+" UltiSnips config
+let g:UltiSnipsExpandTrigger="<tab>"
+let g:UltiSnipsJumpForwardTrigger="<c-b>"
+let g:UltiSnipsJumpBackwardTrigger="<c-z>"
 
 " Tern Config 
 let g:tern_request_timeout = 1
