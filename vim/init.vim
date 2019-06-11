@@ -1,14 +1,12 @@
 call plug#begin('~/.local/share/nvim/plugged')
 Plug 'tpope/vim-sensible'
-Plug 'Shougo/deoplete.nvim', { 'do': ':UpdateRemotePlugins' }
-Plug 'kien/ctrlp.vim'
+Plug 'ludovicchabant/vim-gutentags'
 Plug 'ternjs/tern_for_vim', { 'do': 'npm install && npm install -g tern' }
-Plug 'carlitux/deoplete-ternjs'
-Plug 'neomake/neomake', { 'on': 'Neomake' }
+Plug 'junegunn/fzf', { 'dir': '~/.fzf', 'do': './install --all' }
+Plug 'junegunn/fzf.vim'
+Plug 'w0rp/ale'
 Plug 'altercation/vim-colors-solarized'
 Plug 'iCyMind/NeoSolarized'
-Plug 'mxw/vim-jsx'
-Plug 'pangloss/vim-javascript'
 Plug 'suy/vim-context-commentstring'
 Plug 'hail2u/vim-css3-syntax'
 Plug 'tpope/vim-commentary'
@@ -21,7 +19,7 @@ Plug 'autozimu/LanguageClient-neovim', {
     \ 'branch': 'next',
     \ 'do': 'bash install.sh',
     \ }
-Plug 'vim-scripts/grep.vim'
+Plug 'neoclide/coc.nvim', {'do': { -> coc#util#install()}}
 
 " Infinite Fun 
 Plug 'rbtnn/game_engine.vim'
@@ -31,29 +29,29 @@ call plug#end()
 
 colorscheme NeoSolarized
 
-let g:deoplete#enable_at_startup = 1
-let g:deoplete#enable_ignore_case = 1
-let g:deoplete#enable_smart_case = 1
-let g:deoplete#enable_camel_case = 1
-let g:deoplete#enable_refresh_always = 1
-let g:deoplete#max_abbr_width = 0
-let g:deoplete#max_menu_width = 0
-let g:deoplete#omni#input_patterns = get(g:,'deoplete#omni#input_patterns',{})
 let g:tern_request_timeout = 1
 let g:tern_request_timeout = 6000
 let g:tern#command = ["tern"]
 let g:tern#arguments = [" — persistent"]
-let g:neomake_javascript_eslint_exe = $PWD .'/node_modules/.bin/eslint'
-let g:neomake_javascript_enabled_makers = ['eslint']
+
+" ALE config
+let g:ale_sign_error = '❌'
+let g:ale_sign_warning = '⚠️'
+let g:ale_fixers = {'javascript': ['eslint']}
+let g:ale_fix_on_save = 1
+
+" FZF config
+nnoremap <C-p> :Files<CR>
+nnoremap <Leader>b :Buffers<CR>
+nnoremap <Leader>h :History<CR>
+nnoremap <Leader>t :BTags<CR>
+nnoremap <Leader>T :Tags<CR>
 
 let g:ctrlp_custom_ignore = {
   \ 'dir':  '\v[\/](\.git|\.hg|\.svn|node_modules)$',
   \ 'file': '\v\.(exe|so|dll)$',
   \ 'link': 'some_bad_symbolic_links',
   \ }
-
-" Run Eslint on every save
-autocmd! BufWritePost * Neomake
 
 " LanguageClient Config
 set hidden

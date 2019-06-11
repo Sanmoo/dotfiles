@@ -108,3 +108,9 @@ alias serve="python -m http.server"
 alias jest="./node_modules/jest-cli/bin/jest.js"
 alias uniread="./node_modules/uniread/bin/uniread.js"
 alias gl="git log --oneline --graph"
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# export FZF_DEFAULT_COMMAND='rg --files --follow'
+
+export PATH="$HOME/.yarn/bin:$HOME/.config/yarn/global/node_modules/.bin:$PATH"
