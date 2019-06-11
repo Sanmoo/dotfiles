@@ -27,8 +27,10 @@ Plug 'rbtnn/mario.vim'
 Plug 'sheerun/vim-polyglot'
 call plug#end()
 
+" My Preferred colorscheme *--*
 colorscheme NeoSolarized
 
+" Tern Config 
 let g:tern_request_timeout = 1
 let g:tern_request_timeout = 6000
 let g:tern#command = ["tern"]
@@ -47,28 +49,8 @@ nnoremap <Leader>h :History<CR>
 nnoremap <Leader>t :BTags<CR>
 nnoremap <Leader>T :Tags<CR>
 
-let g:ctrlp_custom_ignore = {
-  \ 'dir':  '\v[\/](\.git|\.hg|\.svn|node_modules)$',
-  \ 'file': '\v\.(exe|so|dll)$',
-  \ 'link': 'some_bad_symbolic_links',
-  \ }
-
-" LanguageClient Config
-set hidden
-
-" let g:LanguageClient_serverCommands = {
-"     \ 'rust': ['~/.cargo/bin/rustup', 'run', 'stable', 'rls'],
-"     \ 'javascript': ['/usr/local/bin/javascript-typescript-stdio'],
-"     \ 'javascript.jsx': ['tcp://127.0.0.1:2089'],
-"     \ 'python': ['/usr/local/bin/pyls'],
-"     \ 'ruby': ['~/.rbenv/shims/solargraph', 'stdio'],
-"     \ }
-
-nnoremap <F5> :call LanguageClient_contextMenu()<CR>
-" Or map each action separately
-nnoremap <silent> K :call LanguageClient#textDocument_hover()<CR>
-nnoremap <silent> gd :call LanguageClient#textDocument_definition()<CR>
-nnoremap <silent> <F2> :call LanguageClient#textDocument_rename()<CR>
+" NERDTree config
+let NERDTreeIgnore=['\.git$', '\.nvimrc$', 'tags$', 'tags\.lock$', 'tags\.temp$']
 
 " "################### Custon NO-PLUGIN CONFIG ###############
 
@@ -113,3 +95,6 @@ set softtabstop=2
 " Add this option to avoid issues with webpack
 :set backupcopy=yes
 
+" Allow executing local .rc files
+set exrc
+set secure
