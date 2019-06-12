@@ -70,7 +70,7 @@ nnoremap <CR> :noh<CR><CR>
 :set smartcase
 
 "Copy to clipboard on selection+Y
-noremap Y "*y   
+noremap Y "+y
 
 "navigate panes with ctrl jklh
 nnoremap <C-J> <C-W><C-J>
