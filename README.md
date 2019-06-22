@@ -5,4 +5,5 @@
 * nvm, node >= 8 and [yarn](https://yarnpkg.com/pt-BR/docs/install#debian-stable)
 * Neovim with VimPlug installed
 * z-shell and oh my zsh!
+* [Powerline fonts](https://github.com/powerline/fonts)
 * tmux and oh my tmux!
