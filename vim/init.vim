@@ -46,12 +46,15 @@ let g:tern#arguments = [" — persistent"]
 " ALE config
 let g:ale_sign_error = '❌'
 let g:ale_sign_warning = '⚠️'
-let g:ale_fixers = {'javascript': ['eslint']}
+let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
 let g:ale_fix_on_save = 1
 let g:ale_linters = {'java': []}
 
+" CoC config 
+" O
+
 " FZF config
-nnoremap <C-p> :Files<CR>
+nnoremap <C-p> :FZF<CR>
 nnoremap <Leader>b :Buffers<CR>
 nnoremap <Leader>h :History<CR>
 nnoremap <Leader>t :BTags<CR>
@@ -69,8 +72,9 @@ nnoremap <CR> :noh<CR><CR>
 :set ignorecase
 :set smartcase
 
-"Copy to clipboard on selection+Y
+"Copy/Paste to clipboard on selection+Y/P
 noremap Y "+y
+noremap P "+p
 
 "navigate panes with ctrl jklh
 nnoremap <C-J> <C-W><C-J>
