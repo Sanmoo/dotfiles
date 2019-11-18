@@ -114,4 +114,4 @@ alias gl="git log --oneline --graph"
 export FZF_DEFAULT_COMMAND='rg --files --follow --ignore'
 
 export PATH="$HOME/.yarn/bin:$HOME/.config/yarn/global/node_modules/.bin:$PATH"
-alias c="xclip -selection c"
+alias c="xsel -ib"

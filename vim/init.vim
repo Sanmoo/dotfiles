@@ -74,7 +74,6 @@ nnoremap <CR> :noh<CR><CR>
 
 "Copy/Paste to clipboard on selection+Y/P
 noremap Y "+y
-noremap P "+p
 
 "navigate panes with ctrl jklh
 nnoremap <C-J> <C-W><C-J>
