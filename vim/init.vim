@@ -12,6 +12,7 @@ Plug 'hail2u/vim-css3-syntax'
 Plug 'tpope/vim-commentary'
 Plug 'tpope/vim-surround'
 Plug 'tpope/vim-repeat'
+Plug 'tpope/vim-endwise'
 Plug 'scrooloose/nerdtree'
 Plug 'easymotion/vim-easymotion'
 Plug 'jiangmiao/auto-pairs'
@@ -21,7 +22,8 @@ Plug 'autozimu/LanguageClient-neovim', {
     \ }
 Plug 'SirVer/ultisnips'
 Plug 'honza/vim-snippets'
-Plug 'neoclide/coc.nvim', {'do': { -> coc#util#install()}}
+Plug 'neoclide/coc.nvim', {'branch': 'release'}
+Plug 'mattn/emmet-vim'
 
 " Infinite Fun 
 Plug 'rbtnn/game_engine.vim'
@@ -44,14 +46,14 @@ let g:tern#command = ["tern"]
 let g:tern#arguments = [" — persistent"]
 
 " ALE config
-let g:ale_sign_error = '❌'
-let g:ale_sign_warning = '⚠️'
-let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
-let g:ale_fix_on_save = 1
-let g:ale_linters = {'java': []}
+" let g:ale_sign_error = '❌'
+" let g:ale_sign_warning = '⚠️'
+" let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
+" let g:ale_fix_on_save = 1
+" let g:ale_linters = {'java': []}
 
 " CoC config 
-" O
+nmap <silent> <C-b> <Plug>(coc-definition)
 
 " FZF config
 nnoremap <C-p> :FZF<CR>

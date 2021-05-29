@@ -115,3 +115,6 @@ export FZF_DEFAULT_COMMAND='rg --files --follow --ignore'
 
 export PATH="$HOME/.yarn/bin:$HOME/.config/yarn/global/node_modules/.bin:$PATH"
 alias c="xclip -selection c"
+
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/samuel/.zprofile
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
