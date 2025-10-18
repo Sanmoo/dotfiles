@@ -1,7 +1,0 @@
-snippet check_vars "function for verifying that env vars are checked"
-check_vars () {
-  for name; do
-    : ${!name:?$name must not be empty}
-  done
-}
-endsnippet

@@ -1,0 +1,1 @@
+/home/sanmoo/.config/omarchy/current/theme/neovim.lua
