@@ -70,7 +70,7 @@ ZSH_THEME="robbyrussell"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zoxide mise npm ssh tmuxinator vi-mode vscode fzf)
+plugins=(git zoxide mise npm ssh tmuxinator vi-mode vscode dotenv fzf)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -108,8 +108,6 @@ alias vim=nvim
 alias tat="tmux attach-session -t"
 export PATH="$PATH:$HOME/bin"
 eval "$(mise activate zsh)"
-export SEG_UNID_PASSWORD="ah7#34A8"
-export SEG_UNID_API_KEY="VHxN1bVEIx8WAJJCOfHzg7s1eFz8Qtld81wjnzzk"
 alias c="wl-copy"
 eval "$(zoxide init zsh)"
 alias ls="eza"

@@ -1,0 +1,103 @@
+#!node
+
+let token;
+const verbose = false;
+
+async function getToken() {
+  const response = await fetch('https://api.segurosunimed.com.br/b2c-digital/b2c-bff/usuario/v2/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      "aplicacaoOrigem": "PORTAL_PF",
+      "usuario": "04058141352",
+      "senha": process.env.SEG_UNID_PASSWORD
+    }),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': process.env.SEG_UNID_API_KEY
+    },
+  });
+
+  const json = await response.json()
+
+  if (response.status !== 200) {
+    // TODO: this is wrong, fix me
+    throw new Error(json)
+  }
+
+  return json.resultado.accessToken
+}
+
+async function getReimbursements() {
+  const response = await fetch('https://api.segurosunimed.com.br/b2c-digital/b2c-bff/saude-reembolso/consultar', {
+    method: 'GET',
+    headers: { 'X-Api-Key': process.env.SEG_UNID_API_KEY, 'Authorization': `Bearer ${token}` },
+  });
+
+  const json = await response.json()
+
+  if (response.status !== 200) {
+    // TODO: this is wrong, fix me
+    throw new Error(json)
+  }
+
+  if (verbose) {
+    console.log('Got reimbursements', JSON.stringify(json));
+  }
+
+  return json.resultado.reembolsos.map(remb => remb.reembolso)
+}
+
+async function getReimbursementDetail(id) {
+  const response = await fetch(`https://api.segurosunimed.com.br/b2c-digital/b2c-bff/saude-reembolso/detalhar/${id}`, {
+    method: 'GET',
+    headers: { 'X-Api-Key': process.env.SEG_UNID_API_KEY, 'Authorization': `Bearer ${token}` },
+  });
+
+  const json = await response.json();
+
+  if (response.status !== 200) {
+    // TODO: this is wrong, fix me
+    console.error(json);
+    throw new Error(json);
+  }
+
+  if (verbose) {
+    console.log('Got reimbursement detail', JSON.stringify(json));
+  }
+
+  return json;
+}
+
+function filterReimbursementsByProtocolNumber(protocol, reimbursements) {
+  const singleProtocol = reimbursements.filter(remb => remb.protocolo.ans == protocol)
+  if (singleProtocol.length > 1) {
+    throw new Error(`Unexpected situation: Found more than one reimbursement with same protocolo number: ${singleProtocol.length} records`)
+  }
+
+  if (singleProtocol.length === 0) {
+    throw new Error(`No reimbursements found for protocol number: ${protocol}`)
+  }
+
+  return singleProtocol[0]
+}
+
+async function main() {
+  const protocol = process.argv[2]
+  token = await getToken()
+
+  if (verbose) {
+    console.log('Got Token: ', token);
+  }
+  
+
+  try {
+    const reimbursements = await getReimbursements()
+    const { numero } = filterReimbursementsByProtocolNumber(protocol, reimbursements)
+    const targetReimbursement = await getReimbursementDetail(numero)
+    console.log(JSON.stringify(targetReimbursement, null, 2));
+  } catch (err) {
+    console.error(JSON.stringify(err))
+  }
+}
+
+main()

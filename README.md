@@ -1,1 +1,1 @@
-TODO
+`stow nvim`
