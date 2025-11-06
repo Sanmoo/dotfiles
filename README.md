@@ -1,1 +1,3 @@
-`stow nvim`
+# How to
+
+`stow <package>`
