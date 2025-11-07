@@ -3,6 +3,7 @@
 
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
+export GOPATH="$HOME/go"
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time Oh My Zsh is loaded, in which case,
@@ -118,4 +119,6 @@ alias ga="git add"
 alias gcl="git clone"
 alias gd="git diff"
 alias gl="git log --oneline --graph"
+alias jq-less="jq -C '.' | less -R"
 export PATH="$HOME/.local/bin:$PATH"
+export PATH="$GOPATH/bin:$PATH"
