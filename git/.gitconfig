@@ -1,0 +1,17 @@
+[alias]
+  co=checkout
+  br=branch
+  ci=commit
+  st=status
+
+[pull]
+  rebase=true
+
+[init]
+  defaultbranch=main
+
+[user]
+  name=Samuel Carvalho Santos
+
+[core]
+  excludeFiles=~/.gitignore_global
