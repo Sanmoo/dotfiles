@@ -14,4 +14,4 @@
   name=Samuel Carvalho Santos
 
 [core]
-  excludeFiles=~/.gitignore_global
+  excludesFile=~/.gitignore_global
