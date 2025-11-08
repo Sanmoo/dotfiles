@@ -1,0 +1,10 @@
+project:
+  aliases:
+    bjd: "Banco John Deere"
+    dom: "Domestic Duties"
+    studies: "Backlog Estudos"
+  files:
+    - "$HOME/dev/github.com/Sanmoo/pkm/productivity/kanbans/bjd.md"
+    - "$HOME/dev/github.com/Sanmoo/pkm/productivity/kanbans/dom.md"
+    - "$HOME/dev/github.com/Sanmoo/pkm/productivity/kanbans/studies.md"
+  default: dom
