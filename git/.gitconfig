@@ -4,14 +4,43 @@
   ci=commit
   st=status
 
-[pull]
-  rebase=true
-
-[init]
-  defaultbranch=main
-
 [user]
-  name=Samuel Carvalho Santos
+  name = Samuel Santos
 
 [core]
-  excludesFile=~/.gitignore_global
+  excludesfile = ~/.gitignore_global
+  pager = delta
+
+[interactive]
+  diffFilter = delta --color-only
+
+[delta]
+  navigate = true    # use n and N to move between diff sections
+  light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+  max-line-length = 10000
+
+[merge]
+  conflictstyle = diff3
+
+[diff]
+  colorMoved = default
+  renameLimit = 15402
+
+[pull]
+	rebase = true
+
+[filter "lfs"]
+  clean = git-lfs clean -- %f
+  smudge = git-lfs smudge -- %f
+  process = git-lfs filter-process
+  required = true
+
+[http]
+  sslVerify = false
+  postBuffer = 1048576000
+
+[https]
+  postBuffer = 1048576000
+
+[init]
+  defaultBranch = main
