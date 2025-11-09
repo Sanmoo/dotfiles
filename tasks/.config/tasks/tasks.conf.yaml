@@ -9,4 +9,6 @@ project:
     - "$HOME/dev/github.com/Sanmoo/pkm/productivity/kanbans/dom.md"
     - "$HOME/dev/github.com/Sanmoo/pkm/productivity/kanbans/studies.md"
     - "$HOME/dev/github.com/Sanmoo/my-tasks/kanbans/tasks.md"
-  default: dom
+  defaults:
+    project: dom
+    timezone: -03
