@@ -1,21 +1,11 @@
-# If you come from bash you might have to change your $PATH.
-# export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
-
-# Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 export GOPATH="$HOME/go"
 
-# Set name of the theme to load --- if set to "random", it will
-# load a random theme each time Oh My Zsh is loaded, in which case,
-# to know which specific one was loaded, run: echo $RANDOM_THEME
-# See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-ZSH_THEME="robbyrussell"
-
-# Set list of themes to pick from when loading at random
-# Setting this variable when ZSH_THEME=random will cause zsh to load
-# a theme from this variable instead of looking in $ZSH/themes/
-# If set to an empty array, this variable will have no effect.
-# ZSH_THEME_RANDOM_CANDIDATES=( "robbyrussell" "agnoster" )
+if [[ $(uname) == "Darwin" ]]; then
+  source "$HOME/.zshrc_mac"
+else
+  source "$HOME/.zshrc_linux"
+fi
 
 # Uncomment the following line to use case-sensitive completion.
 # CASE_SENSITIVE="true"
@@ -71,23 +61,20 @@ ZSH_THEME="robbyrussell"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zoxide mise npm ssh tmuxinator vi-mode vscode dotenv fzf)
+plugins=(git zoxide mise npm ssh tmuxinator vi-mode vscode dotenv fzf docker node)
 
 source $ZSH/oh-my-zsh.sh
 
 # User configuration
+
+export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 
 # export MANPATH="/usr/local/man:$MANPATH"
 
 # You may need to manually set your language environment
 # export LANG=en_US.UTF-8
 
-# Preferred editor for local and remote sessions
-# if [[ -n $SSH_CONNECTION ]]; then
-#   export EDITOR='vim'
-# else
-#   export EDITOR='nvim'
-# fi
+export EDITOR='nvim'
 
 # Compilation flags
 # export ARCHFLAGS="-arch $(uname -m)"
@@ -104,21 +91,31 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
+# Exports
+export ASDF_DIR="$HOME/.asdf"
+export ASDF_DATA_DIR="$HOME/.asdf"
+export PATH="$PATH:$HOME/bin"
+export PATH="$HOME/.local/bin:$PATH"
+export PATH="$GOPATH/bin:$PATH"
+
 bindkey -v
+
+# Aliases
 alias vim=nvim
 alias tat="tmux attach-session -t"
-export PATH="$PATH:$HOME/bin"
-eval "$(mise activate zsh)"
-alias c="wl-copy"
-eval "$(zoxide init zsh)"
+alias mux="tmuxinator"
 alias ls="eza"
-
 alias gs="git status"
 alias gc="git commit"
 alias ga="git add"
 alias gcl="git clone"
 alias gd="git diff"
-alias gl="git log --oneline --graph"
+alias gl="git log --pretty=tformat:\"%C(yellow)%h %C(cyan)%ad %Cblue%an%C(auto)%d %Creset%s\" --graph --date=format:\"%Y-%m-%d %H:%M\""
 alias jq-less="jq -C '.' | less -R"
-export PATH="$HOME/.local/bin:$PATH"
-export PATH="$GOPATH/bin:$PATH"
+alias gcan="git commit --amend --no-edit"
+alias gca="git commit --amend"
+alias gpf="git push -f"
+alias gcaan="git commit -a --amend --no-edit && git push -f"
+
+eval "$(mise activate zsh)"
+eval "$(zoxide init zsh)"
