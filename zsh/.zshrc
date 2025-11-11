@@ -121,3 +121,5 @@ alias remind="tasks remind"
 
 eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
+
+source ~/.env
