@@ -30,6 +30,7 @@
   "neo-tree.nvim": { "branch": "main", "commit": "f3df514fff2bdd4318127c40470984137f87b62e" },
   "neotest": { "branch": "master", "commit": "deadfb1af5ce458742671ad3a013acb9a6b41178" },
   "neotest-golang": { "branch": "main", "commit": "2806bc07066a734d6ed94d45d2d2557a0e2195d8" },
+  "neotest-gradle": { "branch": "main", "commit": "88b7bde8416c14bc094cc4b6a900d13c6ea6bd3c" },
   "neotest-pest": { "branch": "main", "commit": "1429445746f28a4ce887289ea6e442430629e306" },
   "neotest-phpunit": { "branch": "main", "commit": "eb2f3d1e1b07cfaa59d4da9edde0cef1c84e4958" },
   "noice.nvim": { "branch": "main", "commit": "7bfd942445fb63089b59f97ca487d605e715f155" },
