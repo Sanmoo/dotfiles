@@ -75,3 +75,4 @@
 # resize-overlay-duration = 4s 200ms
 
 theme = dark:Monokai Pro Ristretto,light:Monokai Pro Ristretto
+background-opacity = 0.95
