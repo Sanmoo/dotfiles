@@ -1,0 +1,11 @@
+[tools]
+go = "latest"
+golangci-lint = "latest"
+golangci-lint-langserver = "latest"
+java = "21"
+kotlin = "latest"
+node = "latest"
+python = "latest"
+ruby = "latest"
+"ubi:sst/opencode" = "latest"
+yt-dlp = "latest"
