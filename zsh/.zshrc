@@ -127,3 +127,6 @@ eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
 
 source ~/.env
+
+# jj autocompletion
+source <(COMPLETE=zsh jj)

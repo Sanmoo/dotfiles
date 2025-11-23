@@ -2,6 +2,8 @@
 
 [user]
 name = "Samuel Santos"
+email = "sanmoo.cs@gmail.com"
 
 [ui]
-pager = ""
+paginate = "never"
+default-command = "log"
