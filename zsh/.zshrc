@@ -101,9 +101,8 @@ export PATH="$GOPATH/bin:$PATH"
 bindkey -v
 
 # Aliases
-alias vim=nvim
-alias tat="tmux attach-session -t"
-alias mux="tmuxinator"
+
+## Git
 alias ls="eza"
 alias gs="git status"
 alias gc="git commit"
@@ -111,13 +110,27 @@ alias ga="git add"
 alias gcl="git clone"
 alias gd="git diff"
 alias gl="git log --pretty=tformat:\"%C(yellow)%h %C(cyan)%ad %Cblue%an%C(auto)%d %Creset%s\" --graph --date=format:\"%Y-%m-%d %H:%M\""
-alias jq-less="jq -C '.' | less -R"
 alias gcan="git commit --amend --no-edit"
 alias gca="git commit --amend"
 alias gpf="git push -f"
 alias gcaan="git commit -a --amend --no-edit && git push -f"
 alias upkan="gc -a -m \"update kanbans\" && git push"
+
+## Jujutsu
+
+alias jjd="jj describe -m"
+alias jjn="jj new"
+### forward bookmark to commit previous to working copy
+alias jjmv="jj bookmark move --from 'heads(::@- & bookmarks())' --to @-"
+
+## Misc
+alias jq-less="jq -C '.' | less -R"
 alias remind="tasks remind"
+alias vim=nvim
+alias tat="tmux attach-session -t"
+alias mux="tmuxinator"
+
+## Navigation
 alias "cd ..."="cd ../.."
 alias "cd ...."="cd ../../.."
 alias "cd ....."="cd ../../../.."
