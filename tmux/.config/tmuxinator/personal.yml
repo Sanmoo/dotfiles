@@ -49,7 +49,6 @@ windows:
       root: ~/dev/github.com/Sanmoo/pkm/
       panes:
         - nvim
-        - aider --model deepseek --api-key deepseek=$DEEP_SEEK_APIKEY
   - dotfiles:
       root: ~/dev/github.com/Sanmoo/dotfiles/
       panes:
