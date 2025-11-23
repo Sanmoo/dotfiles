@@ -21,5 +21,24 @@ return {
       { "<c-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>" },
     },
   },
+  {
+    "nvim-telescope/telescope.nvim",
+    keys = {
+      {
+        "<leader>sf",
+        "<cmd>Telescope find_files hidden=true no_ignore=true<cr>",
+        desc = "Find files, including hidden and ignored",
+      },
+      {
+        "<leader>sz",
+        function()
+          require("telescope.builtin").live_grep({
+            additional_args = { "--no-ignore-vcs", "--hidden" },
+          })
+        end,
+        desc = "Grep files, including hidden and ignored",
+      },
+    },
+  },
   -- Other UI plugins...
 }
