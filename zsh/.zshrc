@@ -120,6 +120,7 @@ alias upkan="gc -a -m \"update kanbans\" && git push"
 
 alias jjd="jj describe -m"
 alias jjn="jj new"
+alias jjgp="jj git push"
 ### forward bookmark to commit previous to working copy
 alias jjmv="jj bookmark move --from 'heads(::@- & bookmarks())' --to @-"
 
