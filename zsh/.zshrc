@@ -130,3 +130,6 @@ source ~/.env
 
 # jj autocompletion
 source <(COMPLETE=zsh jj)
+
+# opencode
+export PATH=$HOME/.opencode/bin:$PATH

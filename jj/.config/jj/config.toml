@@ -5,5 +5,7 @@ name = "Samuel Santos"
 email = "sanmoo.cs@gmail.com"
 
 [ui]
-paginate = "never"
+paginate = "auto"
+pager = "delta"
 default-command = "log"
+diff-formatter = ":git"
