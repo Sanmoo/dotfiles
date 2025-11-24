@@ -1,21 +1,33 @@
 return {
   {
     "nvim-neotest/neotest",
-    optional = true,
     dependencies = {
-      "fredrikaverpil/neotest-golang",
-    },
-    opts = {
-      adapters = {
-        ["neotest-golang"] = {
-          -- Specify gotestsum as the test runner
-          runner = "gotestsum",
-          -- Optionally, you can also pass additional arguments to go test
-          go_test_args = { "-v", "-race", "-count=1" },
-          -- Enable DAP integration if desired (requires nvim-dap-go)
-          dap_go_enabled = true,
-        },
+      "nvim-neotest/nvim-nio",
+      "nvim-lua/plenary.nvim",
+      "antoinemadec/FixCursorHold.nvim",
+      {
+        "nvim-treesitter/nvim-treesitter", -- Optional, but recommended
+        branch = "main", -- NOTE; not the master branch!
+        build = function()
+          vim.cmd(":TSUpdate go")
+        end,
+      },
+      {
+        "fredrikaverpil/neotest-golang",
+        version = "*", -- Optional, but recommended; track releases
+        build = function()
+          vim.system({ "go", "install", "gotest.tools/gotestsum@latest" }):wait() -- Optional, but recommended
+        end,
       },
     },
+    config = function()
+      require("neotest").setup({
+        adapters = {
+          require("neotest-golang")({
+            runner = "gotestsum", -- Optional, but recommended
+          }),
+        },
+      })
+    end,
   },
 }
