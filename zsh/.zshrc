@@ -123,6 +123,7 @@ alias jjn="jj new"
 alias jjgp="jj git push"
 ### forward bookmark to commit previous to working copy
 alias jjmv="jj bookmark move --from 'heads(::@- & bookmarks())' --to @-"
+alias jupkan='jjd "update kanbans" && jjn && jjmv && jjgp'
 
 ## Misc
 alias jq-less="jq -C '.' | less -R"
