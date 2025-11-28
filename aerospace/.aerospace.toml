@@ -64,7 +64,8 @@ outer.right = 6
 # Fallback value (if you omit the key): mode.main.binding = {}
 [mode.main.binding]
 # Easy Lounchers
-alt-enter = 'exec-and-forget /Applications/Ghostty.app/Contents/MacOS/ghostty'
+# Disabling for now to avoid conflicts with Intellij
+# alt-enter = 'exec-and-forget /Applications/Ghostty.app/Contents/MacOS/ghostty'
 alt-b = "exec-and-forget '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'"
 alt-t = "exec-and-forget '/Applications/Microsoft Teams.app/Contents/MacOS/MSTeams'"
 
