@@ -115,6 +115,7 @@ alias gca="git commit --amend"
 alias gpf="git push -f"
 alias gcaan="git commit -a --amend --no-edit && git push -f"
 alias upkan="gc -a -m \"update kanbans\" && git push"
+alias updot="gc -a -m \"update dotfiles\" && git push"
 
 ## Jujutsu
 
