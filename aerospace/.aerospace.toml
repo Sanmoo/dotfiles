@@ -68,6 +68,7 @@ outer.right = 6
 # alt-enter = 'exec-and-forget /Applications/Ghostty.app/Contents/MacOS/ghostty'
 alt-b = "exec-and-forget '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'"
 alt-t = "exec-and-forget '/Applications/Microsoft Teams.app/Contents/MacOS/MSTeams'"
+alt-f = "fullscreen"
 
 # All possible keys:
 # - Letters.        a, b, c, ..., z
@@ -188,8 +189,8 @@ alt-tab = 'workspace-back-and-forth'
 alt-shift-tab = 'move-workspace-to-monitor --wrap-around next'
 
 # See: https://nikitabobko.github.io/AeroSpace/commands#mode
-alt-shift-semicolon = 'mode service'
 
+alt-shift-semicolon = 'mode service'
 # 'service' binding mode declaration.
 # See: https://nikitabobko.github.io/AeroSpace/guide#binding-modes
 [mode.service.binding]
