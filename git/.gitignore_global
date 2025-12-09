@@ -22,3 +22,8 @@ rascunho
 run-aws-cli.yaml
 kls_database.db
 .lazy.lua
+
+.opencode
+# Investigando spec-kit
+.specify
+
