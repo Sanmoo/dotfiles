@@ -24,12 +24,12 @@ return {
           local options = vim.tbl_filter(function(val)
             return vals[val] ~= ""
           end, vim.tbl_keys(vals))
-          
+
           if vim.tbl_isempty(options) then
             vim.notify("No values to copy", vim.log.levels.WARN)
             return
           end
-          
+
           table.sort(options)
           vim.ui.select(options, {
             prompt = "Choose to copy to clipboard:",

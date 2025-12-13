@@ -29,26 +29,6 @@ return {
       "nvim-neotest/neotest",
       opts = { adapters = { "neotest-gradle" } },
     },
-
-    -- SQL stuff
-    -- {
-    --   "tpope/vim-dadbod",
-    --   opts = {
-    --     enabled = true,
-    --   },
-    -- },
-    -- {
-    --   "kristijanhusak/vim-dadbod-completion",
-    --   opts = {
-    --     enabled = true,
-    --   },
-    -- },
-    -- {
-    --   "kristijanhusak/vim-dadbod-ui",
-    --   opts = {
-    --     enabled = true,
-    --   },
-    -- },
   },
   {
     "mason-org/mason.nvim",
