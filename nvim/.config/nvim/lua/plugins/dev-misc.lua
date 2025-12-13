@@ -21,6 +21,7 @@ return {
 
         -- Enable TypeSpec Server
         tsp_server = {},
+        emmet_language_server = {},
       },
     },
     { "weilbith/neotest-gradle" },
@@ -48,5 +49,19 @@ return {
     --     enabled = true,
     --   },
     -- },
+  },
+  {
+    "mason-org/mason.nvim",
+    opts = {
+      ensure_installed = {
+        "emmet-language-server",
+      },
+    },
+  },
+  {
+    "olrtg/nvim-emmet",
+    config = function()
+      vim.keymap.set({ "n", "v" }, "<leader>xe", require("nvim-emmet").wrap_with_abbreviation)
+    end,
   },
 }
