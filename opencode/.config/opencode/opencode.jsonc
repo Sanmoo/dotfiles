@@ -5,6 +5,13 @@
   "plugin": [
     "oh-my-opencode"
   ],
+  "instructions": [
+    // PDCA Workflow
+    // see: https://www.infoq.com/articles/PDCA-AI-code-generation/
+    ".opencode/workflow.md",
+    // Pre-commit validations in PDCA Workflow.
+    ".opencode/validation.md"
+  ],
   "mcp": {
     "playwright": {
       "type": "local",
