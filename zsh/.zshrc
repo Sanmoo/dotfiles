@@ -138,6 +138,8 @@ alias "cd ..."="cd ../.."
 alias "cd ...."="cd ../../.."
 alias "cd ....."="cd ../../../.."
 alias "cd ......"="cd ../../../../.."
+alias ":q"="exit"
+alias ":qa"="exit"
 
 eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"

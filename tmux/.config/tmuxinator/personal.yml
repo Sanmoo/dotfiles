@@ -1,7 +1,7 @@
 # /home/sanmoo/.config/tmuxinator/personal.yml
 
 name: personal
-root: ~
+root: "~"
 
 # Optional tmux socket
 # socket_name: foo
@@ -49,8 +49,10 @@ windows:
       root: ~/dev/github.com/Sanmoo/pkm/
       panes:
         - nvim
+        -
   - dotfiles:
       root: ~/dev/github.com/Sanmoo/dotfiles/
       panes:
         - nvim
+        -
   - shell:
