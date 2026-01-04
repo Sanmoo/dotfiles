@@ -132,6 +132,8 @@ alias remind="tasks remind"
 alias vim=nvim
 alias tat="tmux attach-session -t"
 alias mux="tmuxinator"
+alias awslocal="AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localhost:4566"
+alias less="less -S -# 15"
 
 ## Navigation
 alias "cd ..."="cd ../.."

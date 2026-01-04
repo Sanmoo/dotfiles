@@ -44,4 +44,12 @@ return {
       vim.keymap.set({ "n", "v" }, "<leader>xe", require("nvim-emmet").wrap_with_abbreviation)
     end,
   },
+  {
+    -- solves highlight issue in insert parts
+    "pmouraguedes/sql-ghosty.nvim",
+    dependencies = {
+      "nvim-treesitter/nvim-treesitter",
+    },
+    opts = {},
+  },
 }
