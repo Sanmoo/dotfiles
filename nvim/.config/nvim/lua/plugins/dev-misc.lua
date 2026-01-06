@@ -5,30 +5,10 @@ return {
     build = "npm i",
     config = true,
   },
+  { "weilbith/neotest-gradle" },
   {
-    "neovim/nvim-lspconfig",
-    opts = {
-      servers = {
-        -- kotlin_language_server = {
-        --   enabled = true,
-        -- },
-        -- Enable Kotlin Language Server
-        --
-        -- Not working for me
-        kotlin_lsp = {
-          enabled = false,
-        },
-
-        -- Enable TypeSpec Server
-        tsp_server = {},
-        emmet_language_server = {},
-      },
-    },
-    { "weilbith/neotest-gradle" },
-    {
-      "nvim-neotest/neotest",
-      opts = { adapters = { "neotest-gradle" } },
-    },
+    "nvim-neotest/neotest",
+    opts = { adapters = { "neotest-gradle" } },
   },
   {
     "mason-org/mason.nvim",
