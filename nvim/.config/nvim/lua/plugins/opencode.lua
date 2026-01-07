@@ -1,12 +1,12 @@
 return {
   {
     "NickvanDyke/opencode.nvim",
-    -- dependencies = {
-    --   -- Recommended for `ask()` and `select()`.
-    --   -- Required for `snacks` provider.
-    --   ---@module 'snacks' <- Loads `snacks.nvim` types for configuration intellisense.
-    --   { "folke/snacks.nvim", opts = { input = {}, picker = {}, terminal = {} } },
-    -- },
+    dependencies = {
+      -- Recommended for `ask()` and `select()`.
+      -- Required for `snacks` provider.
+      ---@module 'snacks' <- Loads `snacks.nvim` types for configuration intellisense.
+      -- { "folke/snacks.nvim", opts = { input = {}, picker = {}, terminal = {} } },
+    },
     config = function()
       ---@type opencode.Opts
       vim.g.opencode_opts = {
@@ -22,31 +22,86 @@ return {
         function()
           require("opencode").ask("@this: ", { submit = true })
         end,
+        mode = { "n", "x" },
         desc = "Opencode: Ask",
       },
+      {
+        "<leader>oo",
+        function()
+          require("opencode").toggle()
+        end,
+        mode = { "n", "x" },
+        desc = "Toggle Opencode",
+      },
+      {
+        "<leader>os",
+        function()
+          require("opencode").select()
+        end,
+        mode = { "n", "t" },
+        desc = "Execute opencode action",
+      },
+      {
+        "<leader>or",
+        function()
+          return require("opencode").operator("@this ")
+        end,
+        mode = { "n", "x" },
+        expr = true,
+        desc = "Add range to opencode",
+      },
+      {
+        "<leader>ol",
+        function()
+          return require("opencode").operator("@this ") .. "_"
+        end,
+        mode = { "n" },
+        expr = true,
+        desc = "Add line to opencode",
+      },
+      {
+        "<leader>ou",
+        function()
+          return require("opencode").command("session.half.page.up")
+        end,
+        mode = { "n" },
+        desc = "opencode half page up",
+      },
+      {
+        "<leader>od",
+        function()
+          return require("opencode").command("session.half.page.down")
+        end,
+        mode = { "n" },
+        desc = "opencode half page down",
+      },
+      {
+        "<leader>o+",
+        function()
+          return require("opencode").command("session.half.page.down")
+        end,
+        mode = { "n" },
+        desc = "opencode half page down",
+      },
     },
-
-    -- Recommended/example keymaps.
-    -- vim.keymap.set({ "n", "x" }, "<C-a>", function()
-    --
-    -- end, { desc = "Ask opencode" })
-    -- vim.keymap.set({ "n", "x" }, "<C-x>", function()
-    --   require("opencode").select()
-    -- end, { desc = "Execute opencode action…" })
-    -- vim.keymap.set({ "n", "x" }, "ga", function()
-    --   require("opencode").prompt("@this")
-    -- end, { desc = "Add to opencode" })
-    -- vim.keymap.set({ "n", "t" }, "<C-.>", function()
-    --   require("opencode").toggle()
-    -- end, { desc = "Toggle opencode" })
-    -- vim.keymap.set("n", "<S-C-u>", function()
-    --   require("opencode").command("session.half.page.up")
-    -- end, { desc = "opencode half page up" })
-    -- vim.keymap.set("n", "<S-C-d>", function()
-    --   require("opencode").command("session.half.page.down")
-    -- end, { desc = "opencode half page down" })
-    -- -- You may want these if you stick with the opinionated "<C-a>" and "<C-x>" above — otherwise consider "<leader>o".
-    -- vim.keymap.set("n", "+", "<C-a>", { desc = "Increment", noremap = true })
-    -- vim.keymap.set("n", "-", "<C-x>", { desc = "Decrement", noremap = true })
+  },
+  {
+    "zhisme/copy_with_context.nvim",
+    config = function()
+      require("copy_with_context").setup({
+        -- Customize mappings
+        mappings = {
+          relative = "<leader>cy",
+          absolute = "<leader>cY",
+          remote = "<leader>cr",
+        },
+        formats = {
+          default = "# {filepath}:{line}", -- Used by relative and absolute mappings
+          remote = "# {remote_url}",
+        },
+        -- whether to trim lines or not
+        trim_lines = false,
+      })
+    end,
   },
 }

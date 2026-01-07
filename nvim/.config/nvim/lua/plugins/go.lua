@@ -37,14 +37,11 @@ return {
         end,
       },
     },
-    config = function()
-      require("neotest").setup({
-        adapters = {
-          require("neotest-golang")({
-            runner = "gotestsum", -- Optional, but recommended
-          }),
-        },
-      })
+    opts = function(_, opts)
+      opts.adapters = opts.adapters or {}
+      table.insert(opts.adapters, require("neotest-golang")({
+        runner = "gotestsum", -- Optional, but recommended
+      }))
     end,
   },
 }
