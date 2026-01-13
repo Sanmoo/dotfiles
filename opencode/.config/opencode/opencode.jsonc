@@ -21,5 +21,16 @@
       ],
       "enabled": false
     }
+  },
+  "lsp": {
+    "kotlin-lsp": {
+      "command": [
+        "kotlin-lsp"
+      ],
+      "extensions": [
+        ".kt",
+        ".kts"
+      ]
+    }
   }
 }
