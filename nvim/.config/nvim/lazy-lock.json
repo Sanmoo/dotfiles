@@ -1,5 +1,4 @@
 {
-  "FixCursorHold.nvim": { "branch": "master", "commit": "1900f89dc17c603eec29960f57c00bd9ae696495" },
   "LazyVim": { "branch": "main", "commit": "28db03f958d58dfff3c647ce28fdc1cb88ac158d" },
   "LuaSnip": { "branch": "master", "commit": "dae4f5aaa3574bd0c2b9dd20fb9542a02c10471c" },
   "SchemaStore.nvim": { "branch": "main", "commit": "083602d8fedd7230bd6f0b164b7c4f9d1ff3a9c3" },
@@ -37,7 +36,7 @@
   "monokai-pro.nvim": { "branch": "master", "commit": "5b06ae0736813b1c65d76a4be9edbe92be0b9c74" },
   "neo-tree.nvim": { "branch": "main", "commit": "1bd82358e516e3043796e207e64f50a11574af6e" },
   "neotest": { "branch": "master", "commit": "deadfb1af5ce458742671ad3a013acb9a6b41178" },
-  "neotest-golang": { "branch": "main", "commit": "53f06063780b0b244583d3d32b138fc2df21e162" },
+  "neotest-golang": { "branch": "main", "commit": "c7030d0a39e8dc6894936eefce906047a4c23549" },
   "neotest-gradle": { "branch": "main", "commit": "88b7bde8416c14bc094cc4b6a900d13c6ea6bd3c" },
   "neotest-pest": { "branch": "main", "commit": "1429445746f28a4ce887289ea6e442430629e306" },
   "neotest-phpunit": { "branch": "main", "commit": "2761ae9e9a385e491a9731f8c52824e1be64a68f" },
@@ -56,7 +55,7 @@
   "nvim-lspconfig": { "branch": "master", "commit": "419b082102fa813739588dd82e19a8b6b2442855" },
   "nvim-nio": { "branch": "master", "commit": "21f5324bfac14e22ba26553caf69ec76ae8a7662" },
   "nvim-treesitter": { "branch": "main", "commit": "275b9fe801d56d5fea6d34f5bfea8bb24887b805" },
-  "nvim-treesitter-textobjects": { "branch": "main", "commit": "4d55f63252e04c5212daed958e4e940915ff16ce" },
+  "nvim-treesitter-textobjects": { "branch": "main", "commit": "52bda74e087034408e2d563cb4499c1601038f9d" },
   "nvim-ts-autotag": { "branch": "main", "commit": "db15f2e0df2f5db916e511e3fffb682ef2f6354f" },
   "opencode.nvim": { "branch": "main", "commit": "70ac8a7357262f766fe46a35db2718893e70cc7c" },
   "persistence.nvim": { "branch": "main", "commit": "b20b2a7887bd39c1a356980b45e03250f3dce49c" },
