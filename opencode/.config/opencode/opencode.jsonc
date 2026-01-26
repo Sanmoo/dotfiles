@@ -3,7 +3,7 @@
   "theme": "flexoki",
   "autoupdate": true,
   "plugin": [
-    "oh-my-opencode"
+    "oh-my-opencode@latest"
   ],
   "instructions": [
     // PDCA Workflow
