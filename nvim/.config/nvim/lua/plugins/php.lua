@@ -1,15 +1,40 @@
 return {
   {
     "nvim-neotest/neotest",
-    lazy = true,
+    optional = true,
     dependencies = {
       "olimorris/neotest-phpunit",
     },
     opts = {
       adapters = {
-        require("neotest-phpunit")({
-          phpunit_cmd = "./vendor/bin/phpunit",
-        }),
+        ["neotest-phpunit"] = {
+          env = {
+            XDEBUG_CONFIG = "start_with_request=yes idekey=neotest",
+            XDEBUG_MODE = "debug",
+          },
+          dap = {
+            log = true,
+            type = "php",
+            request = "launch",
+            name = "Listen for XDebug",
+            port = 9003,
+            stopOnEntry = false,
+            xdebugSettings = {
+              max_children = -1,
+              max_data = -1,
+              max_depth = -1,
+            },
+            -- breakpoints = {
+            --   exception = {
+            --     Notice = false,
+            --     Warning = false,
+            --     Error = false,
+            --     Exception = false,
+            --     ["*"] = true,
+            --   },
+            -- },
+          },
+        },
       },
     },
   },
@@ -21,5 +46,17 @@ return {
         php = { "php_cs_fixer" },
       },
     },
+  },
+  {
+    "mfussenegger/nvim-dap",
+    optional = true,
+    opts = function()
+      local dap = require("dap")
+      dap.adapters.php = {
+        type = "executable",
+        command = "php-debug-adapter",
+        args = {},
+      }
+    end,
   },
 }

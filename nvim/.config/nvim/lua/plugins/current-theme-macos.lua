@@ -2,6 +2,7 @@ if vim.fn.has("mac") then
   return {
     {
       "gthelding/monokai-pro.nvim",
+      priority = 1000,
       config = function()
         require("monokai-pro").setup({
           filter = "ristretto",
@@ -25,6 +26,7 @@ if vim.fn.has("mac") then
     },
     {
       "LazyVim/LazyVim",
+      priority = 1000,
       opts = {
         colorscheme = "monokai-pro",
       },
