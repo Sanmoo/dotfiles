@@ -25,7 +25,7 @@ return {
   },
   {
     "stevearc/conform.nvim",
-    optional = true,
+    optional = false,
     opts = {
       formatters_by_ft = { kotlin = { "ktlint" } },
     },

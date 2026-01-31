@@ -1,10 +1,12 @@
 return {
   {
     "akinsho/bufferline.nvim",
-    enabled = false, -- Set this to false to disable the plugin
+    -- Disabling since I hate tabs
+    enabled = false,
   },
   {
     "christoomey/vim-tmux-navigator",
+    enabled = false,
     cmd = {
       "TmuxNavigateLeft",
       "TmuxNavigateDown",
