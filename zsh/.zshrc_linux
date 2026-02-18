@@ -5,3 +5,4 @@
 ZSH_THEME="robbyrussell"
 
 alias c="wl-copy"
+alias open="xdg-open"

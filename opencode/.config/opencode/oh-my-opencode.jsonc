@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json",
+  "model": "opencode/kimi-k2.5-free",
+  "agents": {
+    "sisyphus": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "oracle": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "explore": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "librarian": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "prometheus": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "metis": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "momus": {
+      "model": "opencode/kimi-k2.5-free"
+    },
+    "multimodal-looker": {
+      "model": "opencode/kimi-k2.5-free"
+    }
+  }
+}

@@ -22,6 +22,7 @@
 
 [merge]
   conflictstyle = diff3
+	tool = lazygit
 
 [diff]
   colorMoved = default
@@ -45,3 +46,8 @@
 
 [init]
   defaultBranch = main
+[mergetool "lazygit"]
+	cmd = lazygit
+	trustExitCode = true
+[mergetool]
+	prompt = false
