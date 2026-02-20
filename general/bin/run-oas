@@ -1,0 +1,19 @@
+#!/bin/bash
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: run-oas <full-swagger-path.yaml> <port_number>"
+    exit 1
+fi
+
+SWAGGER_PATH="$1"
+PORT="$2"
+
+if [ ! -f "$SWAGGER_PATH" ]; then
+    echo "Error: File '$SWAGGER_PATH' not found"
+    exit 1
+fi
+
+SWAGGER_DIR=$(dirname "$SWAGGER_PATH")
+SWAGGER_FILE=$(basename "$SWAGGER_PATH")
+
+docker run -p "$PORT:8080" -e SWAGGER_JSON=/foo/"$SWAGGER_FILE" -v "$SWAGGER_DIR":/foo swaggerapi/swagger-ui
