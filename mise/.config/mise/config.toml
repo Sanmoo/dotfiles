@@ -16,3 +16,8 @@ terraform = "latest"
 gradle = "latest"
 aws = "latest"
 yarn = "1.22.22"
+
+[settings]
+
+[settings.ruby]
+compile = false
