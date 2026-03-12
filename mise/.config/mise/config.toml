@@ -17,7 +17,7 @@ gradle = "latest"
 aws = "latest"
 yarn = "1.22.22"
 
-[settings]
+# [settings]
 
-[settings.ruby]
-compile = false
+# [settings.ruby]
+# compile = false
