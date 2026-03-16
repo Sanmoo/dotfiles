@@ -21,12 +21,13 @@
   max-line-length = 10000
 
 [merge]
-  conflictstyle = diff3
-	tool = lazygit
+	conflictstyle = diff3
+	tool = meld
 
 [diff]
   colorMoved = default
   renameLimit = 15402
+	tool = nvimdiff
 
 [pull]
 	rebase = true
