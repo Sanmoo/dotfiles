@@ -1,6 +1,6 @@
 storage:
   driver: yaml
 data:
-  path: ~/dev/github.com/Sanmoo/pkm/productivity/finances
+  path: ~/dev/github.com/Sanmoo/pkm/finances
 default:
   currency: BRL

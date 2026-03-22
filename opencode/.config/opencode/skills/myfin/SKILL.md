@@ -41,7 +41,7 @@ Manage personal finances using the myfin CLI tool.
 myfin add account <name>
 
 # Add a category (per-account)
-myfin add category <name> --account <account> --type <inc|exp> [--alias <alias>] [--emoji <emoji>]
+myfin add category <name> --account <account> --type <inc|exp> --alias <alias> [--emoji <emoji>]
 
 # Add a tag (global)
 myfin add tag <name>
@@ -54,11 +54,11 @@ myfin add credit-card <name> --closing-day <n> --due-day <n>
 
 ```bash
 # Add an expense
-myfin add expense [amount] --account <name> --date <YYYY-MM-DD> --description <text> \
+myfin add expense [amount] --account <name> --date <DD-MM-YY> --description <text> \
     [--category <name>] [--tags <tag1,tag2>] [--credit-card <name>] [--times <n>]
 
 # Add an income
-myfin add income [amount] --account <name> --date <YYYY-MM-DD> --description <text> \
+myfin add income [amount] --account <name> --date <DD-MM-YY> --description <text> \
     [--category <name>] [--tags <tag1,tag2>]
 ```
 
@@ -94,8 +94,8 @@ myfin --db <name> <command>
 myfin add account personal
 
 # 2. Add categories for the account
-myfin add category food --account personal --type exp --emoji 🍕
-myfin add category salary --account personal --type inc --emoji 💰
+myfin add category food --account personal --type exp --alias food --emoji 🍕
+myfin add category salary --account personal --type inc --alias salary --emoji 💰
 
 # 3. Add tags (global, shared across accounts)
 myfin add tag essential
@@ -106,15 +106,15 @@ myfin add tag leisure
 
 ```bash
 # Simple expense
-myfin add expense 50 --account personal --date 2024-03-22 --description "groceries"
+myfin add expense 50 --account personal --date 22-03-24 --description "groceries"
 
 # Expense with category and tags
-myfin add expense 100 --account personal --date 2024-03-22 \
+myfin add expense 100 --account personal --date 22-03-24 \
     --category food --tags essential,groceries \
     --description "weekly groceries"
 
 # Credit card purchase in 3 installments
-myfin add expense 300 --account personal --date 2024-03-22 \
+myfin add expense 300 --account personal --date 22-03-24 \
     --credit-card "MyCard" --times 3 \
     --description "new phone"
 ```
@@ -122,7 +122,7 @@ myfin add expense 300 --account personal --date 2024-03-22 \
 ### Recording Income
 
 ```bash
-myfin add income 5000 --account personal --date 2024-03-01 \
+myfin add income 5000 --account personal --date 01-03-24 \
     --category salary --description "monthly salary"
 ```
 
@@ -150,7 +150,7 @@ The use case layer validates:
 | Error | Solution |
 |-------|----------|
 | `account not found: <name>` | Run `myfin add account <name>` |
-| `category not found` | Run `myfin add category <name> --account <acc> --type <inc|exp>` |
+| `category not found` | Run `myfin add category <name> --account <acc> --type <inc|exp> --alias <alias>` |
 | `tag not registered: <name>` | Run `myfin add tag <name>` |
 | `credit card not found: <name>` | Run `myfin add credit-card <name> --closing-day <n> --due-day <n>` |
 | `--times is required when using --credit-card` | Add `--times <n>` to split into installments |
@@ -160,4 +160,4 @@ The use case layer validates:
 1. **Tags are global** - Create them once, use across all accounts
 2. **Categories are per-account** - Each account has its own categories
 3. **Use `--format md` for markdown output** - Useful for exporting reports
-4. **Date formats accepted**: `YYYY-MM-DD` (e.g., `2024-03-22`)
+4. **Date formats accepted**: `DD-MM-YY` (e.g., `22-03-24`)
