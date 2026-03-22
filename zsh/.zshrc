@@ -116,15 +116,7 @@ alias gpf="git push -f"
 alias gcaan="git commit -a --amend --no-edit && git push -f"
 alias upkan="gc -a -m \"update kanbans\" && git push"
 alias updot="gc -a -m \"update dotfiles\" && git push"
-
-## Jujutsu
-
-alias jjd="jj describe -m"
-alias jjn="jj new"
-alias jjgp="jj git push"
-### forward bookmark to commit previous to working copy
-alias jjmv="jj bookmark move --from 'heads(::@- & bookmarks())' --to @-"
-alias jupkan='jjd "update kanbans" && jjn && jjmv && jjgp'
+alias upfin="gc -a -m \"update finance files\" && git push"
 
 ## Misc
 alias jq-less="jq -C '.' | less -R"
