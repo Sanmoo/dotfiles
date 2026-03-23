@@ -117,6 +117,8 @@ alias gcaan="git commit -a --amend --no-edit && git push -f"
 alias upkan="gc -a -m \"update kanbans\" && git push"
 alias updot="gc -a -m \"update dotfiles\" && git push"
 alias upfin="gc -a -m \"update finance files\" && git push"
+alias mai="myfin add income"
+alias mae="myfin add expense"
 
 ## Misc
 alias jq-less="jq -C '.' | less -R"
