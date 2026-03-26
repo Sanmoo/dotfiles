@@ -1,0 +1,59 @@
+#!/bin/bash
+
+if [ "$#" -ne 2 ]; then
+  echo "Usage: run-asyncapi <full-asyncapi-path.yaml> <port_number>"
+  exit 1
+fi
+
+ASYNCAPI_PATH="$1"
+PORT="$2"
+
+if [ ! -f "$ASYNCAPI_PATH" ]; then
+  echo "Error: File '$ASYNCAPI_PATH' not found"
+  exit 1
+fi
+
+# Resolve absolute path
+ASYNCAPI_DIR=$(cd "$(dirname "$ASYNCAPI_PATH")" && pwd)
+ASYNCAPI_FILE=$(basename "$ASYNCAPI_PATH")
+
+HTTP_PORT=$((PORT + 1))
+CONTAINER_NAME="asyncapi-studio-$$"
+
+cleanup() {
+  echo ""
+  echo "Shutting down..."
+  if [ -n "$HTTP_PID" ]; then
+    kill "$HTTP_PID" 2>/dev/null
+    wait "$HTTP_PID" 2>/dev/null
+  fi
+  docker stop "$CONTAINER_NAME" >/dev/null 2>&1
+  echo "Done."
+}
+
+trap cleanup EXIT INT TERM
+
+# Start a local HTTP server to serve the AsyncAPI file
+echo "Starting HTTP server on port $HTTP_PORT to serve '$ASYNCAPI_FILE'..."
+python3 -m http.server "$HTTP_PORT" --directory "$ASYNCAPI_DIR" --bind 0.0.0.0 >/dev/null 2>&1 &
+HTTP_PID=$!
+
+sleep 1
+
+if ! kill -0 "$HTTP_PID" 2>/dev/null; then
+  echo "Error: Failed to start HTTP server on port $HTTP_PORT"
+  exit 1
+fi
+
+STUDIO_URL="http://localhost:${PORT}?url=http://host.docker.internal:${HTTP_PORT}/${ASYNCAPI_FILE}"
+
+echo "Starting AsyncAPI Studio on port $PORT..."
+echo ""
+echo "Open in your browser:"
+echo "  $STUDIO_URL"
+echo ""
+echo "Press Ctrl+C to stop."
+
+docker run --rm --name "$CONTAINER_NAME" \
+  -p "$PORT:80" \
+  asyncapi/studio
