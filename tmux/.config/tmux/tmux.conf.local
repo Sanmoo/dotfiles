@@ -548,16 +548,3 @@ bind-key -T copy-mode-vi 'C-l' select-pane -R
 bind-key -T copy-mode-vi 'C-\' select-pane -l
 
 bind C-K select-pane -D
-
-# ── opencode: notificar quando aguardando input ──────────────────────────
-# Dispara após 4s de silêncio na pane (opencode terminou de processar)
-setw -g monitor-silence 4
-set  -g silence-action any     # 'any' garante disparo mesmo cross-session
-set  -g visual-silence off
-
-# Se a pane silenciosa está rodando opencode → banner macOS + som
-set-hook -g alert-silence "run-shell -b ' \
-  pane_cmd=\"#{pane_current_command}\"; \
-  if [ \"\$pane_cmd\" = \"opencode\" ]; then \
-    osascript -e \"display notification \\\"Aguardando seu input\\\" with title \\\"opencode\\\" sound name \\\"Ping\\\"\"; \
-  fi'"
