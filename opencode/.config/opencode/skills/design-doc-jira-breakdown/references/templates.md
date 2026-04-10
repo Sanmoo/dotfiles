@@ -4,6 +4,8 @@ Use these templates when drafting Jira-ready items from a design doc.
 
 ## Parent Task Template
 
+Use this ticket body for the Jira description. Keep Jira links outside the description as explicit draft metadata.
+
 ```markdown
 Contexto
 [Resumo do problema, da decisao do design doc e do recorte tecnico desta task.]
@@ -28,6 +30,8 @@ Notas Tecnicas
 ```
 
 ## Subtask Template
+
+Use this ticket body for the Jira description. Keep Jira links outside the description as explicit draft metadata.
 
 ```markdown
 Contexto
@@ -57,6 +61,43 @@ Notas Tecnicas
 - `Discovery: [capacidade ou decisao tecnica]`
 - `[Modulo]: [fundacao ou capacidade principal]`
 - `[Fluxo]: [adaptacao principal alinhada ao design doc]`
+
+## Draft Presentation Wrapper
+
+When presenting a draft breakdown before Jira creation, wrap each item with explicit Jira metadata outside the ticket body.
+
+Example for a technical parent task:
+
+```markdown
+Tipo: Tarefa
+Titulo: SmartConditions: implementar metadata de Finance Condition por produto
+Vinculos Jira:
+- Relates to: VAN-256
+- Blocks: VAN-382
+
+Descricao:
+[usar o template da task pai abaixo]
+```
+
+Example for a subtask:
+
+```markdown
+Tipo: Subtarefa
+Parent: VAN-381
+Titulo: SmartConditions: expor ListFinanceConditionMetadataByProductUseCase na API do modulo
+Vinculos Jira:
+- Blocks: VAN-387
+
+Descricao:
+[usar o template da subtask abaixo]
+```
+
+If there is no confirmed business story yet, write:
+
+```markdown
+Vinculos Jira:
+- Relates to: pendente de confirmacao
+```
 
 ## Suggested Subtask Title Patterns
 

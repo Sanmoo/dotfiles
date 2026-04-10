@@ -26,16 +26,22 @@ Expected output: a clear understanding of whether the result should be a discove
 
 ### Step 2: Detect Jira context
 
-Detect the Jira project and context before proposing issue creation.
+Detect the Jira project, business-story context, and linking context before proposing issue creation.
 
 1. Check workspace Jira context first if available.
 2. Reuse a project key already established in the current conversation if one exists.
-3. If the project is still ambiguous, ask the user explicitly.
-4. Never assume a fixed project key as global default.
+3. Identify whether there is a related business story, epic, or upstream Jira item that the technical work should reference.
+4. If the Jira project or the related business story is still ambiguous, ask the user explicitly.
+5. Never assume a fixed project key as global default.
 
 When proposing or creating issues, use `Tarefa` as the default parent type and `Subtarefa` as the default child type unless the user explicitly wants another structure.
 
-Expected output: a confirmed Jira project context or an explicit open question to the user.
+When a related business story exists, the default policy is:
+
+- each technical `Tarefa` must receive a Jira link of type `Relates` to the related business story
+- `Subtarefas` do not receive `Relates` to the business story by default unless the user explicitly asks for it
+
+Expected output: a confirmed Jira project context, a confirmed or explicitly missing related business story, or a clear follow-up question to the user.
 
 ### Step 3: Read the design as implementation input, not as prose
 
@@ -187,7 +193,33 @@ Subtask guidance:
 
 Expected output: a full child breakdown where each subtask can be executed and merged independently.
 
-### Step 8: Run the breakdown quality gate
+### Step 8: Plan Jira links explicitly
+
+Do not stop at parent-child structure. Every non-trivial breakdown must include an explicit Jira linking plan.
+
+#### Business-story links
+
+- If a related business story exists, plan a `Relates` link from each technical `Tarefa` to that story.
+- Do not add the same `Relates` link to every `Subtarefa` by default.
+- If there are multiple business stories, link each technical `Tarefa` only to the story it actually supports.
+
+#### Dependency links
+
+- Model technical sequencing using Jira link type `Blocks`.
+- Use a minimum dependency graph: create only the links strictly necessary to represent real precedence.
+- Avoid redundant transitive links. If `A blocks B` and `B blocks C`, do not also add `A blocks C` unless it expresses an additional real operational constraint.
+- Prefer the smallest level that represents the real dependency:
+  - use `Blocks` between `Tarefa` items when an entire technical stream depends on another
+  - use `Blocks` between `Subtarefas` when only specific slices depend on each other
+  - avoid duplicating the same dependency at both task and subtask level unless they represent different constraints
+
+Use the direction consistently: if `A` must finish before `B` can proceed safely, then `A blocks B`.
+
+For detailed rules and examples, read `references/breakdown-rules.md` before finalizing the link plan.
+
+Expected output: an explicit plan of `Relates` and `Blocks` links that matches the proposed decomposition.
+
+### Step 9: Run the breakdown quality gate
 
 Before presenting the result, verify all of the following.
 
@@ -198,26 +230,34 @@ Before presenting the result, verify all of the following.
 5. Cross-cutting updates were attached to the owning subtask whenever possible.
 6. No generic final hardening or testing subtask remains unless there is a strong reason.
 7. The parent/child structure is minimal and clear.
+8. Every real dependency is represented either in the hierarchy or in the explicit `Blocks` plan.
+9. The dependency graph uses the minimum number of `Blocks` links necessary to preserve execution constraints.
+10. Every technical `Tarefa` that supports a known business story has a planned `Relates` link to that story.
 
 If any check fails, revise the breakdown before showing it to the user.
 
 Expected output: a validated breakdown that the user can review or send to Jira.
 
-### Step 9: Present the result and optionally create Jira issues
+### Step 10: Present the result and optionally create Jira issues
 
 When returning the breakdown:
 
 - Present parent tasks first, then subtasks grouped under each parent.
 - Briefly explain the slicing rationale in 2 to 4 bullets when the breakdown is non-trivial.
 - Call out any assumptions or unresolved decisions.
+- Present the Jira linking plan explicitly:
+  - `Relates` links from technical tasks to the related business story
+  - `Blocks` links that represent the minimum dependency graph
 - If the user asked for Jira creation, create only after the draft is complete and the project context is known.
 
 For Jira creation:
 
 1. Create the parent `Tarefa` first.
 2. Create each `Subtarefa` with the parent relationship.
-3. Preserve the exact text structure used in the draft.
-4. If the user asked only for a draft, stop before creation.
+3. Create `Relates` links from each technical `Tarefa` to the related business story when applicable.
+4. Create `Blocks` links using the planned minimum dependency graph.
+5. Preserve the exact text structure used in the draft.
+6. If the user asked only for a draft, stop before creation.
 
 Expected output: a markdown draft, or a created Jira hierarchy when explicitly requested.
 
@@ -262,6 +302,26 @@ Solution:
 2. Produce the markdown draft first.
 3. Delay Jira creation until the project is confirmed.
 
+### Problem: The related business story is unclear
+
+Cause: The design doc or conversation does not identify which business story the technical work supports.
+
+Solution:
+
+1. Ask the user which story or business ticket should be linked.
+2. If the user only wants a draft, keep the breakdown and mark the `Relates` link as pending confirmation.
+3. Do not guess the business story from loose similarity alone.
+
+### Problem: The dependency graph is too dense or redundant
+
+Cause: The breakdown mixes real sequencing constraints with redundant transitive links.
+
+Solution:
+
+1. Remove `Blocks` links that are already implied transitively.
+2. Keep only the smallest set of links required to preserve ordering.
+3. Prefer task-level links for whole-stream dependency and subtask-level links for slice-specific dependency.
+
 ## Examples
 
 ### Example 1: Breakdown from an implementation design doc
@@ -272,11 +332,13 @@ Actions:
 
 1. Read the design doc and identify the owning module, public API, and consumers.
 2. Detect the Jira project from workspace context or ask if ambiguous.
-3. Produce a parent task for the backend foundation.
-4. Produce subtasks such as catalog/config foundation, public API exposure, endpoint adaptation, and consumer filtering.
-5. Keep OpenAPI and test updates in the owning subtasks.
+3. Identify the related business story and plan `Relates` links from each technical `Tarefa` to that story.
+4. Produce a parent task for the backend foundation.
+5. Produce subtasks such as catalog/config foundation, public API exposure, endpoint adaptation, and consumer filtering.
+6. Keep OpenAPI and test updates in the owning subtasks.
+7. Plan only the minimum `Blocks` links needed between the resulting technical slices.
 
-Result: a Jira-ready breakdown where each subtask maps to a single technical boundary and can be merged independently.
+Result: a Jira-ready breakdown where each subtask maps to a single technical boundary, each technical task is linked to the related business story, and dependencies are represented by a minimal `Blocks` graph.
 
 ### Example 2: Discovery-first design
 
@@ -301,6 +363,8 @@ Actions:
 2. Confirm or detect the Jira project context.
 3. Create the parent `Tarefa`.
 4. Create each `Subtarefa` linked to the parent.
-5. Return the created issue keys and a compact summary of the structure.
+5. Create `Relates` links from each technical `Tarefa` to the related business story.
+6. Create the planned minimum `Blocks` links.
+7. Return the created issue keys and a compact summary of the structure and links.
 
-Result: a reviewed breakdown becomes a Jira hierarchy without changing the structure between draft and creation.
+Result: a reviewed breakdown becomes a Jira hierarchy with parent-child relationships, business-story links, and the minimum dependency graph represented in Jira.

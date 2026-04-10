@@ -103,6 +103,45 @@ A parent task is useful when:
 
 Avoid over-grouping. If the work naturally forms two unrelated technical streams, prefer two parent tasks.
 
+## Jira link policy
+
+The hierarchy alone is not enough. Model the non-hierarchical relationships explicitly.
+
+### `Relates` to business stories
+
+- When a related business story exists, each technical `Tarefa` should receive a `Relates` link to that story.
+- Do not add `Relates` from every `Subtarefa` to the story by default. The parent technical task carries that traceability.
+- If different technical tasks support different stories, link each task only to the story it actually serves.
+
+### `Blocks` for technical sequencing
+
+- Use Jira link type `Blocks` to represent real implementation dependency.
+- Prefer the minimum dependency graph.
+- Avoid redundant transitive edges.
+
+Good examples:
+
+- `Tarefa A blocks Tarefa B` when the entire downstream stream depends on the upstream stream
+- `Subtarefa A1 blocks Subtarefa B2` when only that specific slice is a prerequisite
+
+Weak examples:
+
+- `A blocks B`, `B blocks C`, and `A blocks C` when `A -> C` is already implied
+- using `Relates` when the relationship is actually sequencing or blocking
+- adding the same blocking intent both between parent tasks and between all child subtasks without a distinct reason
+
+### Choosing the right level
+
+- Use task-level `Blocks` when the whole technical stream is gated by another stream.
+- Use subtask-level `Blocks` when only one specific slice is gated.
+- Do not duplicate the same dependency at both levels unless the two links communicate different real constraints.
+
+### Link direction
+
+Use one rule consistently:
+
+- if `A` must complete before `B` can proceed safely, then `A blocks B`
+
 ## Naming guidance
 
 Good titles reveal the dominant technical boundary and the value of the slice.
@@ -129,3 +168,6 @@ Before presenting the breakdown, verify all items below.
 - no generic cleanup or final testing ticket remains without strong reason
 - unresolved design decisions were not hidden under implementation work
 - task descriptions are in Portuguese using the standard section structure
+- every technical `Tarefa` linked to a known business story has a planned `Relates`
+- every real sequencing dependency is represented by the minimum necessary `Blocks` links
+- the chosen `Blocks` links are at the right level: task or subtask
