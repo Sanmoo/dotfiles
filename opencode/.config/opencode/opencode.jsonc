@@ -2,15 +2,11 @@
   "$schema": "https://opencode.ai/config.json",
   "autoupdate": true,
   "plugin": [
-    // "oh-my-opencode@latest"
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "@franlol/opencode-md-table-formatter@latest",
+    "@mohak34/opencode-notifier@latest"
   ],
-  "instructions": [
-    // PDCA Workflow
-    // see: https://www.infoq.com/articles/PDCA-AI-code-generation/
-    ".opencode/workflow.md",
-    // Pre-commit validations in PDCA Workflow.
-    ".opencode/validation.md"
-  ],
+  "instructions": [],
   "mcp": {
     "playwright": {
       "type": "local",

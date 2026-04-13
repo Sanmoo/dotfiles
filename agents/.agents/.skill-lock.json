@@ -19,6 +19,15 @@
       "skillFolderHash": "3013fdeb8a11b10b1eb795ec3ae8bfca38f7c26d",
       "installedAt": "2026-04-13T15:17:00.547Z",
       "updatedAt": "2026-04-13T15:17:00.547Z"
+    },
+    "excalidraw-diagram": {
+      "source": "coleam00/excalidraw-diagram-skill",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/coleam00/excalidraw-diagram-skill.git",
+      "skillPath": "SKILL.md",
+      "skillFolderHash": "8646fcc9f74f38539c6cdb4c969723336a96ddcd",
+      "installedAt": "2026-04-13T19:01:04.425Z",
+      "updatedAt": "2026-04-13T19:01:04.425Z"
     }
   },
   "dismissed": {
