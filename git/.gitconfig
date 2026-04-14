@@ -24,6 +24,10 @@
 	conflictstyle = diff3
 	tool = meld
 
+[merge "mergiraf"]
+  name = mergiraf
+  driver = mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L
+
 [diff]
   colorMoved = default
   renameLimit = 15402
