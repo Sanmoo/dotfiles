@@ -134,28 +134,30 @@ Write each parent `Tarefa` in Portuguese using exactly this section structure an
 
 Use Portuguese with normal spelling and accents. Do not simplify Portuguese text to ASCII.
 
+Before presenting the draft or creating Jira issues, normalize headings and prose to correct Portuguese orthography. Never emit ASCII simplifications such as `Tecnicos`, `Criterios`, `Dependencias`, or `Referencia`.
+
 When drafting for Jira, prefer a simple structure that renders reliably in Jira issue descriptions: section headings plus bullet lists. Do not depend on visual checklist rendering.
 
 ```markdown
 ## Contexto
-[Resumo do problema, do design doc e do recorte tecnico desta task.]
+[Resumo do problema, do design doc e do recorte técnico desta task.]
 
 ## Objetivo
-[Resultado tecnico coeso que esta task organiza.]
+[Resultado técnico coeso que esta task organiza.]
 
-## Requisitos Tecnicos
+## Requisitos Técnicos
 - Item 1
 - Item 2
 - Item 3
 
-## Criterios de Aceitacao
-- Criterio 1
-- Criterio 2
-- Criterio 3
+## Critérios de Aceitação
+- Critério 1
+- Critério 2
+- Critério 3
 
-## Notas Tecnicas
+## Notas Técnicas
 - Design doc relacionado: ...
-- Dependencias relevantes: ...
+- Dependências relevantes: ...
 - Fora de escopo: ...
 ```
 
@@ -176,28 +178,30 @@ Write each `Subtarefa` in Portuguese using exactly this section structure and no
 
 Use Portuguese with normal spelling and accents. Do not simplify Portuguese text to ASCII.
 
+Before presenting the draft or creating Jira issues, normalize headings and prose to correct Portuguese orthography. Never emit ASCII simplifications such as `Tecnicos`, `Criterios`, `Dependencia`, or `Referencia`.
+
 Keep the description Jira-friendly: section headings plus standard bullet lists. Do not depend on visual checklist rendering.
 
 ```markdown
 ## Contexto
-[Recorte tecnico especifico derivado da task pai.]
+[Recorte técnico específico derivado da task pai.]
 
 ## Objetivo
-[Entrega unica, pequena e mergeavel.]
+[Entrega única, pequena e mergeável.]
 
-## Requisitos Tecnicos
-- Mudanca principal
-- Ajuste de contrato, teste, mock ou documentacao necessario para manter a main integra
-- Restricao ou cuidado tecnico relevante, quando aplicavel
+## Requisitos Técnicos
+- Mudança principal
+- Ajuste de contrato, teste, mock ou documentação necessário para manter a main íntegra
+- Restrição ou cuidado técnico relevante, quando aplicável
 
-## Criterios de Aceitacao
+## Critérios de Aceitação
 - O comportamento ou contrato esperado fica implementado
 - Os artefatos impactados ficam consistentes no mesmo PR
-- A entrega deixa o repositorio e o fluxo afetado em estado consistente
+- A entrega deixa o repositório e o fluxo afetado em estado consistente
 
-## Notas Tecnicas
-- Dependencia de: ...
-- Referencia do design doc: ...
+## Notas Técnicas
+- Dependência de: ...
+- Referência do design doc: ...
 - Fora de escopo: ...
 ```
 
@@ -251,6 +255,8 @@ Before presenting the result, verify all of the following.
 8. Every real dependency is represented either in the hierarchy or in the explicit `Blocks` plan.
 9. The dependency graph uses the minimum number of `Blocks` links necessary to preserve execution constraints.
 10. Every technical `Tarefa` that supports a known business story has a planned `Relates` link to that story.
+11. If the output is in Portuguese, headings and prose use correct accents and standard spelling.
+12. The Jira-ready text does not contain ASCII simplifications such as `Tecnicos`, `Criterios`, `Dependencias`, `Dependencia`, or `Referencia`.
 
 If any check fails, revise the breakdown before showing it to the user.
 
@@ -277,7 +283,7 @@ For Jira creation:
 5. Preserve the exact text structure used in the draft, adapting only what is necessary to match the rendering and issue-type conventions of the target Jira project.
 6. Read back the created issues before declaring success.
 7. Verify at minimum: issue type, parent-child relationship, Jira links, and visible description structure.
-8. If the rendered description lost headings, bullets, or other essential structure, fix the issue before concluding.
+8. If the rendered description lost headings, bullets, accents, or other essential structure, fix the issue before concluding.
 9. If the user asked only for a draft, stop before creation.
 
 Expected output: a markdown draft, or a created Jira hierarchy when explicitly requested.
