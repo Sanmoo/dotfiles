@@ -6,24 +6,26 @@ Use these templates when drafting Jira-ready items from a design doc.
 
 Use this ticket body for the Jira description. Keep Jira links outside the description as explicit draft metadata.
 
+Prefer headings and standard bullet lists that render reliably in Jira. Do not depend on visual checklists.
+
 ```markdown
-Contexto
+## Contexto
 [Resumo do problema, da decisao do design doc e do recorte tecnico desta task.]
 
-Objetivo
+## Objetivo
 [Resultado tecnico coeso que esta task organiza.]
 
-Requisitos Tecnicos
-[ ] Entrega tecnica 1
-[ ] Entrega tecnica 2
-[ ] Entrega tecnica 3
+## Requisitos Tecnicos
+- Entrega tecnica 1
+- Entrega tecnica 2
+- Entrega tecnica 3
 
-Criterios de Aceitacao
-[ ] O objetivo tecnico da task fica claramente coberto pelas subtarefas
-[ ] Cada subtask proposta gera um PR mergeavel na main
-[ ] O recorte respeita as fronteiras tecnicas definidas no design doc
+## Criterios de Aceitacao
+- O objetivo tecnico da task fica claramente coberto pelas subtarefas
+- A instrumentacao, contrato ou configuracao proposta fica coerente com o escopo decidido
+- O texto deixa claro o limite tecnico desta task
 
-Notas Tecnicas
+## Notas Tecnicas
 - Design doc relacionado: ...
 - Dependencias relevantes: ...
 - Fora de escopo: ...
@@ -33,24 +35,26 @@ Notas Tecnicas
 
 Use this ticket body for the Jira description. Keep Jira links outside the description as explicit draft metadata.
 
+Prefer headings and standard bullet lists that render reliably in Jira. Do not depend on visual checklists.
+
 ```markdown
-Contexto
+## Contexto
 [Recorte tecnico especifico derivado da task pai.]
 
-Objetivo
+## Objetivo
 [Entrega unica, pequena e mergeavel.]
 
-Requisitos Tecnicos
-[ ] Mudanca principal
-[ ] Ajuste de teste, mock, snapshot, OpenAPI ou documentacao necessario para manter a main integra
-[ ] Restricao ou cuidado tecnico relevante, quando aplicavel
+## Requisitos Tecnicos
+- Mudanca principal
+- Ajuste de teste, mock, snapshot, OpenAPI ou documentacao necessario para manter a main integra
+- Restricao ou cuidado tecnico relevante, quando aplicavel
 
-Criterios de Aceitacao
-[ ] O comportamento ou contrato esperado fica implementado
-[ ] Os artefatos impactados ficam consistentes no mesmo PR
-[ ] A subtask gera um PR mergeavel na main
+## Criterios de Aceitacao
+- O comportamento ou contrato esperado fica implementado
+- Os artefatos impactados ficam consistentes no mesmo PR
+- O resultado deixa o fluxo afetado em estado tecnico consistente
 
-Notas Tecnicas
+## Notas Tecnicas
 - Dependencia de: ...
 - Referencia do design doc: ...
 - Fora de escopo: ...
@@ -109,10 +113,12 @@ Vinculos Jira:
 ## Wording Guidance
 
 - Use Portuguese for headings and prose.
+- Use natural Portuguese with correct accents.
 - Keep the text technical, not managerial.
 - Keep `Objetivo` focused on the result, not on a vague action.
 - Write `Requisitos Tecnicos` as concrete implementation work.
 - Write `Criterios de Aceitacao` as observable outcomes.
+- Do not use acceptance criteria that merely restate process guarantees such as "gera PR mergeavel".
 - Use `Notas Tecnicas` for dependencies, references, assumptions, and explicit out-of-scope notes.
 
 ## Common Rewrites

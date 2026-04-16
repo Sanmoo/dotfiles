@@ -30,23 +30,30 @@ Detect the Jira project, business-story context, and linking context before prop
 
 1. Check workspace Jira context first if available.
 2. Reuse a project key already established in the current conversation if one exists.
-3. Identify whether there is a related business story, epic, or upstream Jira item that the technical work should reference.
-4. If the Jira project or the related business story is still ambiguous, ask the user explicitly.
-5. Never assume a fixed project key as global default.
+3. Inspect recent issues from the target Jira project before proposing or creating issues.
+4. Confirm the exact issue type names accepted by that project, especially the parent and child issue types.
+5. Observe the local conventions of the board, including title style, wording density, and description structure.
+6. Identify whether there is a related business story, epic, or upstream Jira item that the technical work should reference.
+7. If the Jira project or the related business story is still ambiguous, ask the user explicitly.
+8. Never assume a fixed project key as global default.
 
-When proposing or creating issues, use `Tarefa` as the default parent type and `Subtarefa` as the default child type unless the user explicitly wants another structure.
+When proposing or creating issues, use `Tarefa` as the default parent type and `Subtarefa` as the default child type only after confirming that these exact type names are accepted by the target project. If the project uses different names, reuse the names observed in that board.
 
 When a related business story exists, the default policy is:
 
 - each technical `Tarefa` must receive a Jira link of type `Relates` to the related business story
 - `Subtarefas` do not receive `Relates` to the business story by default unless the user explicitly asks for it
 
-Expected output: a confirmed Jira project context, a confirmed or explicitly missing related business story, or a clear follow-up question to the user.
+Expected output: a confirmed Jira project context, confirmed issue type names and board conventions, a confirmed or explicitly missing related business story, or a clear follow-up question to the user.
 
 ### Step 3: Read the design as implementation input, not as prose
 
 Extract the minimum set of decisions needed to drive decomposition.
 
+- Identify all input sources that influence the breakdown, such as design docs, Jira issues, pull requests, runbooks, dashboards, or operational tickets.
+- Classify each source as one of: `normative`, `contextual`, or `operational`.
+- If multiple sources disagree in scope or level of detail, surface the conflict explicitly instead of silently merging them.
+- Confirm with the user which source should drive the implementation scope when the answer is not obvious.
 - Identify the technical problem being solved.
 - Identify what is already decided versus what remains open.
 - Identify impacted modules, bounded responsibilities, integrations, contracts, operational concerns, and migration constraints.
@@ -55,7 +62,9 @@ Extract the minimum set of decisions needed to drive decomposition.
 
 If the design doc references code architecture or repository conventions, read those references before decomposing. Only read additional references when they materially affect the breakdown.
 
-Expected output: a compact internal map of responsibilities, dependencies, and unresolved decisions.
+If the user is adapting work already implemented by another team, do not expand the breakdown beyond the validated scope of the chosen sources unless the user explicitly asks for a broader proposal.
+
+Expected output: a compact internal map of sources, responsibilities, dependencies, and unresolved decisions, with any scope conflict made explicit.
 
 ### Step 4: Choose the right breakdown mode
 
@@ -123,24 +132,28 @@ Expected output: a set of candidate tasks that respect TBD constraints.
 
 Write each parent `Tarefa` in Portuguese using exactly this section structure and no `Estimate` section.
 
+Use Portuguese with normal spelling and accents. Do not simplify Portuguese text to ASCII.
+
+When drafting for Jira, prefer a simple structure that renders reliably in Jira issue descriptions: section headings plus bullet lists. Do not depend on visual checklist rendering.
+
 ```markdown
-Contexto
+## Contexto
 [Resumo do problema, do design doc e do recorte tecnico desta task.]
 
-Objetivo
+## Objetivo
 [Resultado tecnico coeso que esta task organiza.]
 
-Requisitos Tecnicos
-[ ] Item 1
-[ ] Item 2
-[ ] Item 3
+## Requisitos Tecnicos
+- Item 1
+- Item 2
+- Item 3
 
-Criterios de Aceitacao
-[ ] Criterio 1
-[ ] Criterio 2
-[ ] Criterio 3
+## Criterios de Aceitacao
+- Criterio 1
+- Criterio 2
+- Criterio 3
 
-Notas Tecnicas
+## Notas Tecnicas
 - Design doc relacionado: ...
 - Dependencias relevantes: ...
 - Fora de escopo: ...
@@ -161,24 +174,28 @@ Expected output: one or more Jira-ready parent tasks in the standard format.
 
 Write each `Subtarefa` in Portuguese using exactly this section structure and no `Estimate` section.
 
+Use Portuguese with normal spelling and accents. Do not simplify Portuguese text to ASCII.
+
+Keep the description Jira-friendly: section headings plus standard bullet lists. Do not depend on visual checklist rendering.
+
 ```markdown
-Contexto
+## Contexto
 [Recorte tecnico especifico derivado da task pai.]
 
-Objetivo
+## Objetivo
 [Entrega unica, pequena e mergeavel.]
 
-Requisitos Tecnicos
-[ ] Mudanca principal
-[ ] Ajuste de contrato, teste, mock ou documentacao necessario para manter a main integra
-[ ] Restricao ou cuidado tecnico relevante, quando aplicavel
+## Requisitos Tecnicos
+- Mudanca principal
+- Ajuste de contrato, teste, mock ou documentacao necessario para manter a main integra
+- Restricao ou cuidado tecnico relevante, quando aplicavel
 
-Criterios de Aceitacao
-[ ] O comportamento ou contrato esperado fica implementado
-[ ] Os artefatos impactados ficam consistentes no mesmo PR
-[ ] A subtask gera um PR mergeavel na main
+## Criterios de Aceitacao
+- O comportamento ou contrato esperado fica implementado
+- Os artefatos impactados ficam consistentes no mesmo PR
+- A entrega deixa o repositorio e o fluxo afetado em estado consistente
 
-Notas Tecnicas
+## Notas Tecnicas
 - Dependencia de: ...
 - Referencia do design doc: ...
 - Fora de escopo: ...
@@ -190,6 +207,7 @@ Subtask guidance:
 - Prefer naming that reveals the mergeable unit of value.
 - Mention dependent issue keys only when the dependency is real and useful.
 - If OpenAPI, snapshots, mocks, or tests are required by the change, keep them in the same subtask instead of creating a generic cleanup subtask.
+- Do not use acceptance criteria that merely restate structural rules of the process, such as "gera um PR mergeavel" or "segue trunk based development". Those are quality constraints of the breakdown, not acceptance criteria for the Jira text.
 
 Expected output: a full child breakdown where each subtask can be executed and merged independently.
 
@@ -256,8 +274,11 @@ For Jira creation:
 2. Create each `Subtarefa` with the parent relationship.
 3. Create `Relates` links from each technical `Tarefa` to the related business story when applicable.
 4. Create `Blocks` links using the planned minimum dependency graph.
-5. Preserve the exact text structure used in the draft.
-6. If the user asked only for a draft, stop before creation.
+5. Preserve the exact text structure used in the draft, adapting only what is necessary to match the rendering and issue-type conventions of the target Jira project.
+6. Read back the created issues before declaring success.
+7. Verify at minimum: issue type, parent-child relationship, Jira links, and visible description structure.
+8. If the rendered description lost headings, bullets, or other essential structure, fix the issue before concluding.
+9. If the user asked only for a draft, stop before creation.
 
 Expected output: a markdown draft, or a created Jira hierarchy when explicitly requested.
 
@@ -301,6 +322,26 @@ Solution:
 1. Ask the user explicitly which Jira project to use.
 2. Produce the markdown draft first.
 3. Delay Jira creation until the project is confirmed.
+
+### Problem: The reference sources imply different scopes
+
+Cause: A PR, Jira issue, design doc, or operational ticket is being treated as if they all describe the same implementation scope.
+
+Solution:
+
+1. Classify each source as normative, contextual, or operational.
+2. Call out the mismatch explicitly.
+3. Ask the user which source should drive the breakdown before decomposing.
+
+### Problem: The Jira issue renders with poor formatting
+
+Cause: The draft used generic markdown assumptions instead of a structure that the current Jira flow renders reliably.
+
+Solution:
+
+1. Use headings and standard bullet lists instead of relying on visual checklists.
+2. Re-read the created issue after creation.
+3. If the structure renders poorly, edit the issue immediately before reporting success.
 
 ### Problem: The related business story is unclear
 

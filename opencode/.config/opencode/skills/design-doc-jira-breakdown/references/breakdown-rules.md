@@ -82,6 +82,8 @@ Instead:
 
 Use discovery when the design still leaves open questions that materially affect the implementation split.
 
+If multiple reference sources disagree in scope, stop and clarify which source drives the breakdown before deciding between discovery and implementation.
+
 Typical discovery signals:
 
 - more than one viable architecture is still being considered
@@ -90,6 +92,8 @@ Typical discovery signals:
 - the design doc itself asks for a recommendation rather than implementation
 
 Do not fake certainty. If the architecture is not closed, generate discovery work first.
+
+When the user is adapting work already implemented by another team, do not broaden the scope beyond the chosen reference sources without explicit confirmation.
 
 ## Parent task strategy
 
@@ -102,6 +106,8 @@ A parent task is useful when:
 - the parent helps explain the why of the decomposition
 
 Avoid over-grouping. If the work naturally forms two unrelated technical streams, prefer two parent tasks.
+
+When technical implementation and operational enablement are both present in the references, consider separate parent tasks for each stream instead of forcing them into one hierarchy.
 
 ## Jira link policy
 
@@ -167,7 +173,10 @@ Before presenting the breakdown, verify all items below.
 - every subtask is mergeable to `main`
 - no generic cleanup or final testing ticket remains without strong reason
 - unresolved design decisions were not hidden under implementation work
+- conflicting sources were reconciled or explicitly called out
 - task descriptions are in Portuguese using the standard section structure
+- task descriptions use wording and structure that render reliably in Jira
+- acceptance criteria describe observable outcomes rather than process guarantees
 - every technical `Tarefa` linked to a known business story has a planned `Relates`
 - every real sequencing dependency is represented by the minimum necessary `Blocks` links
 - the chosen `Blocks` links are at the right level: task or subtask
