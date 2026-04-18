@@ -109,6 +109,7 @@ alias gc="git commit"
 alias ga="git add"
 alias gcl="git clone"
 alias gd="git diff"
+alias gdd="git ddiff"
 alias gl="git log --pretty=tformat:\"%C(yellow)%h %C(cyan)%ad %Cblue%an%C(auto)%d %Creset%s\" --graph --date=format:\"%Y-%m-%d %H:%M\""
 alias gcan="git commit --amend --no-edit"
 alias gca="git commit --amend"
@@ -153,5 +154,3 @@ remind
 # AsyncAPI CLI Autocomplete
 
 ASYNCAPI_AC_ZSH_SETUP_PATH=/Users/rwwowg4/Library/Caches/@asyncapi/cli/autocomplete/zsh_setup && test -f $ASYNCAPI_AC_ZSH_SETUP_PATH && source $ASYNCAPI_AC_ZSH_SETUP_PATH; # asyncapi autocomplete setup
-
-
