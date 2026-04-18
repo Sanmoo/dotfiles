@@ -663,6 +663,35 @@ After generating the model:
 2. Ask the user to validate the model
 3. Offer refinements: "Would you like to add more aggregates, refine attributes, or define state transitions?"
 
+### Step 5: Validate Before Generating (CRITICAL)
+
+**ALWAYS validate the CML file before attempting diagram generation.**
+
+When working with an existing `.cml` file or after making changes:
+
+```bash
+# Step 1: Validate the CML syntax
+cm validate -i model.cml
+
+# Step 2: Only if validation passes, generate diagrams
+cm generate -i model.cml -o output/ -g context-map
+cm generate -i model.cml -o output/ -g plantuml
+```
+
+**Common validation errors to watch for:**
+- Reserved words used as attributes (`description`, etc.)
+- Invalid relationship patterns (`PUBLISHER`, `SUBSCRIBER`)
+- Properties outside braces in relationships
+- Missing `aggregateRoot` marker
+- Duplicate relationships between same contexts
+
+**If validation fails:**
+1. Read the error message carefully
+2. Check line numbers in the error
+3. Refer to "Common Pitfalls and Validation Guide" section
+4. Fix issues one at a time
+5. Re-validate until clean
+
 ---
 
 ## Validation Rules
@@ -1081,6 +1110,147 @@ Entity Order {
   def @OrderId place(@OrderItems items); // CORRECT: def is required in Entities
 }
 ```
+
+---
+
+## Common Pitfalls and Validation Guide
+
+Based on real-world issues encountered when working with CML, here are critical pitfalls to avoid:
+
+### Reserved Words Cannot Be Used as Attribute Names
+
+**CRITICAL**: Some words are reserved in CML and cannot be used as Entity/VO attributes:
+
+| Reserved Word | Where Reserved | Alternative Name |
+|---------------|--------------|------------------|
+| `description` | Relationship blocks | `desc`, `details`, `info` |
+| `implementationTechnology` | Must be inside `{ }` in relationships | N/A - use proper syntax |
+
+**BAD - Using reserved word as attribute:**
+```cml
+Entity Series {
+  String description  // ERROR: description is reserved!
+}
+```
+
+**GOOD - Use alternative name:**
+```cml
+Entity Series {
+  String seriesDescription  // OK
+  String desc               // OK
+}
+```
+
+### Relationship Properties Require Block Syntax
+
+**CRITICAL**: Properties like `implementationTechnology` in relationships **ONLY** work when using block syntax `{ }`:
+
+**BAD - Properties without braces:**
+```cml
+ContextMap MyMap {
+  UserTrackingContext [D,ACL] <- [U,OHS,PL] SeriesCatalogContext
+    implementationTechnology = "RESTful HTTP"  // ERROR: outside braces!
+}
+```
+
+**GOOD - Properties inside braces:**
+```cml
+ContextMap MyMap {
+  UserTrackingContext [D,ACL] <- [U,OHS,PL] SeriesCatalogContext {
+    implementationTechnology = "RESTful HTTP"    // OK: inside braces
+  }
+}
+```
+
+### Valid DDD Relationship Patterns Only
+
+**CRITICAL**: ContextMapper only supports these patterns in relationships:
+
+| Pattern | Abbreviation | Valid In |
+|---------|--------------|----------|
+| Upstream | `U` | Relationships |
+| Downstream | `D` | Relationships |
+| Open Host Service | `OHS` | Upstream only |
+| Published Language | `PL` | Upstream only |
+| Anticorruption Layer | `ACL` | Downstream only |
+| Conformist | `CF` | Downstream only |
+| Supplier | `S` | Upstream only |
+| Customer | `C` | Downstream only |
+| Shared Kernel | `SK` | Bidirectional |
+| Partnership | `P` | Bidirectional |
+
+**INVALID PATTERNS** (will cause parse errors):
+- ~~`PUBLISHER`~~ - Not a valid DDD pattern
+- ~~`SUBSCRIBER`~~ - Not a valid DDD pattern
+- ~~`PRODUCER`~~ - Not a valid DDD pattern
+- ~~`CONSUMER`~~ - Not a valid DDD pattern
+
+**BAD:**
+```cml
+SeriesCatalogContext [PUBLISHER] -> [SUBSCRIBER] UserTrackingContext  // ERROR!
+```
+
+**GOOD:**
+```cml
+SeriesCatalogContext [U] -> [D] UserTrackingContext  // OK - use U/D for event flows
+```
+
+### Always Validate Before Generating
+
+**BEST PRACTICE**: Always run validation before attempting diagram generation:
+
+```bash
+# Validate first
+cm validate -i model.cml
+
+# Only if validation passes, then generate
+cm generate -i model.cml -o output/ -g context-map
+```
+
+### Avoid Duplicate Relationships
+
+**WARNING**: Having multiple relationships between the same two Bounded Contexts can confuse the diagram generator:
+
+**PROBLEMATIC:**
+```cml
+ContextMap MyMap {
+  // Two relationships between same contexts - may cause issues
+  UserTrackingContext [D,ACL] <- [U,OHS,PL] SeriesCatalogContext
+  SeriesCatalogContext [U] -> [D] UserTrackingContext  // Duplicate!
+}
+```
+
+**BETTER:**
+```cml
+ContextMap MyMap {
+  // Single, complete relationship
+  UserTrackingContext [D,ACL] <- [U,OHS,PL] SeriesCatalogContext
+}
+```
+
+### Context Mapper CLI Installation
+
+If the CLI is not available, download from Maven Central:
+
+```bash
+# Download and extract
+curl -L -o cm-cli.tar "https://repo1.maven.org/maven2/org/contextmapper/context-mapper-cli/6.12.0/context-mapper-cli-6.12.0.tar"
+tar -xf cm-cli.tar
+
+# Use the CLI
+./context-mapper-cli-6.12.0/bin/cm validate -i model.cml
+./context-mapper-cli-6.12.0/bin/cm generate -i model.cml -o output/ -g context-map
+```
+
+### Understanding CML Errors
+
+Common error messages and their meaning:
+
+| Error Message | Meaning | Solution |
+|---------------|---------|----------|
+| `mismatched input 'X' expecting RULE_ID` | Used reserved word as identifier | Rename the identifier |
+| `no viable alternative at input 'Y'` | Invalid syntax or unknown keyword | Check spelling and valid patterns |
+| `mismatched input 'description' expecting RULE_CLOSE` | Used `description` property outside braces | Move inside `{ }` or remove |
 
 ---
 
