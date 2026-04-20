@@ -1,3 +1,7 @@
+export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+alias remind="tasks remind"
+remind
+
 export ZSH="$HOME/.oh-my-zsh"
 export GOPATH="$HOME/go"
 
@@ -67,8 +71,6 @@ source $ZSH/oh-my-zsh.sh
 
 # User configuration
 
-export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
-
 # export MANPATH="/usr/local/man:$MANPATH"
 
 # You may need to manually set your language environment
@@ -123,7 +125,6 @@ alias mae="myfin add expense"
 
 ## Misc
 alias jq-less="jq -C '.' | less -R"
-alias remind="tasks remind"
 alias vim=nvim
 alias tat="tmux attach-session -t"
 alias mux="tmuxinator"
@@ -143,14 +144,5 @@ eval "$(zoxide init zsh)"
 
 source ~/.env
 
-# jj autocompletion
-source <(COMPLETE=zsh jj)
-
 # opencode
 export PATH=$HOME/.opencode/bin:$PATH
-
-remind
-
-# AsyncAPI CLI Autocomplete
-
-ASYNCAPI_AC_ZSH_SETUP_PATH=/Users/rwwowg4/Library/Caches/@asyncapi/cli/autocomplete/zsh_setup && test -f $ASYNCAPI_AC_ZSH_SETUP_PATH && source $ASYNCAPI_AC_ZSH_SETUP_PATH; # asyncapi autocomplete setup
