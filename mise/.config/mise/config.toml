@@ -14,7 +14,7 @@ ktlint = "latest"
 jujutsu = "latest"
 terraform = "latest"
 gradle = "latest"
-aws = "latest"
+aws = { version = "latest", symlink_bins = "true" }
 yarn = "1.22.22"
 
 # [settings]
