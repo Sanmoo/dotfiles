@@ -6,3 +6,8 @@ ZSH_THEME="robbyrussell"
 
 alias c="wl-copy"
 alias open="xdg-open"
+
+export ANDROID_SDK_ROOT=$HOME/Android/Sdk
+export PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+export PATH="$PATH:$ANDROID_SDK_ROOT/platform-tools"
+export CHROME_EXECUTABLE="/usr/bin/google-chrome-stable"
