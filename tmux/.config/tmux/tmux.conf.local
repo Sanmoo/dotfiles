@@ -552,4 +552,9 @@ bind C-K select-pane -D
 set -g extended-keys on
 set -g extended-keys-format csi-u
 
+# Toggle to the last active session (C-a C-s, s = session)
 bind-key -T prefix C-s switch-client -l
+
+# Toggle to the last active pane (C-a C-p, p = pane)
+# If current pane is zoomed, unzoom and re-zoom the target pane
+bind-key -T prefix C-p if-shell -F '#{window_zoomed_flag}' 'select-pane -l; resize-pane -Z' 'select-pane -l'
