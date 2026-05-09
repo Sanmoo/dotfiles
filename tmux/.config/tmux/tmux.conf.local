@@ -551,3 +551,5 @@ bind C-K select-pane -D
 
 set -g extended-keys on
 set -g extended-keys-format csi-u
+
+bind-key -T prefix C-s switch-client -l
