@@ -1,0 +1,15 @@
+{
+  "lastChangelogVersion": "0.74.0",
+  "enabledModels": [
+    "opencode-go/kimi-k2.6",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/deepseek-v4-flash"
+  ],
+  "defaultProvider": "opencode-go",
+  "defaultModel": "deepseek-v4-flash",
+  "defaultThinkingLevel": "xhigh",
+  "hideThinkingBlock": true,
+  "packages": [
+    "git:github.com/obra/superpowers"
+  ]
+}
