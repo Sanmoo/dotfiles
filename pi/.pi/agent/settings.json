@@ -10,6 +10,11 @@
   "defaultThinkingLevel": "xhigh",
   "hideThinkingBlock": true,
   "packages": [
-    "git:github.com/obra/superpowers"
+    "git:github.com/obra/superpowers",
+    "npm:pi-subagents",
+    "npm:@juicesharp/rpiv-todo",
+    "npm:@ollama/pi-web-search",
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:pi-lens"
   ]
 }
