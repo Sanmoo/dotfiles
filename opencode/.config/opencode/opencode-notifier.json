@@ -6,7 +6,7 @@
   "showProjectName": true,
   "showSessionTitle": true,
   "showIcon": true,
-  "suppressWhenFocused": true,
+  "suppressWhenFocused": false,
   "enableOnDesktop": false,
   "linux": {
     "grouping": false
