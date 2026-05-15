@@ -33,16 +33,24 @@ export default function (pi: ExtensionAPI) {
 		if (!enabled) return;
 
 		const session = pi.getSessionName();
-		const label = session && session.trim() ? session : path.basename(process.cwd());
+		const label =
+			session && session.trim() ? session : path.basename(process.cwd());
 
-		execFile("notify-send", ["Pi", `Ready for input \u2014 ${label}`], (err) => {
-			if (!err) return;
-			if (typeof err === "object" && "code" in err && err.code === "ENOENT") {
-				// notify-send not installed — fail silently
-				return;
-			}
-			console.warn("notify-send failed (non-fatal):", err.message);
-		});
+		// Terminal bell (audible or visual flash)
+		process.stdout.write("\x07");
+
+		execFile(
+			"notify-send",
+			["Pi", `Ready for input \u2014 ${label}`],
+			(err) => {
+				if (!err) return;
+				if (typeof err === "object" && "code" in err && err.code === "ENOENT") {
+					// notify-send not installed — fail silently
+					return;
+				}
+				console.warn("notify-send failed (non-fatal):", err.message);
+			},
+		);
 	});
 
 	// /notify command to control notifications
