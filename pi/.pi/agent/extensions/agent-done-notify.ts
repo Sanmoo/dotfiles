@@ -28,8 +28,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// Fire notification when agent finishes
-	pi.on("agent_end", () => {
+	function notifyUser() {
 		if (!enabled) return;
 
 		const session = pi.getSessionName();
@@ -60,6 +59,18 @@ export default function (pi: ExtensionAPI) {
 				console.warn("notify-send failed (non-fatal):", err.message);
 			},
 		);
+	}
+
+	// Fire notification when agent finishes
+	pi.on("agent_end", () => {
+		notifyUser();
+	});
+
+	// Fire notification when agent asks a question (waiting for user input)
+	pi.on("tool_call", (event) => {
+		if (event.toolName === "ask_user_question") {
+			notifyUser();
+		}
 	});
 
 	// /notify command to control notifications
