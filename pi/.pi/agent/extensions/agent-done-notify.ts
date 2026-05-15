@@ -36,15 +36,20 @@ export default function (pi: ExtensionAPI) {
 		const label =
 			session && session.trim() ? session : path.basename(process.cwd());
 
-		// Terminal bell (audible or visual flash)
-		process.stdout.write("\x07");
+		// Play notification sound via PipeWire (freedesktop sound theme)
+		execFile("pw-play", ["/usr/share/sounds/freedesktop/stereo/complete.oga"], (err) => {
+			if (!err) return;
+			if (err.code === "ENOENT") {
+				// pw-play not available — skip sound silently
+			}
+		});
 
 		execFile(
 			"notify-send",
 			["Pi", `Ready for input \u2014 ${label}`],
 			(err) => {
 				if (!err) return;
-				if (typeof err === "object" && "code" in err && err.code === "ENOENT") {
+				if (err.code === "ENOENT") {
 					// notify-send not installed — fail silently
 					return;
 				}
