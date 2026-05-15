@@ -8,14 +8,13 @@
   "defaultProvider": "opencode-go",
   "defaultModel": "deepseek-v4-flash",
   "defaultThinkingLevel": "xhigh",
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",
     "npm:@juicesharp/rpiv-todo",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-lens",
-    "npm:pi-web-access",
-    "npm:pi-chime"
+    "npm:pi-web-access"
   ]
 }

@@ -37,12 +37,16 @@ export default function (pi: ExtensionAPI) {
 			session && session.trim() ? session : path.basename(process.cwd());
 
 		// Play notification sound via PipeWire (freedesktop sound theme)
-		execFile("pw-play", ["/usr/share/sounds/freedesktop/stereo/complete.oga"], (err) => {
-			if (!err) return;
-			if (err.code === "ENOENT") {
-				// pw-play not available — skip sound silently
-			}
-		});
+		execFile(
+			"pw-play",
+			["/usr/share/sounds/freedesktop/stereo/complete.oga"],
+			(err) => {
+				if (!err) return;
+				if (err.code === "ENOENT") {
+					// pw-play not available — skip sound silently
+				}
+			},
+		);
 
 		execFile(
 			"notify-send",
