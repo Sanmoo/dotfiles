@@ -23,13 +23,17 @@ function buildSessionTitle(pi: ExtensionAPI): string {
 }
 
 function setTmuxPaneTitle(title: string) {
-	if (!process.env.TMUX) return;
-	execFile("tmux", ["select-pane", "-T", title], (err) => {
-		// Silently ignore errors (e.g., tmux not available, pane detached)
-		if (err && err.code !== "ENOENT") {
-			// Only log unexpected errors
-		}
-	});
+	if (!process.env.TMUX || !process.env.TMUX_PANE) return;
+	execFile(
+		"tmux",
+		["select-pane", "-t", process.env.TMUX_PANE!, "-T", title],
+		(err) => {
+			// Silently ignore errors (e.g., tmux not available, pane detached)
+			if (err && err.code !== "ENOENT") {
+				// Only log unexpected errors
+			}
+		},
+	);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -56,9 +60,19 @@ export default function (pi: ExtensionAPI) {
 
 	// Clean up on shutdown
 	pi.on("session_shutdown", async (_event, ctx) => {
-		if (process.env.TMUX) {
+		if (process.env.TMUX && process.env.TMUX_PANE) {
 			// Reset to cwd basename when pi exits
-			execFile("tmux", ["select-pane", "-T", path.basename(process.cwd())], () => {});
+			execFile(
+				"tmux",
+				[
+					"select-pane",
+					"-t",
+					process.env.TMUX_PANE!,
+					"-T",
+					path.basename(process.cwd()),
+				],
+				() => {},
+			);
 		}
 		ctx.ui.setTitle("");
 	});
