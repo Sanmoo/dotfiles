@@ -13,6 +13,9 @@ import { execFile } from "node:child_process";
 const STORAGE_KEY = "agent-done-notify";
 
 export default function (pi: ExtensionAPI) {
+	// Skip in subagent child processes to avoid premature notifications
+	// while the parent orchestrator agent is still running.
+	if (process.env.PI_SUBAGENT_CHILD === "1") return;
 	let enabled = true;
 
 	// Restore persisted state on session start
