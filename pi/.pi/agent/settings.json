@@ -8,7 +8,7 @@
   "defaultProvider": "opencode-go",
   "defaultModel": "deepseek-v4-flash",
   "defaultThinkingLevel": "xhigh",
-  "hideThinkingBlock": false,
+  "hideThinkingBlock": true,
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",

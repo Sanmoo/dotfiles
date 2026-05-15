@@ -552,6 +552,9 @@ bind C-K select-pane -D
 set -g extended-keys on
 set -g extended-keys-format csi-u
 
+# Tell tmux that the outer terminal supports extended keys (Alacritty with TERM=xterm-256color)
+set -ga terminal-features ',*xterm*:extkeys'
+
 # Toggle to the last active session (C-a C-s, s = session)
 bind-key -T prefix C-s switch-client -l
 
