@@ -202,7 +202,10 @@ export default function (pi: ExtensionAPI) {
 	// ── model_select: restore only defaultModel/defaultProvider ──
 	pi.on("model_select", async () => {
 		if (!settingsPath || !snapshot) return;
-		restoreSettings(settingsPath, snapshot, ["defaultModel", "defaultProvider"]);
+		restoreSettings(settingsPath, snapshot, [
+			"defaultModel",
+			"defaultProvider",
+		]);
 	});
 
 	// ── thinking_level_select: restore only defaultThinkingLevel ──
