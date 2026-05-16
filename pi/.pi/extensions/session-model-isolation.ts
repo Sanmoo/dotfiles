@@ -11,6 +11,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	unlinkSync,
 	writeFileSync,
@@ -167,6 +168,108 @@ export function restoreSettings(
 	}
 }
 
+/**
+ * Extract a field value from YAML frontmatter in markdown text.
+ * Returns the trimmed value, or undefined if frontmatter/field missing.
+ */
+function extractFrontmatterField(content: string, field: string): string | undefined {
+	const match = content.match(/^---\n([\s\S]*?)\n---/);
+	if (!match) return undefined;
+	const fm = match[1];
+	const re = new RegExp(`^${field}:\\s*(.+)$`, "m");
+	const fmMatch = fm.match(re);
+	return fmMatch?.[1]?.trim();
+}
+
+/**
+ * Scan a directory for agent .md files with a `model` field in frontmatter.
+ * Returns a Set of agent names that have models configured.
+ */
+function scanAgentDir(dir: string): Set<string> {
+	const found = new Set<string>();
+	if (!existsSync(dir)) return found;
+
+	let entries: string[];
+	try {
+		entries = readdirSync(dir);
+	} catch {
+		return found;
+	}
+
+	for (const entry of entries) {
+		if (!entry.endsWith(".md")) continue;
+		const filePath = resolve(dir, entry);
+		try {
+			const content = readFileSync(filePath, "utf-8");
+			const model = extractFrontmatterField(content, "model");
+			if (model && model !== "false") {
+				const name = entry.replace(/\.md$/, "");
+				found.add(name);
+			}
+		} catch {
+			// skip unreadable files
+		}
+	}
+	return found;
+}
+
+/**
+ * Read settings.json and extract agent names that have `model` defined
+ * in `subagents.agentOverrides` (where model is a non-false string).
+ */
+function scanSettingsOverrides(cwd: string): Set<string> {
+	const found = new Set<string>();
+	const sp = resolveSettingsPath(cwd);
+	if (!sp) return found;
+
+	let settings: Record<string, unknown>;
+	try {
+		settings = readSettings(sp);
+	} catch {
+		return found;
+	}
+
+	const subagents = settings.subagents as Record<string, unknown> | undefined;
+	if (!subagents || typeof subagents !== "object") return found;
+
+	const overrides = subagents.agentOverrides as Record<string, unknown> | undefined;
+	if (!overrides || typeof overrides !== "object") return found;
+
+	for (const [name, cfg] of Object.entries(overrides)) {
+		if (cfg && typeof cfg === "object" && !Array.isArray(cfg)) {
+			const model = (cfg as Record<string, unknown>).model;
+			if (typeof model === "string") {
+				found.add(name);
+			}
+		}
+	}
+	return found;
+}
+
+/**
+ * Cache of agent names that have a `model` configured (frontmatter or settings).
+ * Built once at session_start, then used for O(1) lookup in tool_call.
+ */
+let agentModelCache: Set<string> = new Set();
+
+function buildAgentModelCache(cwd: string): void {
+	agentModelCache = new Set<string>();
+
+	// 1. User agents (~/.pi/agent/agents/)
+	const userDir = resolve(homedir(), ".pi", "agent", "agents");
+	for (const name of scanAgentDir(userDir)) agentModelCache.add(name);
+
+	// 2. Project agents (.pi/agents/)
+	const root = findProjectRoot(cwd);
+	if (root) {
+		const projDir = resolve(root, ".pi", "agents");
+		for (const name of scanAgentDir(projDir)) agentModelCache.add(name);
+	}
+
+	// 3. Settings overrides (subagents.agentOverrides with model: string)
+	for (const name of scanSettingsOverrides(cwd)) agentModelCache.add(name);
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
@@ -197,6 +300,9 @@ export default function (pi: ExtensionAPI) {
 
 		// Create .bak for crash recovery
 		writeSettings(bakPath, { ...settings, ...snapshot });
+
+		// Build agent model cache (scanned once per session)
+		buildAgentModelCache(ctx.cwd);
 	});
 
 	// ── model_select: restore only defaultModel/defaultProvider ──
@@ -227,30 +333,43 @@ export default function (pi: ExtensionAPI) {
 			thinking && thinking !== "off" ? `${modelStr}:${thinking}` : modelStr;
 
 		// Inject at top level (single agent mode)
-		if (!input.model) {
+		// Skip if agent already has model configured (checked via cache)
+		const agentName = typeof input.agent === "string" ? input.agent : undefined;
+		if (!input.model && !(agentName && agentModelCache.has(agentName))) {
 			input.model = modelWithThinking;
 		}
 
 		// Inject into parallel tasks
+		// Skip for tasks whose agent already has a model configured
 		if (Array.isArray(input.tasks)) {
 			for (const task of input.tasks as Record<string, unknown>[]) {
 				if (!task.model) {
-					task.model = modelWithThinking;
+					const taskAgent = typeof task.agent === "string" ? task.agent : undefined;
+					if (!taskAgent || !agentModelCache.has(taskAgent)) {
+						task.model = modelWithThinking;
+					}
 				}
 			}
 		}
 
 		// Inject into chain steps
+		// Skip for steps whose agent already has a model configured
 		if (Array.isArray(input.chain)) {
 			for (const step of input.chain as Record<string, unknown>[]) {
 				if (!step.model) {
-					step.model = modelWithThinking;
+					const stepAgent = typeof step.agent === "string" ? step.agent : undefined;
+					if (!stepAgent || !agentModelCache.has(stepAgent)) {
+						step.model = modelWithThinking;
+					}
 				}
 				// Inject into chain → parallel tasks
 				if (Array.isArray(step.parallel)) {
 					for (const ptask of step.parallel as Record<string, unknown>[]) {
 						if (!ptask.model) {
-							ptask.model = modelWithThinking;
+							const ptAgent = typeof ptask.agent === "string" ? ptask.agent : undefined;
+							if (!ptAgent || !agentModelCache.has(ptAgent)) {
+								ptask.model = modelWithThinking;
+							}
 						}
 					}
 				}
