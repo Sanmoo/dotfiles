@@ -82,7 +82,10 @@ export function readSettings(path: string): Record<string, unknown> {
 /**
  * Write settings object to a JSON file, creating parent directories if needed.
  */
-export function writeSettings(path: string, settings: Record<string, unknown>): void {
+export function writeSettings(
+	path: string,
+	settings: Record<string, unknown>,
+): void {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, JSON.stringify(settings, null, 2) + "\n", "utf-8");
 }
@@ -90,7 +93,9 @@ export function writeSettings(path: string, settings: Record<string, unknown>): 
 /**
  * Extract the three model/thinking fields from a full settings object.
  */
-export function snapshotSettings(settings: Record<string, unknown>): SettingsSnapshot {
+export function snapshotSettings(
+	settings: Record<string, unknown>,
+): SettingsSnapshot {
 	return {
 		defaultModel: settings.defaultModel as string | undefined,
 		defaultProvider: settings.defaultProvider as string | undefined,
@@ -106,13 +111,20 @@ export function snapshotSettings(settings: Record<string, unknown>): SettingsSna
  * If a field is `undefined` in the snapshot but present in the file, it is
  * deleted from the persisted settings.
  */
-export function restoreSettings(filePath: string, snapshot: SettingsSnapshot): void {
+export function restoreSettings(
+	filePath: string,
+	snapshot: SettingsSnapshot,
+): void {
 	if (!existsSync(filePath)) return;
 
 	const current = readSettings(filePath);
 	let changed = false;
 
-	for (const key of ["defaultModel", "defaultProvider", "defaultThinkingLevel"] as const) {
+	for (const key of [
+		"defaultModel",
+		"defaultProvider",
+		"defaultThinkingLevel",
+	] as const) {
 		const snapVal = snapshot[key];
 		if (snapVal === undefined) {
 			// Field not in snapshot -> remove from file if present
@@ -139,8 +151,8 @@ export function restoreSettings(filePath: string, snapshot: SettingsSnapshot): v
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
-	const snapshot: SettingsSnapshot | null = null;
-	const settingsPath: string | null = null;
+	let snapshot: SettingsSnapshot | null = null;
+	let settingsPath: string | null = null;
 
 	// ... handlers to be added in subsequent tasks
 }
