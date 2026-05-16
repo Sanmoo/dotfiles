@@ -65,18 +65,35 @@ export function resolveSettingsPath(cwd: string): string | null {
 /**
  * Shape of the three model/thinking fields we care about.
  */
-export interface SettingsSnapshot {
-	defaultModel?: string;
-	defaultProvider?: string;
-	defaultThinkingLevel?: string;
-}
+
+const SETTINGS_KEYS = ["defaultModel", "defaultProvider", "defaultThinkingLevel"] as const;
+type SettingsKey = typeof SETTINGS_KEYS[number];
+
+export type SettingsSnapshot = {
+	[K in SettingsKey]?: string;
+};
 
 /**
  * Read and parse a JSON settings file.
  */
 export function readSettings(path: string): Record<string, unknown> {
-	const raw = readFileSync(path, "utf-8");
-	return JSON.parse(raw) as Record<string, unknown>;
+	let parsed: unknown;
+	try {
+		const raw = readFileSync(path, "utf-8");
+		parsed = JSON.parse(raw);
+	} catch (e) {
+		throw new Error(
+			`Failed to parse settings file ${path}: ${(e as Error).message}`,
+		);
+	}
+	if (
+		typeof parsed !== "object" ||
+		parsed === null ||
+		Array.isArray(parsed)
+	) {
+		throw new Error(`Settings file ${path} must contain a JSON object`);
+	}
+	return parsed as Record<string, unknown>;
 }
 
 /**
@@ -96,11 +113,11 @@ export function writeSettings(
 export function snapshotSettings(
 	settings: Record<string, unknown>,
 ): SettingsSnapshot {
-	return {
-		defaultModel: settings.defaultModel as string | undefined,
-		defaultProvider: settings.defaultProvider as string | undefined,
-		defaultThinkingLevel: settings.defaultThinkingLevel as string | undefined,
-	};
+	const result: Record<string, string | undefined> = {};
+	for (const key of SETTINGS_KEYS) {
+		result[key] = (settings[key] as string | undefined) ?? undefined;
+	}
+	return result as unknown as SettingsSnapshot;
 }
 
 /**
@@ -120,11 +137,7 @@ export function restoreSettings(
 	const current = readSettings(filePath);
 	let changed = false;
 
-	for (const key of [
-		"defaultModel",
-		"defaultProvider",
-		"defaultThinkingLevel",
-	] as const) {
+	for (const key of SETTINGS_KEYS) {
 		const snapVal = snapshot[key];
 		if (snapVal === undefined) {
 			// Field not in snapshot -> remove from file if present
@@ -151,8 +164,9 @@ export function restoreSettings(
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
-	let snapshot: SettingsSnapshot | null = null;
-	let settingsPath: string | null = null;
+	if (process.env.PI_SUBAGENT_CHILD === "1") return;
+	const snapshot: SettingsSnapshot | null = null;
+	const settingsPath: string | null = null;
 
 	// ... handlers to be added in subsequent tasks
 }
