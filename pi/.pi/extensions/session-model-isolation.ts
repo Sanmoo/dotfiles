@@ -66,8 +66,12 @@ export function resolveSettingsPath(cwd: string): string | null {
  * Shape of the three model/thinking fields we care about.
  */
 
-const SETTINGS_KEYS = ["defaultModel", "defaultProvider", "defaultThinkingLevel"] as const;
-type SettingsKey = typeof SETTINGS_KEYS[number];
+const SETTINGS_KEYS = [
+	"defaultModel",
+	"defaultProvider",
+	"defaultThinkingLevel",
+] as const;
+type SettingsKey = (typeof SETTINGS_KEYS)[number];
 
 export type SettingsSnapshot = {
 	[K in SettingsKey]?: string;
@@ -86,11 +90,7 @@ export function readSettings(path: string): Record<string, unknown> {
 			`Failed to parse settings file ${path}: ${(e as Error).message}`,
 		);
 	}
-	if (
-		typeof parsed !== "object" ||
-		parsed === null ||
-		Array.isArray(parsed)
-	) {
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
 		throw new Error(`Settings file ${path} must contain a JSON object`);
 	}
 	return parsed as Record<string, unknown>;
@@ -165,8 +165,29 @@ export function restoreSettings(
 
 export default function (pi: ExtensionAPI) {
 	if (process.env.PI_SUBAGENT_CHILD === "1") return;
-	const snapshot: SettingsSnapshot | null = null;
-	const settingsPath: string | null = null;
+	let snapshot: SettingsSnapshot | null = null;
+	let settingsPath: string | null = null;
 
-	// ... handlers to be added in subsequent tasks
+	// ── session_start: snapshot original settings ──
+	pi.on("session_start", async (_event, ctx) => {
+		settingsPath = resolveSettingsPath(ctx.cwd);
+		if (!settingsPath) return; // No settings to protect
+
+		// Crash recovery: if .bak exists, restore from it first
+		const bakPath = settingsPath + ".bak";
+		if (existsSync(bakPath)) {
+			const bakContent = readFileSync(bakPath, "utf-8");
+			const currentContent = readFileSync(settingsPath, "utf-8");
+			if (bakContent !== currentContent) {
+				writeFileSync(settingsPath, bakContent, "utf-8");
+			}
+		}
+
+		// Snapshot current values
+		const settings = readSettings(settingsPath);
+		snapshot = snapshotSettings(settings);
+
+		// Create .bak for crash recovery
+		writeSettings(bakPath, { ...settings, ...snapshot });
+	});
 }
