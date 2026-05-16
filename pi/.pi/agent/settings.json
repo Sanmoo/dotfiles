@@ -9,6 +9,25 @@
   "defaultModel": "deepseek-v4-flash",
   "defaultThinkingLevel": "xhigh",
   "hideThinkingBlock": true,
+  "subagents": {
+    "agentOverrides": {
+      "implementer": {
+        "model": false,
+        "thinking": "medium",
+        "fallbackModels": []
+      },
+      "spec-reviewer": {
+        "model": false,
+        "thinking": "high",
+        "fallbackModels": []
+      },
+      "code-reviewer": {
+        "model": false,
+        "thinking": "high",
+        "fallbackModels": []
+      }
+    }
+  },
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",
