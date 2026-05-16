@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -247,5 +247,21 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		return undefined;
+	});
+
+	// ── session_shutdown: final restore + cleanup ──
+	pi.on("session_shutdown", async () => {
+		if (settingsPath && snapshot) {
+			restoreSettings(settingsPath, snapshot);
+		}
+		// Clean up .bak file
+		if (settingsPath) {
+			const bakPath = settingsPath + ".bak";
+			try {
+				unlinkSync(bakPath);
+			} catch {
+				// Best effort — file may already be deleted
+			}
+		}
 	});
 }
