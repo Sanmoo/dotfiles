@@ -190,4 +190,16 @@ export default function (pi: ExtensionAPI) {
 		// Create .bak for crash recovery
 		writeSettings(bakPath, { ...settings, ...snapshot });
 	});
+
+	// ── model_select: restore original defaultModel/defaultProvider ──
+	pi.on("model_select", async () => {
+		if (!settingsPath || !snapshot) return;
+		restoreSettings(settingsPath, snapshot);
+	});
+
+	// ── thinking_level_select: restore original defaultThinkingLevel ──
+	pi.on("thinking_level_select", async () => {
+		if (!settingsPath || !snapshot) return;
+		restoreSettings(settingsPath, snapshot);
+	});
 }
