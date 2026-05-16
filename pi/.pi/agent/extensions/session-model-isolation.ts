@@ -284,6 +284,9 @@ export default function (pi: ExtensionAPI) {
 	let snapshot: SettingsSnapshot | null = null;
 	let settingsPath: string | null = null;
 
+	// Build agent model cache on load (covers /reload in addition to session_start)
+	buildAgentModelCache(process.cwd());
+
 	// ── session_start: snapshot original settings ──
 	pi.on("session_start", async (_event, ctx) => {
 		settingsPath = resolveSettingsPath(ctx.cwd);
