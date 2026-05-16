@@ -12,18 +12,18 @@
   "subagents": {
     "agentOverrides": {
       "implementer": {
-        "model": false,
-        "thinking": "medium",
+        "model": "opencode-go/deepseek-v4-flash",
+        "thinking": "xhigh",
         "fallbackModels": []
       },
       "spec-reviewer": {
-        "model": false,
-        "thinking": "high",
+        "model": "opencode-go/deepseek-v4-pro",
+        "thinking": "xhigh",
         "fallbackModels": []
       },
       "code-reviewer": {
-        "model": false,
-        "thinking": "high",
+        "model": "opencode-go/deepseek-v4-pro",
+        "thinking": "xhigh",
         "fallbackModels": []
       }
     }
