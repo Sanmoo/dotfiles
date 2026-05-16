@@ -172,7 +172,10 @@ export function restoreSettings(
  * Extract a field value from YAML frontmatter in markdown text.
  * Returns the trimmed value, or undefined if frontmatter/field missing.
  */
-function extractFrontmatterField(content: string, field: string): string | undefined {
+function extractFrontmatterField(
+	content: string,
+	field: string,
+): string | undefined {
 	const match = content.match(/^---\n([\s\S]*?)\n---/);
 	if (!match) return undefined;
 	const fm = match[1];
@@ -232,7 +235,9 @@ function scanSettingsOverrides(cwd: string): Set<string> {
 	const subagents = settings.subagents as Record<string, unknown> | undefined;
 	if (!subagents || typeof subagents !== "object") return found;
 
-	const overrides = subagents.agentOverrides as Record<string, unknown> | undefined;
+	const overrides = subagents.agentOverrides as
+		| Record<string, unknown>
+		| undefined;
 	if (!overrides || typeof overrides !== "object") return found;
 
 	for (const [name, cfg] of Object.entries(overrides)) {
@@ -344,7 +349,8 @@ export default function (pi: ExtensionAPI) {
 		if (Array.isArray(input.tasks)) {
 			for (const task of input.tasks as Record<string, unknown>[]) {
 				if (!task.model) {
-					const taskAgent = typeof task.agent === "string" ? task.agent : undefined;
+					const taskAgent =
+						typeof task.agent === "string" ? task.agent : undefined;
 					if (!taskAgent || !agentModelCache.has(taskAgent)) {
 						task.model = modelWithThinking;
 					}
@@ -357,7 +363,8 @@ export default function (pi: ExtensionAPI) {
 		if (Array.isArray(input.chain)) {
 			for (const step of input.chain as Record<string, unknown>[]) {
 				if (!step.model) {
-					const stepAgent = typeof step.agent === "string" ? step.agent : undefined;
+					const stepAgent =
+						typeof step.agent === "string" ? step.agent : undefined;
 					if (!stepAgent || !agentModelCache.has(stepAgent)) {
 						step.model = modelWithThinking;
 					}
@@ -366,7 +373,8 @@ export default function (pi: ExtensionAPI) {
 				if (Array.isArray(step.parallel)) {
 					for (const ptask of step.parallel as Record<string, unknown>[]) {
 						if (!ptask.model) {
-							const ptAgent = typeof ptask.agent === "string" ? ptask.agent : undefined;
+							const ptAgent =
+								typeof ptask.agent === "string" ? ptask.agent : undefined;
 							if (!ptAgent || !agentModelCache.has(ptAgent)) {
 								ptask.model = modelWithThinking;
 							}
