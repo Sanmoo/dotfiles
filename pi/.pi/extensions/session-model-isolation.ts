@@ -202,4 +202,50 @@ export default function (pi: ExtensionAPI) {
 		if (!settingsPath || !snapshot) return;
 		restoreSettings(settingsPath, snapshot);
 	});
+
+	// ── tool_call("subagent"): inject current model ──
+	pi.on("tool_call", async (event, ctx) => {
+		if (event.toolName !== "subagent") return undefined;
+		if (!ctx.model) return undefined;
+
+		const input = event.input as Record<string, unknown>;
+
+		const modelStr = `${ctx.model.provider}/${ctx.model.id}`;
+		const thinking = pi.getThinkingLevel();
+		const modelWithThinking =
+			thinking && thinking !== "off" ? `${modelStr}:${thinking}` : modelStr;
+
+		// Inject at top level (single agent mode)
+		if (!input.model) {
+			input.model = modelWithThinking;
+		}
+
+		// Inject into parallel tasks
+		if (Array.isArray(input.tasks)) {
+			for (const task of input.tasks as Record<string, unknown>[]) {
+				if (!task.model) {
+					task.model = modelWithThinking;
+				}
+			}
+		}
+
+		// Inject into chain steps
+		if (Array.isArray(input.chain)) {
+			for (const step of input.chain as Record<string, unknown>[]) {
+				if (!step.model) {
+					step.model = modelWithThinking;
+				}
+				// Inject into chain → parallel tasks
+				if (Array.isArray(step.parallel)) {
+					for (const ptask of step.parallel as Record<string, unknown>[]) {
+						if (!ptask.model) {
+							ptask.model = modelWithThinking;
+						}
+					}
+				}
+			}
+		}
+
+		return undefined;
+	});
 }
