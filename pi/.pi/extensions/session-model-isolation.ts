@@ -8,7 +8,13 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -131,13 +137,15 @@ export function snapshotSettings(
 export function restoreSettings(
 	filePath: string,
 	snapshot: SettingsSnapshot,
+	keys?: readonly SettingsKey[],
 ): void {
 	if (!existsSync(filePath)) return;
 
 	const current = readSettings(filePath);
 	let changed = false;
 
-	for (const key of SETTINGS_KEYS) {
+	const keysToRestore = keys ?? SETTINGS_KEYS;
+	for (const key of keysToRestore) {
 		const snapVal = snapshot[key];
 		if (snapVal === undefined) {
 			// Field not in snapshot -> remove from file if present
@@ -191,16 +199,16 @@ export default function (pi: ExtensionAPI) {
 		writeSettings(bakPath, { ...settings, ...snapshot });
 	});
 
-	// ── model_select: restore original defaultModel/defaultProvider ──
+	// ── model_select: restore only defaultModel/defaultProvider ──
 	pi.on("model_select", async () => {
 		if (!settingsPath || !snapshot) return;
-		restoreSettings(settingsPath, snapshot);
+		restoreSettings(settingsPath, snapshot, ["defaultModel", "defaultProvider"]);
 	});
 
-	// ── thinking_level_select: restore original defaultThinkingLevel ──
+	// ── thinking_level_select: restore only defaultThinkingLevel ──
 	pi.on("thinking_level_select", async () => {
 		if (!settingsPath || !snapshot) return;
-		restoreSettings(settingsPath, snapshot);
+		restoreSettings(settingsPath, snapshot, ["defaultThinkingLevel"]);
 	});
 
 	// ── tool_call("subagent"): inject current model ──
@@ -249,12 +257,10 @@ export default function (pi: ExtensionAPI) {
 		return undefined;
 	});
 
-	// ── session_shutdown: final restore + cleanup ──
+	// ── session_shutdown: cleanup .bak only (no restore) ──
 	pi.on("session_shutdown", async () => {
-		if (settingsPath && snapshot) {
-			restoreSettings(settingsPath, snapshot);
-		}
-		// Clean up .bak file
+		// model_select/thinking_level_select already restored during session.
+		// Do NOT restore here — that would overwrite manual user edits.
 		if (settingsPath) {
 			const bakPath = settingsPath + ".bak";
 			try {
