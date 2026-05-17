@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.74.1",
   "enabledModels": [
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
@@ -7,7 +7,7 @@
   ],
   "defaultProvider": "opencode-go",
   "defaultModel": "deepseek-v4-flash",
-  "defaultThinkingLevel": "xhigh",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "subagents": {
     "agentOverrides": {
