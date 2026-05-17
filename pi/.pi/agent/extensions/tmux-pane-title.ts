@@ -38,29 +38,33 @@ function setTmuxPaneTitle(title: string) {
 	);
 }
 
+function deferSetTmuxPaneTitle(title: string) {
+	setTimeout(() => setTmuxPaneTitle(title), 0);
+}
+
 export default function (pi: ExtensionAPI) {
 	// When session starts, set the initial titles
 	pi.on("session_start", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(title), 0);
+		deferSetTmuxPaneTitle(title);
 	});
 
 	// When agent starts working, show a spinner/indicator
 	pi.on("agent_start", async (_event, _ctx) => {
 		const base = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(`● ${base}`), 0);
+		deferSetTmuxPaneTitle(`● ${base}`);
 	});
 
 	// When agent finishes, restore clean title
 	pi.on("agent_end", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(title), 0);
+		deferSetTmuxPaneTitle(title);
 	});
 
 	// Reapply title at the start of each turn — catches /rename overrides
 	pi.on("turn_start", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(title), 0);
+		deferSetTmuxPaneTitle(title);
 	});
 
 	// Clean up on shutdown
