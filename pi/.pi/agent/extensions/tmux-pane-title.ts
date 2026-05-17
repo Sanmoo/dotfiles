@@ -50,10 +50,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// When agent finishes, restore clean title
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		ctx.ui.setTitle(title);
-		setTmuxPaneTitle(title);
+		setTimeout(() => setTmuxPaneTitle(title), 0);
 	});
 
 	// Clean up on shutdown
