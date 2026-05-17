@@ -3,9 +3,11 @@
  *
  * Renames the current tmux pane to match the pi session name.
  * - If a name was set via /name, uses that
- * - Otherwise uses <cwd-basename> + short session id
+ * - Otherwise uses <cwd-basename>
  *
- * Also sets the terminal title via ctx.ui.setTitle() for non-tmux terminals.
+ * Uses setTimeout(0) to defer title updates so they execute after
+ * pi's built-in updateTerminalTitle(), preventing the "π -" prefix
+ * from appearing.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -36,26 +38,33 @@ function setTmuxPaneTitle(title: string) {
 	);
 }
 
+function deferSetTmuxPaneTitle(title: string) {
+	setTimeout(() => setTmuxPaneTitle(title), 0);
+}
+
 export default function (pi: ExtensionAPI) {
 	// When session starts, set the initial titles
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		ctx.ui.setTitle(title);
-		setTmuxPaneTitle(title);
+		deferSetTmuxPaneTitle(title);
 	});
 
 	// When agent starts working, show a spinner/indicator
-	pi.on("agent_start", async (_event, ctx) => {
+	pi.on("agent_start", async (_event, _ctx) => {
 		const base = buildSessionTitle(pi);
-		ctx.ui.setTitle(`● ${base}`);
-		setTmuxPaneTitle(`● ${base}`);
+		deferSetTmuxPaneTitle(`● ${base}`);
 	});
 
 	// When agent finishes, restore clean title
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		ctx.ui.setTitle(title);
-		setTmuxPaneTitle(title);
+		deferSetTmuxPaneTitle(title);
+	});
+
+	// Reapply title at the start of each turn — catches /rename overrides
+	pi.on("turn_start", async (_event, _ctx) => {
+		const title = buildSessionTitle(pi);
+		deferSetTmuxPaneTitle(title);
 	});
 
 	// Clean up on shutdown

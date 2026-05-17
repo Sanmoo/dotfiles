@@ -4,3 +4,6 @@ en.utf-8.add.spl
 __pycache__/
 .worktrees/
 docs
+node_modules/
+types/
+tsconfig.verify.json
