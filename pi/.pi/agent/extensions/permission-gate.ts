@@ -20,7 +20,7 @@ export default function (pi: ExtensionAPI) {
 		/\bfdisk\b/i,
 		/\bparted\b/i,
 		/>\s*\/dev\/(sd[a-z]|nvme[0-9]|vd[a-z]|mmcblk[0-9]|loop[0-9]|sr[0-9]|disk\/)/i,
-		/\bwget\b.*\||\bcurl\b.*\|/i,
+		/\b(curl|wget)\b.*\|\s*(ba)?sh\b/i,
 		/\b(>\|?)\s*\/etc\//i,
 		/\bchattr\b/i,
 	];

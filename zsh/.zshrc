@@ -149,6 +149,7 @@ alias mai="myfin add income"
 alias mae="myfin add expense"
 
 ## pi
+pi() { command pi --immediate-format "$@"; }
 alias pask='pi --model "opencode-go/deepseek-v4-flash" --print'
 
 ## Misc
