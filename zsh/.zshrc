@@ -148,6 +148,9 @@ alias gwt="git worktree"
 alias mai="myfin add income"
 alias mae="myfin add expense"
 
+## pi
+alias pask='pi --model "opencode-go/deepseek-v4-flash" --print'
+
 ## Misc
 alias jq-less="jq -C '.' | less -R"
 alias vim=nvim
