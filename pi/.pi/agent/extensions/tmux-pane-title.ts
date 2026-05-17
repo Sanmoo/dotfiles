@@ -44,10 +44,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// When agent starts working, show a spinner/indicator
-	pi.on("agent_start", async (_event, ctx) => {
+	pi.on("agent_start", async (_event, _ctx) => {
 		const base = buildSessionTitle(pi);
-		ctx.ui.setTitle(`● ${base}`);
-		setTmuxPaneTitle(`● ${base}`);
+		setTimeout(() => setTmuxPaneTitle(`● ${base}`), 0);
 	});
 
 	// When agent finishes, restore clean title
