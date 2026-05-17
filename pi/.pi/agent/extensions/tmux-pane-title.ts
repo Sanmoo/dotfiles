@@ -3,9 +3,11 @@
  *
  * Renames the current tmux pane to match the pi session name.
  * - If a name was set via /name, uses that
- * - Otherwise uses <cwd-basename> + short session id
+ * - Otherwise uses <cwd-basename>
  *
- * Also sets the terminal title via ctx.ui.setTitle() for non-tmux terminals.
+ * Uses setTimeout(0) to defer title updates so they execute after
+ * pi's built-in updateTerminalTitle(), preventing the "π -" prefix
+ * from appearing.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -51,6 +53,12 @@ export default function (pi: ExtensionAPI) {
 
 	// When agent finishes, restore clean title
 	pi.on("agent_end", async (_event, _ctx) => {
+		const title = buildSessionTitle(pi);
+		setTimeout(() => setTmuxPaneTitle(title), 0);
+	});
+
+	// Reapply title at the start of each turn — catches /rename overrides
+	pi.on("turn_start", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
 		setTimeout(() => setTmuxPaneTitle(title), 0);
 	});
