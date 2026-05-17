@@ -35,6 +35,7 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-lens",
     "npm:pi-web-access",
-    "npm:pi-auto-rename"
+    "npm:pi-auto-rename",
+    "npm:pi-mcp-adapter"
   ]
 }
