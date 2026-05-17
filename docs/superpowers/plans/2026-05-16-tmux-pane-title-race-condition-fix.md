@@ -13,6 +13,7 @@
 ### Task 1: Update `session_start` handler
 
 **Files:**
+
 - Modify: `pi/.pi/agent/extensions/tmux-pane-title.ts:42-46`
 
 - [ ] **Step 1: Remove `ctx.ui.setTitle()` and wrap `setTmuxPaneTitle()` in `setTimeout(0)`**
@@ -21,9 +22,9 @@ Replace the `session_start` handler body:
 
 ```ts
 pi.on("session_start", async (_event, ctx) => {
-    const title = buildSessionTitle(pi);
-    ctx.ui.setTitle(title);
-    setTmuxPaneTitle(title);
+  const title = buildSessionTitle(pi);
+  ctx.ui.setTitle(title);
+  setTmuxPaneTitle(title);
 });
 ```
 
@@ -31,8 +32,8 @@ With:
 
 ```ts
 pi.on("session_start", async (_event, _ctx) => {
-    const title = buildSessionTitle(pi);
-    setTimeout(() => setTmuxPaneTitle(title), 0);
+  const title = buildSessionTitle(pi);
+  setTimeout(() => setTmuxPaneTitle(title), 0);
 });
 ```
 
@@ -48,6 +49,7 @@ git commit -m "fix(tmux-pane-title): defer session_start title via setTimeout(0)
 ### Task 2: Update `agent_start` handler
 
 **Files:**
+
 - Modify: `pi/.pi/agent/extensions/tmux-pane-title.ts:49-53`
 
 - [ ] **Step 1: Remove `ctx.ui.setTitle()` and wrap `setTmuxPaneTitle()` in `setTimeout(0)`**
@@ -56,9 +58,9 @@ Replace the `agent_start` handler body:
 
 ```ts
 pi.on("agent_start", async (_event, ctx) => {
-    const base = buildSessionTitle(pi);
-    ctx.ui.setTitle(`● ${base}`);
-    setTmuxPaneTitle(`● ${base}`);
+  const base = buildSessionTitle(pi);
+  ctx.ui.setTitle(`● ${base}`);
+  setTmuxPaneTitle(`● ${base}`);
 });
 ```
 
@@ -66,8 +68,8 @@ With:
 
 ```ts
 pi.on("agent_start", async (_event, _ctx) => {
-    const base = buildSessionTitle(pi);
-    setTimeout(() => setTmuxPaneTitle(`● ${base}`), 0);
+  const base = buildSessionTitle(pi);
+  setTimeout(() => setTmuxPaneTitle(`● ${base}`), 0);
 });
 ```
 
@@ -83,6 +85,7 @@ git commit -m "fix(tmux-pane-title): defer agent_start title via setTimeout(0), 
 ### Task 3: Update `agent_end` handler
 
 **Files:**
+
 - Modify: `pi/.pi/agent/extensions/tmux-pane-title.ts:56-60`
 
 - [ ] **Step 1: Remove `ctx.ui.setTitle()` and wrap `setTmuxPaneTitle()` in `setTimeout(0)`**
@@ -91,9 +94,9 @@ Replace the `agent_end` handler body:
 
 ```ts
 pi.on("agent_end", async (_event, ctx) => {
-    const title = buildSessionTitle(pi);
-    ctx.ui.setTitle(title);
-    setTmuxPaneTitle(title);
+  const title = buildSessionTitle(pi);
+  ctx.ui.setTitle(title);
+  setTmuxPaneTitle(title);
 });
 ```
 
@@ -101,8 +104,8 @@ With:
 
 ```ts
 pi.on("agent_end", async (_event, _ctx) => {
-    const title = buildSessionTitle(pi);
-    setTimeout(() => setTmuxPaneTitle(title), 0);
+  const title = buildSessionTitle(pi);
+  setTimeout(() => setTmuxPaneTitle(title), 0);
 });
 ```
 
@@ -118,6 +121,7 @@ git commit -m "fix(tmux-pane-title): defer agent_end title via setTimeout(0), re
 ### Task 4: Add `turn_start` handler
 
 **Files:**
+
 - Modify: `pi/.pi/agent/extensions/tmux-pane-title.ts` (insert after `agent_end` handler, before `session_shutdown`)
 
 - [ ] **Step 1: Add `turn_start` event handler**
@@ -127,8 +131,8 @@ Insert after the `agent_end` handler block and before the `session_shutdown` com
 ```ts
 // Reapply title at the start of each turn — catches /rename overrides
 pi.on("turn_start", async (_event, _ctx) => {
-    const title = buildSessionTitle(pi);
-    setTimeout(() => setTmuxPaneTitle(title), 0);
+  const title = buildSessionTitle(pi);
+  setTimeout(() => setTmuxPaneTitle(title), 0);
 });
 ```
 
@@ -216,71 +220,71 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 
 function buildSessionTitle(pi: ExtensionAPI): string {
-	const sessionName = pi.getSessionName();
-	if (sessionName && sessionName.trim()) {
-		return `pi: ${sessionName}`;
-	}
-	// Fallback: cwd basename
-	const cwd = path.basename(process.cwd());
-	return `pi: ${cwd}`;
+  const sessionName = pi.getSessionName();
+  if (sessionName && sessionName.trim()) {
+    return `pi: ${sessionName}`;
+  }
+  // Fallback: cwd basename
+  const cwd = path.basename(process.cwd());
+  return `pi: ${cwd}`;
 }
 
 function setTmuxPaneTitle(title: string) {
-	if (!process.env.TMUX || !process.env.TMUX_PANE) return;
-	execFile(
-		"tmux",
-		["select-pane", "-t", process.env.TMUX_PANE!, "-T", title],
-		(err) => {
-			// Silently ignore errors (e.g., tmux not available, pane detached)
-			if (err && err.code !== "ENOENT") {
-				// Only log unexpected errors
-			}
-		},
-	);
+  if (!process.env.TMUX || !process.env.TMUX_PANE) return;
+  execFile(
+    "tmux",
+    ["select-pane", "-t", process.env.TMUX_PANE!, "-T", title],
+    (err) => {
+      // Silently ignore errors (e.g., tmux not available, pane detached)
+      if (err && err.code !== "ENOENT") {
+        // Only log unexpected errors
+      }
+    },
+  );
 }
 
 export default function (pi: ExtensionAPI) {
-	// When session starts, set the initial title
-	pi.on("session_start", async (_event, _ctx) => {
-		const title = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(title), 0);
-	});
+  // When session starts, set the initial title
+  pi.on("session_start", async (_event, _ctx) => {
+    const title = buildSessionTitle(pi);
+    setTimeout(() => setTmuxPaneTitle(title), 0);
+  });
 
-	// When agent starts working, show a spinner/indicator
-	pi.on("agent_start", async (_event, _ctx) => {
-		const base = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(`● ${base}`), 0);
-	});
+  // When agent starts working, show a spinner/indicator
+  pi.on("agent_start", async (_event, _ctx) => {
+    const base = buildSessionTitle(pi);
+    setTimeout(() => setTmuxPaneTitle(`● ${base}`), 0);
+  });
 
-	// When agent finishes, restore clean title
-	pi.on("agent_end", async (_event, _ctx) => {
-		const title = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(title), 0);
-	});
+  // When agent finishes, restore clean title
+  pi.on("agent_end", async (_event, _ctx) => {
+    const title = buildSessionTitle(pi);
+    setTimeout(() => setTmuxPaneTitle(title), 0);
+  });
 
-	// Reapply title at the start of each turn — catches /rename overrides
-	pi.on("turn_start", async (_event, _ctx) => {
-		const title = buildSessionTitle(pi);
-		setTimeout(() => setTmuxPaneTitle(title), 0);
-	});
+  // Reapply title at the start of each turn — catches /rename overrides
+  pi.on("turn_start", async (_event, _ctx) => {
+    const title = buildSessionTitle(pi);
+    setTimeout(() => setTmuxPaneTitle(title), 0);
+  });
 
-	// Clean up on shutdown
-	pi.on("session_shutdown", async (_event, ctx) => {
-		if (process.env.TMUX && process.env.TMUX_PANE) {
-			// Reset to cwd basename when pi exits
-			execFile(
-				"tmux",
-				[
-					"select-pane",
-					"-t",
-					process.env.TMUX_PANE!,
-					"-T",
-					path.basename(process.cwd()),
-				],
-				() => {},
-			);
-		}
-		ctx.ui.setTitle("");
-	});
+  // Clean up on shutdown
+  pi.on("session_shutdown", async (_event, ctx) => {
+    if (process.env.TMUX && process.env.TMUX_PANE) {
+      // Reset to cwd basename when pi exits
+      execFile(
+        "tmux",
+        [
+          "select-pane",
+          "-t",
+          process.env.TMUX_PANE!,
+          "-T",
+          path.basename(process.cwd()),
+        ],
+        () => {},
+      );
+    }
+    ctx.ui.setTitle("");
+  });
 }
 ```

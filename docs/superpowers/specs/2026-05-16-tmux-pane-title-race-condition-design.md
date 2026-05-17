@@ -26,11 +26,11 @@ Both mechanisms compete. Pi's `updateTerminalTitle()` is called synchronously **
 
 ### Call sites of pi's `updateTerminalTitle()`
 
-| Location | Trigger |
-|---|---|
-| `rebindCurrentSession()` | Session init, resume, reload |
-| `bindCurrentSessionExtensions()` | Before agent starts |
-| `session_info_changed` handler | `/rename`, `/name`, session name change |
+| Location                         | Trigger                                 |
+| -------------------------------- | --------------------------------------- |
+| `rebindCurrentSession()`         | Session init, resume, reload            |
+| `bindCurrentSessionExtensions()` | Before agent starts                     |
+| `session_info_changed` handler   | `/rename`, `/name`, session name change |
 
 ## Solution
 
@@ -52,8 +52,8 @@ The `turn_start` event fires at the beginning of every conversation turn — inc
 
 ```ts
 pi.on("turn_start", async (_event, ctx) => {
-    const title = buildSessionTitle(pi);
-    setTimeout(() => setTmuxPaneTitle(title), 0);
+  const title = buildSessionTitle(pi);
+  setTimeout(() => setTmuxPaneTitle(title), 0);
 });
 ```
 
@@ -63,22 +63,22 @@ On shutdown, there is no more competition from pi. The direct `tmux select-pane 
 
 ### Handler summary
 
-| Event | Before | After |
-|---|---|---|
-| `session_start` | `ctx.ui.setTitle(title)` + `setTmuxPaneTitle(title)` | `setTimeout(() => setTmuxPaneTitle(title), 0)` |
-| `agent_start` | `ctx.ui.setTitle('● ' + base)` + `setTmuxPaneTitle('● ' + base)` | `setTimeout(() => setTmuxPaneTitle('● ' + base), 0)` |
-| `agent_end` | `ctx.ui.setTitle(title)` + `setTmuxPaneTitle(title)` | `setTimeout(() => setTmuxPaneTitle(title), 0)` |
-| `turn_start` | *(none)* | `setTimeout(() => setTmuxPaneTitle(title), 0)` |
-| `session_shutdown` | `tmux select-pane -T <cwd>` + `ctx.ui.setTitle("")` | *(unchanged)* |
+| Event              | Before                                                           | After                                                |
+| ------------------ | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| `session_start`    | `ctx.ui.setTitle(title)` + `setTmuxPaneTitle(title)`             | `setTimeout(() => setTmuxPaneTitle(title), 0)`       |
+| `agent_start`      | `ctx.ui.setTitle('● ' + base)` + `setTmuxPaneTitle('● ' + base)` | `setTimeout(() => setTmuxPaneTitle('● ' + base), 0)` |
+| `agent_end`        | `ctx.ui.setTitle(title)` + `setTmuxPaneTitle(title)`             | `setTimeout(() => setTmuxPaneTitle(title), 0)`       |
+| `turn_start`       | _(none)_                                                         | `setTimeout(() => setTmuxPaneTitle(title), 0)`       |
+| `session_shutdown` | `tmux select-pane -T <cwd>` + `ctx.ui.setTitle("")`              | _(unchanged)_                                        |
 
 ## Expected Behavior
 
-| Scenario | Pane title |
-|---|---|
-| Session starts | `pi: <sessionName>` or `pi: <cwd>` |
-| Agent working | `● pi: <sessionName>` |
-| Agent idle | `pi: <sessionName>` or `pi: <cwd>` |
-| After `/rename` | `pi: <newName>` |
-| Pi exits | `<cwd>` (bare) |
+| Scenario        | Pane title                         |
+| --------------- | ---------------------------------- |
+| Session starts  | `pi: <sessionName>` or `pi: <cwd>` |
+| Agent working   | `● pi: <sessionName>`              |
+| Agent idle      | `pi: <sessionName>` or `pi: <cwd>` |
+| After `/rename` | `pi: <newName>`                    |
+| Pi exits        | `<cwd>` (bare)                     |
 
 The `π - ...` format from pi's built-in title no longer appears because the extension always reapplies its title after pi's update.
