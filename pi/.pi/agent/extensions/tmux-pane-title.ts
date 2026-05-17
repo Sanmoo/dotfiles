@@ -38,10 +38,9 @@ function setTmuxPaneTitle(title: string) {
 
 export default function (pi: ExtensionAPI) {
 	// When session starts, set the initial titles
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (_event, _ctx) => {
 		const title = buildSessionTitle(pi);
-		ctx.ui.setTitle(title);
-		setTmuxPaneTitle(title);
+		setTimeout(() => setTmuxPaneTitle(title), 0);
 	});
 
 	// When agent starts working, show a spinner/indicator
