@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.74.1",
+  "lastChangelogVersion": "0.75.3",
   "enabledModels": [
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
