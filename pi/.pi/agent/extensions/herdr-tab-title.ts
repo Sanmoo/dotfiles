@@ -18,7 +18,8 @@ export function chooseTabLabel(
 export function parsePaneTabId(stdout: string): string | null {
 	try {
 		const parsed = JSON.parse(stdout);
-		return parsed?.result?.pane?.tab_id ?? null;
+		const tabId = parsed?.result?.pane?.tab_id;
+		return typeof tabId === "string" ? tabId : null;
 	} catch {
 		return null;
 	}
