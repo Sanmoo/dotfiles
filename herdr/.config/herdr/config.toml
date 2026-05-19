@@ -25,6 +25,9 @@ name = "gruvbox"
 # Most reliable bindings are plain keys, ctrl+letter, esc/tab/enter, and function keys.
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 prefix = "ctrl+a"
+next_tab = "ctrl+]"     # optional, unset by default
+previous_tab = "ctrl+[" # optional, unset by default
+reload_config = "R"     # optional shortcut to reload config.toml without restarting
 
 # Navigate-mode actions
 # new_workspace = "n"
@@ -35,12 +38,10 @@ prefix = "ctrl+a"
 # previous_agent = ""     # optional, unset by default
 # next_agent = ""         # optional, unset by default
 # detach = ""             # optional explicit detach shortcut in server/client mode
-# reload_config = ""      # optional shortcut to reload config.toml without restarting
 # open_notification_target = "" # optional shortcut to jump to the visible notification target
 # new_tab = "c"
 # rename_tab = ""         # optional, unset by default
 # previous_tab = ""       # optional, unset by default
-# next_tab = ""           # optional, unset by default
 # close_tab = ""          # optional, unset by default
 # rename_pane = ""        # optional, unset by default
 # edit_scrollback = ""    # optional, opens focused pane scrollback in $EDITOR
@@ -65,10 +66,10 @@ prefix = "ctrl+a"
 
 # Optional modifier-only shortcuts expanded over number keys 1-9.
 # Empty means disabled. Examples: "ctrl", "ctrl+shift", "alt".
-# [keys.indexed]
-# tabs = ""       # e.g. "ctrl" makes ctrl+1..9 switch tabs
-# workspaces = "" # e.g. "ctrl+shift" makes ctrl+shift+1..9 switch workspaces
-# agents = ""     # e.g. "alt" makes alt+1..9 focus agent rows
+[keys.indexed]
+tabs = "ctrl"             # e.g. "ctrl" makes ctrl+1..9 switch tabs
+workspaces = "ctrl+shift" # e.g. "ctrl+shift" makes ctrl+shift+1..9 switch workspaces
+agents = "ctrl+shift+alt" # e.g. "alt" makes alt+1..9 focus agent rows
 
 [ui]
 # Sidebar width (auto-scaled based on workspace names, this sets the default)
