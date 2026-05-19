@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import {
 	buildSessionTitle,
 	chooseTabLabel,
+	createHerdrTabTitleController,
 	parsePaneTabId,
 	parseTabLabel,
+	type HerdrCommandRunner,
 } from "../../.pi/agent/extensions/herdr-tab-title";
 
 const PANE_INFO = JSON.stringify({
@@ -27,6 +29,21 @@ const TAB_INFO = JSON.stringify({
 		},
 	},
 });
+
+function createFakeRunner(
+	jsonResponses: Record<string, string | null>,
+	runCalls: string[][],
+): HerdrCommandRunner {
+	return {
+		async runJson(args) {
+			return jsonResponses[args.join(" ")] ?? null;
+		},
+		async run(args) {
+			runCalls.push([...args]);
+			return true;
+		},
+	};
+}
 
 describe("buildSessionTitle", () => {
 	it("prefixes an explicit session name with pi:", () => {
@@ -70,5 +87,103 @@ describe("parseTabLabel", () => {
 
 	it("returns null for invalid JSON", () => {
 		expect(parseTabLabel("not-json")).toBeNull();
+	});
+});
+
+describe("createHerdrTabTitleController", () => {
+	it("captures the current tab label without renaming when the session is unnamed", async () => {
+		const runCalls: string[][] = [];
+		const runner = createFakeRunner(
+			{
+				"pane get p_1": PANE_INFO,
+				"tab get w6522c4796c52e1:1": TAB_INFO,
+			},
+			runCalls,
+		);
+
+		const controller = createHerdrTabTitleController({
+			env: { HERDR_ENV: "1", HERDR_PANE_ID: "p_1" },
+			runner,
+		});
+
+		await controller.initialize(undefined);
+
+		expect(runCalls).toEqual([]);
+		expect(controller.getState()).toEqual({
+			enabled: true,
+			tabId: "w6522c4796c52e1:1",
+			originalTabLabel: "dotfiles",
+			lastAppliedLabel: "dotfiles",
+		});
+	});
+
+	it("renames the tab to the Pi title after initialization when the session is named", async () => {
+		const runCalls: string[][] = [];
+		const runner = createFakeRunner(
+			{
+				"pane get p_1": PANE_INFO,
+				"tab get w6522c4796c52e1:1": TAB_INFO,
+			},
+			runCalls,
+		);
+
+		const controller = createHerdrTabTitleController({
+			env: { HERDR_ENV: "1", HERDR_PANE_ID: "p_1" },
+			runner,
+		});
+
+		await controller.initialize("Refactor auth");
+
+		expect(runCalls).toEqual([
+			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
+		]);
+	});
+
+	it("restores the original label when the session name is cleared", async () => {
+		const runCalls: string[][] = [];
+		const runner = createFakeRunner(
+			{
+				"pane get p_1": PANE_INFO,
+				"tab get w6522c4796c52e1:1": TAB_INFO,
+			},
+			runCalls,
+		);
+
+		const controller = createHerdrTabTitleController({
+			env: { HERDR_ENV: "1", HERDR_PANE_ID: "p_1" },
+			runner,
+		});
+
+		await controller.initialize("Refactor auth");
+		await controller.sync("");
+
+		expect(runCalls).toEqual([
+			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
+			["tab", "rename", "w6522c4796c52e1:1", "dotfiles"],
+		]);
+	});
+
+	it("restores the original label on shutdown when Pi previously renamed the tab", async () => {
+		const runCalls: string[][] = [];
+		const runner = createFakeRunner(
+			{
+				"pane get p_1": PANE_INFO,
+				"tab get w6522c4796c52e1:1": TAB_INFO,
+			},
+			runCalls,
+		);
+
+		const controller = createHerdrTabTitleController({
+			env: { HERDR_ENV: "1", HERDR_PANE_ID: "p_1" },
+			runner,
+		});
+
+		await controller.initialize("Refactor auth");
+		runCalls.length = 0;
+		await controller.shutdown();
+
+		expect(runCalls).toEqual([
+			["tab", "rename", "w6522c4796c52e1:1", "dotfiles"],
+		]);
 	});
 });

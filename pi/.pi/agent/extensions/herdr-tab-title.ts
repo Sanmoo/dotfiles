@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { execFile } from "node:child_process";
 
 export function buildSessionTitle(
 	sessionName: string | null | undefined,
@@ -34,6 +35,132 @@ export function parseTabLabel(stdout: string): string | null {
 	}
 }
 
+export type HerdrCommandRunner = {
+	runJson(args: string[]): Promise<string | null>;
+	run(args: string[]): Promise<boolean>;
+};
+
+export type HerdrTabTitleController = {
+	initialize(sessionName: string | null | undefined): Promise<void>;
+	sync(sessionName: string | null | undefined): Promise<void>;
+	shutdown(): Promise<void>;
+	getState(): {
+		enabled: boolean;
+		tabId: string | null;
+		originalTabLabel: string | null;
+		lastAppliedLabel: string | null;
+	};
+};
+
+function execHerdr(args: string[]): Promise<string | null> {
+	return new Promise((resolve) => {
+		execFile("herdr", args, { encoding: "utf8" }, (error, stdout) => {
+			if (error) {
+				resolve(null);
+				return;
+			}
+			resolve(stdout);
+		});
+	});
+}
+
+export function createExecHerdrRunner(): HerdrCommandRunner {
+	return {
+		async runJson(args) {
+			return execHerdr(args);
+		},
+		async run(args) {
+			const stdout = await execHerdr(args);
+			return stdout !== null;
+		},
+	};
+}
+
+export function createHerdrTabTitleController({
+	env,
+	runner,
+}: {
+	env: Record<string, string | undefined>;
+	runner: HerdrCommandRunner;
+}): HerdrTabTitleController {
+	const enabled = env.HERDR_ENV === "1" && Boolean(env.HERDR_PANE_ID);
+	let tabId: string | null = null;
+	let originalTabLabel: string | null = null;
+	let lastAppliedLabel: string | null = null;
+
+	async function rename(label: string): Promise<void> {
+		if (!tabId || label === lastAppliedLabel) {
+			return;
+		}
+
+		const ok = await runner.run(["tab", "rename", tabId, label]);
+		if (ok) {
+			lastAppliedLabel = label;
+		}
+	}
+
+	async function initialize(
+		sessionName: string | null | undefined,
+	): Promise<void> {
+		if (!enabled || !env.HERDR_PANE_ID) {
+			return;
+		}
+
+		const paneStdout = await runner.runJson(["pane", "get", env.HERDR_PANE_ID]);
+		const resolvedTabId = paneStdout ? parsePaneTabId(paneStdout) : null;
+		if (!resolvedTabId) {
+			return;
+		}
+
+		tabId = resolvedTabId;
+
+		const tabStdout = await runner.runJson(["tab", "get", tabId]);
+		originalTabLabel = tabStdout ? parseTabLabel(tabStdout) : null;
+		lastAppliedLabel = originalTabLabel;
+
+		await sync(sessionName);
+	}
+
+	async function sync(sessionName: string | null | undefined): Promise<void> {
+		if (!enabled || !tabId) {
+			return;
+		}
+
+		const nextLabel = chooseTabLabel(sessionName, originalTabLabel);
+		if (!nextLabel || nextLabel === lastAppliedLabel) {
+			return;
+		}
+
+		await rename(nextLabel);
+	}
+
+	async function shutdown(): Promise<void> {
+		if (!enabled || !tabId || !originalTabLabel) {
+			return;
+		}
+
+		if (lastAppliedLabel === originalTabLabel) {
+			return;
+		}
+
+		await rename(originalTabLabel);
+	}
+
+	return {
+		initialize,
+		sync,
+		shutdown,
+		getState() {
+			return {
+				enabled,
+				tabId,
+				originalTabLabel,
+				lastAppliedLabel,
+			};
+		},
+	};
+}
+
 export default function herdrTabTitle(_pi: ExtensionAPI) {
-	// Task 1 only: event wiring arrives later.
+	// Task 2 only: Pi event wiring lands in Task 3.
 }
