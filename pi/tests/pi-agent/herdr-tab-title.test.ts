@@ -5,7 +5,9 @@ import {
 	createHerdrTabTitleController,
 	parsePaneTabId,
 	parseTabLabel,
+	registerHerdrTabTitle,
 	type HerdrCommandRunner,
+	type HerdrTabTitleController,
 } from "../../.pi/agent/extensions/herdr-tab-title";
 
 const PANE_INFO = JSON.stringify({
@@ -184,6 +186,56 @@ describe("createHerdrTabTitleController", () => {
 
 		expect(runCalls).toEqual([
 			["tab", "rename", "w6522c4796c52e1:1", "dotfiles"],
+		]);
+	});
+});
+
+describe("registerHerdrTabTitle", () => {
+	it("wires session_start, turn_start, and session_shutdown to the controller", async () => {
+		const handlers: Record<string, (...args: any[]) => Promise<void>> = {};
+		const calls: string[] = [];
+		let sessionName = "Initial name";
+
+		const controller: HerdrTabTitleController = {
+			async initialize(name) {
+				calls.push(`initialize:${name ?? ""}`);
+			},
+			async sync(name) {
+				calls.push(`sync:${name ?? ""}`);
+			},
+			async shutdown() {
+				calls.push("shutdown");
+			},
+			getState() {
+				return {
+					enabled: true,
+					tabId: "w6522c4796c52e1:1",
+					originalTabLabel: "dotfiles",
+					lastAppliedLabel: "dotfiles",
+				};
+			},
+		};
+
+		const pi = {
+			getSessionName() {
+				return sessionName;
+			},
+			on(event: string, handler: (...args: any[]) => Promise<void>) {
+				handlers[event] = handler;
+			},
+		};
+
+		registerHerdrTabTitle(pi as any, () => controller);
+
+		await handlers.session_start({}, {} as any);
+		sessionName = "Renamed session";
+		await handlers.turn_start({}, {} as any);
+		await handlers.session_shutdown({}, {} as any);
+
+		expect(calls).toEqual([
+			"initialize:Initial name",
+			"sync:Renamed session",
+			"shutdown",
 		]);
 	});
 });

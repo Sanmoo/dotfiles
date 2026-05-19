@@ -161,6 +161,31 @@ export function createHerdrTabTitleController({
 	};
 }
 
-export default function herdrTabTitle(_pi: ExtensionAPI) {
-	// Task 2 only: Pi event wiring lands in Task 3.
+export function registerHerdrTabTitle(
+	pi: Pick<ExtensionAPI, "on" | "getSessionName">,
+	controllerFactory: () => HerdrTabTitleController = () =>
+		createHerdrTabTitleController({
+			env: process.env,
+			runner: createExecHerdrRunner(),
+		}),
+) {
+	const controller = controllerFactory();
+
+	pi.on("session_start", async () => {
+		await controller.initialize(pi.getSessionName());
+	});
+
+	pi.on("turn_start", async () => {
+		await controller.sync(pi.getSessionName());
+	});
+
+	pi.on("session_shutdown", async () => {
+		await controller.shutdown();
+	});
+
+	return controller;
+}
+
+export default function herdrTabTitle(pi: ExtensionAPI) {
+	registerHerdrTabTitle(pi);
 }
