@@ -52,7 +52,7 @@ edit_scrollback = "e" # opens focused pane scrollback in $EDITOR
 # split_vertical = "v"
 # split_horizontal = "-"
 # close_pane = "x"
-# zoom = "f"             # legacy alias: fullscreen
+zoom = "z" # legacy alias: fullscreen
 # resize_mode = "r"
 # toggle_sidebar = "b"
 
