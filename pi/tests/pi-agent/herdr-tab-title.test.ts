@@ -32,6 +32,17 @@ const TAB_INFO = JSON.stringify({
 	},
 });
 
+const BLANK_TAB_INFO = JSON.stringify({
+	id: "cli:tab:get",
+	result: {
+		type: "tab_info",
+		tab: {
+			tab_id: "w6522c4796c52e1:1",
+			label: "",
+		},
+	},
+});
+
 function createFakeRunner(
 	jsonResponses: Record<string, string | null>,
 	runCalls: string[][],
@@ -70,6 +81,10 @@ describe("chooseTabLabel", () => {
 		expect(chooseTabLabel("", "dotfiles")).toBe("dotfiles");
 		expect(chooseTabLabel(undefined, "dotfiles")).toBe("dotfiles");
 	});
+
+	it("preserves an intentionally blank original label", () => {
+		expect(chooseTabLabel("", "")).toBe("");
+	});
 });
 
 describe("parsePaneTabId", () => {
@@ -85,6 +100,10 @@ describe("parsePaneTabId", () => {
 describe("parseTabLabel", () => {
 	it("extracts the visible tab label from herdr tab get JSON", () => {
 		expect(parseTabLabel(TAB_INFO)).toBe("dotfiles");
+	});
+
+	it("preserves an intentionally blank tab label", () => {
+		expect(parseTabLabel(BLANK_TAB_INFO)).toBe("");
 	});
 
 	it("returns null for invalid JSON", () => {
@@ -141,6 +160,31 @@ describe("createHerdrTabTitleController", () => {
 		]);
 	});
 
+	it("does not rename when the original tab label could not be captured", async () => {
+		const runCalls: string[][] = [];
+		const runner = createFakeRunner(
+			{
+				"pane get p_1": PANE_INFO,
+			},
+			runCalls,
+		);
+
+		const controller = createHerdrTabTitleController({
+			env: { HERDR_ENV: "1", HERDR_PANE_ID: "p_1" },
+			runner,
+		});
+
+		await controller.initialize("Refactor auth");
+
+		expect(runCalls).toEqual([]);
+		expect(controller.getState()).toEqual({
+			enabled: true,
+			tabId: "w6522c4796c52e1:1",
+			originalTabLabel: null,
+			lastAppliedLabel: null,
+		});
+	});
+
 	it("restores the original label when the session name is cleared", async () => {
 		const runCalls: string[][] = [];
 		const runner = createFakeRunner(
@@ -162,6 +206,30 @@ describe("createHerdrTabTitleController", () => {
 		expect(runCalls).toEqual([
 			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
 			["tab", "rename", "w6522c4796c52e1:1", "dotfiles"],
+		]);
+	});
+
+	it("restores an intentionally blank original label on shutdown", async () => {
+		const runCalls: string[][] = [];
+		const runner = createFakeRunner(
+			{
+				"pane get p_1": PANE_INFO,
+				"tab get w6522c4796c52e1:1": BLANK_TAB_INFO,
+			},
+			runCalls,
+		);
+
+		const controller = createHerdrTabTitleController({
+			env: { HERDR_ENV: "1", HERDR_PANE_ID: "p_1" },
+			runner,
+		});
+
+		await controller.initialize("Refactor auth");
+		runCalls.length = 0;
+		await controller.shutdown();
+
+		expect(runCalls).toEqual([
+			["tab", "rename", "w6522c4796c52e1:1", ""],
 		]);
 	});
 

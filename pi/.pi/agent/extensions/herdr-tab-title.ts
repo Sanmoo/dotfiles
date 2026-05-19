@@ -12,8 +12,7 @@ export function chooseTabLabel(
 	sessionName: string | null | undefined,
 	originalTabLabel: string | null | undefined,
 ): string | null {
-	const original = originalTabLabel?.trim();
-	return buildSessionTitle(sessionName) ?? (original ? original : null);
+	return buildSessionTitle(sessionName) ?? originalTabLabel ?? null;
 }
 
 export function parsePaneTabId(stdout: string): string | null {
@@ -29,7 +28,7 @@ export function parseTabLabel(stdout: string): string | null {
 	try {
 		const parsed = JSON.parse(stdout);
 		const label = parsed?.result?.tab?.label;
-		return typeof label === "string" && label.trim() ? label : null;
+		return typeof label === "string" ? label : null;
 	} catch {
 		return null;
 	}
@@ -122,12 +121,12 @@ export function createHerdrTabTitleController({
 	}
 
 	async function sync(sessionName: string | null | undefined): Promise<void> {
-		if (!enabled || !tabId) {
+		if (!enabled || !tabId || originalTabLabel === null) {
 			return;
 		}
 
 		const nextLabel = chooseTabLabel(sessionName, originalTabLabel);
-		if (!nextLabel || nextLabel === lastAppliedLabel) {
+		if (nextLabel === null || nextLabel === lastAppliedLabel) {
 			return;
 		}
 
@@ -135,7 +134,7 @@ export function createHerdrTabTitleController({
 	}
 
 	async function shutdown(): Promise<void> {
-		if (!enabled || !tabId || !originalTabLabel) {
+		if (!enabled || !tabId || originalTabLabel === null) {
 			return;
 		}
 
