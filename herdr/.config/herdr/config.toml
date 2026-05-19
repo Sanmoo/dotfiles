@@ -44,7 +44,7 @@ reload_config = "R"     # optional shortcut to reload config.toml without restar
 # previous_tab = ""       # optional, unset by default
 # close_tab = ""          # optional, unset by default
 # rename_pane = ""        # optional, unset by default
-# edit_scrollback = ""    # optional, opens focused pane scrollback in $EDITOR
+edit_scrollback = "e" # opens focused pane scrollback in $EDITOR
 # focus_pane_left = ""    # optional, unset by default
 # focus_pane_down = ""    # optional, unset by default
 # focus_pane_up = ""      # optional, unset by default
@@ -98,12 +98,13 @@ agents = "ctrl+shift+alt" # e.g. "alt" makes alt+1..9 focus agent rows
 # accent = "cyan"
 
 # Background notification popup delivery
+show_agent_labels_on_pane_borders = true
 [ui.toast]
 # off = disable pop-up notifications
 # herdr = show top-right in-app toasts
 # terminal = ask the outer terminal to show a desktop notification
 # system = ask the OS notification service directly
-# delivery = "off"
+delivery = "system"
 
 # Play sounds when agents change state in background workspaces
 [ui.sound]

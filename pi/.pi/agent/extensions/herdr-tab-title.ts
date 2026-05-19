@@ -53,7 +53,10 @@ export type HerdrTabTitleController = {
 };
 
 export type SessionNamePollScheduler = {
-	setInterval(callback: () => void | Promise<void>, intervalMs: number): unknown;
+	setInterval(
+		callback: () => void | Promise<void>,
+		intervalMs: number,
+	): unknown;
 	clearInterval(handle: unknown): void;
 	intervalMs: number;
 };

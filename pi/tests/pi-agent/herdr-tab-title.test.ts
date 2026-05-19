@@ -84,9 +84,7 @@ describe("buildSessionTitle", () => {
 
 describe("chooseTabLabel", () => {
 	it("prefers the Pi session title when present", () => {
-		expect(chooseTabLabel("Refactor auth", "dotfiles")).toBe(
-			"Refactor auth",
-		);
+		expect(chooseTabLabel("Refactor auth", "dotfiles")).toBe("Refactor auth");
 	});
 
 	it("falls back to the original Herdr label when no session name exists", () => {
@@ -323,9 +321,7 @@ describe("createHerdrTabTitleController", () => {
 		runCalls.length = 0;
 		await controller.shutdown();
 
-		expect(runCalls).toEqual([
-			["tab", "rename", "w6522c4796c52e1:1", ""],
-		]);
+		expect(runCalls).toEqual([["tab", "rename", "w6522c4796c52e1:1", ""]]);
 	});
 
 	it("restores the original label on shutdown when Pi previously renamed the tab", async () => {
