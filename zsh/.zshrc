@@ -123,6 +123,7 @@ export ASDF_DATA_DIR="$HOME/.asdf"
 export PATH="$PATH:$HOME/bin"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$GOPATH/bin:$PATH"
+export PATH="$HOME/.bun/bin:$PATH"
 
 bindkey -v
 
