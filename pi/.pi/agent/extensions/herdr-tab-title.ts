@@ -5,7 +5,7 @@ export function buildSessionTitle(
 	sessionName: string | null | undefined,
 ): string | null {
 	const name = sessionName?.trim();
-	return name ? `pi: ${name}` : null;
+	return name || null;
 }
 
 export function chooseTabLabel(

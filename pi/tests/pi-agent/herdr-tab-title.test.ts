@@ -71,8 +71,8 @@ function createFakeRunner(
 }
 
 describe("buildSessionTitle", () => {
-	it("prefixes an explicit session name with pi:", () => {
-		expect(buildSessionTitle("Refactor auth")).toBe("pi: Refactor auth");
+	it("returns an explicit session name without a prefix", () => {
+		expect(buildSessionTitle("Refactor auth")).toBe("Refactor auth");
 	});
 
 	it("returns null for empty or blank names", () => {
@@ -85,7 +85,7 @@ describe("buildSessionTitle", () => {
 describe("chooseTabLabel", () => {
 	it("prefers the Pi session title when present", () => {
 		expect(chooseTabLabel("Refactor auth", "dotfiles")).toBe(
-			"pi: Refactor auth",
+			"Refactor auth",
 		);
 	});
 
@@ -220,7 +220,7 @@ describe("createHerdrTabTitleController", () => {
 		await controller.initialize("Refactor auth");
 
 		expect(runCalls).toEqual([
-			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
+			["tab", "rename", "w6522c4796c52e1:1", "Refactor auth"],
 		]);
 	});
 
@@ -244,14 +244,14 @@ describe("createHerdrTabTitleController", () => {
 		await controller.sync("Refactor auth");
 
 		expect(runCalls).toEqual([
-			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
-			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
+			["tab", "rename", "w6522c4796c52e1:1", "Refactor auth"],
+			["tab", "rename", "w6522c4796c52e1:1", "Refactor auth"],
 		]);
 		expect(controller.getState()).toEqual({
 			enabled: true,
 			tabId: "w6522c4796c52e1:1",
 			originalTabLabel: "dotfiles",
-			lastAppliedLabel: "pi: Refactor auth",
+			lastAppliedLabel: "Refactor auth",
 		});
 	});
 
@@ -299,7 +299,7 @@ describe("createHerdrTabTitleController", () => {
 		await controller.sync("");
 
 		expect(runCalls).toEqual([
-			["tab", "rename", "w6522c4796c52e1:1", "pi: Refactor auth"],
+			["tab", "rename", "w6522c4796c52e1:1", "Refactor auth"],
 			["tab", "rename", "w6522c4796c52e1:1", "dotfiles"],
 		]);
 	});
