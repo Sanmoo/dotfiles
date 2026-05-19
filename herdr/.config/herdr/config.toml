@@ -27,11 +27,11 @@ name = "gruvbox"
 prefix = "ctrl+a"
 next_tab = "ctrl+]"     # optional, unset by default
 previous_tab = "ctrl+[" # optional, unset by default
-reload_config = "R"     # optional shortcut to reload config.toml without restarting
+reload_config = "l"     # optional shortcut to reload config.toml without restarting
 
 # Navigate-mode actions
 # new_workspace = "n"
-# rename_workspace = "shift+n"
+rename_workspace = "shift+n"
 # close_workspace = "shift+d"
 # previous_workspace = "" # optional, unset by default
 # next_workspace = ""     # optional, unset by default
