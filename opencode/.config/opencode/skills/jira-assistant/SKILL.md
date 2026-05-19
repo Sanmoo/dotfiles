@@ -143,43 +143,6 @@ editJiraIssue(cloudId, issueKey, fields)
 addCommentToJiraIssue(cloudId, issueKey, comment)
 ```
 
-## Default Task Template
-
-**ALWAYS use this template** in the `description` field when creating issues:
-
-```markdown
-## Context
-
-[Brief explanation of the problem or need]
-
-## Objective
-
-[What needs to be accomplished]
-
-## Technical Requirements
-
-[This is high level, it doesn't mention which class or file, but the technical high level objective]
-
-- [ ] Requirement 1
-- [ ] Requirement 2
-- [ ] Requirement 3
-
-## Acceptance Criteria
-
-- [ ] Criteria 1
-- [ ] Criteria 2
-- [ ] Criteria 3
-
-## Technical Notes
-
-[Don't include file paths as they can change overtime]
-[Technical considerations, dependencies, relevant links]
-
-## Estimate
-
-[Time estimate or story points, if applicable]
-```
-
 ## Best Practices
 
 ### ✅ DO
@@ -323,8 +286,6 @@ project = {PROJECT_KEY} AND updated >= startOfWeek()
 - **Project key is mandatory** - Always include `project = {PROJECT_KEY}` in JQL queries
 - **Use detected configuration** - Read from `.cursor/rules/jira-config.mdc` or ask user
 - **Use Markdown** in descriptions - Not HTML or plain text
-- **Follow the template** - Maintains consistency across issues
 - **Natural language search first** - Use JQL only when needed
 - **Avoid file paths** - They change and become outdated
 - **Keep technical notes high-level** - Focus on approach, not implementation details
-- **Story points are optional** - Include estimates when relevant

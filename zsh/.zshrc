@@ -158,6 +158,7 @@ alias tat="tmux attach-session -t"
 alias mux="tmuxinator"
 alias awslocal="AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --endpoint-url=http://localhost:4566"
 alias less="less -S -# 15"
+alias bring-hermes="git fetch origin && git merge origin/hermes --ff-only"
 
 ## Navigation
 alias "cd ..."="cd ../.."
