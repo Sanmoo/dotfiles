@@ -25,9 +25,9 @@ name = "gruvbox"
 # Most reliable bindings are plain keys, ctrl+letter, esc/tab/enter, and function keys.
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 prefix = "ctrl+a"
-next_tab = "ctrl+]"     # optional, unset by default
-previous_tab = "ctrl+[" # optional, unset by default
-reload_config = "l"     # optional shortcut to reload config.toml without restarting
+next_tab = "ctrl+]"       # optional, unset by default
+previous_tab = "ctrl+["   # optional, unset by default
+reload_config = "shift+l" # optional shortcut to reload config.toml without restarting
 
 # Navigate-mode actions
 # new_workspace = "n"
