@@ -354,10 +354,12 @@ describe("createHerdrTabTitleController", () => {
 });
 
 describe("registerHerdrTabTitle", () => {
-	it("wires session_start, turn_start, and session_shutdown to the controller", async () => {
+	it("starts polling after session_start and clears the poller on shutdown", async () => {
 		const handlers: Record<string, (...args: any[]) => Promise<void>> = {};
 		const calls: string[] = [];
 		let sessionName = "Initial name";
+		let pollCallback: (() => void | Promise<void>) | undefined;
+		let clearedHandle: unknown;
 
 		const controller: HerdrTabTitleController = {
 			async initialize(name) {
@@ -388,11 +390,20 @@ describe("registerHerdrTabTitle", () => {
 			},
 		};
 
-		registerHerdrTabTitle(pi as any, () => controller);
+		registerHerdrTabTitle(pi as any, () => controller, {
+			setInterval(callback: () => void | Promise<void>) {
+				pollCallback = callback;
+				return 123;
+			},
+			clearInterval(handle: unknown) {
+				clearedHandle = handle;
+			},
+			intervalMs: 250,
+		} as any);
 
 		await handlers.session_start({}, {} as any);
 		sessionName = "Renamed session";
-		await handlers.turn_start({}, {} as any);
+		await pollCallback?.();
 		await handlers.session_shutdown({}, {} as any);
 
 		expect(calls).toEqual([
@@ -400,5 +411,6 @@ describe("registerHerdrTabTitle", () => {
 			"sync:Renamed session",
 			"shutdown",
 		]);
+		expect(clearedHandle).toBe(123);
 	});
 });

@@ -52,6 +52,12 @@ export type HerdrTabTitleController = {
 	};
 };
 
+export type SessionNamePollScheduler = {
+	setInterval(callback: () => void | Promise<void>, intervalMs: number): unknown;
+	clearInterval(handle: unknown): void;
+	intervalMs: number;
+};
+
 function execHerdr(args: string[]): Promise<string | null> {
 	return new Promise((resolve) => {
 		execFile("herdr", args, { encoding: "utf8" }, (error, stdout) => {
@@ -168,11 +174,29 @@ export function registerHerdrTabTitle(
 			env: process.env,
 			runner: createExecHerdrRunner(),
 		}),
+	scheduler: SessionNamePollScheduler = {
+		setInterval(callback, intervalMs) {
+			return globalThis.setInterval(() => {
+				void callback();
+			}, intervalMs);
+		},
+		clearInterval(handle) {
+			globalThis.clearInterval(handle as ReturnType<typeof setInterval>);
+		},
+		intervalMs: 500,
+	},
 ) {
 	const controller = controllerFactory();
+	let pollHandle: unknown;
 
 	pi.on("session_start", async () => {
 		await controller.initialize(pi.getSessionName());
+		if (pollHandle === undefined) {
+			pollHandle = scheduler.setInterval(
+				() => controller.sync(pi.getSessionName()),
+				scheduler.intervalMs,
+			);
+		}
 	});
 
 	pi.on("turn_start", async () => {
@@ -180,6 +204,10 @@ export function registerHerdrTabTitle(
 	});
 
 	pi.on("session_shutdown", async () => {
+		if (pollHandle !== undefined) {
+			scheduler.clearInterval(pollHandle);
+			pollHandle = undefined;
+		}
 		await controller.shutdown();
 	});
 
