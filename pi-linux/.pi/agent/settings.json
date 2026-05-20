@@ -19,5 +19,25 @@
     "npm:pi-mcp-adapter"
   ],
   "defaultModel": "gpt-5.5",
-  "defaultProvider": "openai-codex"
+  "defaultProvider": "openai-codex",
+  "subagents": {
+    "agentOverrides": {
+      "implementer": {
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "low"
+      },
+      "spec-reviewer": {
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "low"
+      },
+      "code-reviewer": {
+        "model": "openai-codex/gpt-5.5",
+        "thinking": "medium"
+      },
+      "delegate": {
+        "model": "opencode-go/deepseek-v4-flash",
+        "thinking": "high"
+      }
+    }
+  }
 }
