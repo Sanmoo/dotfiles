@@ -3,29 +3,11 @@
   "enabledModels": [
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
-    "opencode-go/deepseek-v4-flash"
+    "opencode-go/deepseek-v4-flash",
+    "openai-codex/gpt-5.5"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
-  "subagents": {
-    "agentOverrides": {
-      "implementer": {
-        "model": "opencode-go/deepseek-v4-flash",
-        "thinking": "xhigh",
-        "fallbackModels": []
-      },
-      "spec-reviewer": {
-        "model": "opencode-go/deepseek-v4-pro",
-        "thinking": "xhigh",
-        "fallbackModels": []
-      },
-      "code-reviewer": {
-        "model": "opencode-go/deepseek-v4-pro",
-        "thinking": "xhigh",
-        "fallbackModels": []
-      }
-    }
-  },
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",
