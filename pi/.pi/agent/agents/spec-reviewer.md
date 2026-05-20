@@ -1,8 +1,6 @@
 ---
 name: spec-reviewer
 description: Reviews implementation against specification. Read-only — identifies missing requirements, extra work, and misunderstandings.
-model: opencode-go/deepseek-v4-pro
-thinking: xhigh
 tools: read, bash, grep, find, ls
 ---
 

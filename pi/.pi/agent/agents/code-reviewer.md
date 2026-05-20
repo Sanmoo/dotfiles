@@ -1,8 +1,6 @@
 ---
 name: code-reviewer
 description: Reviews code quality — clean, tested, maintainable. Read-only.
-model: opencode-go/deepseek-v4-pro
-thinking: xhigh
 tools: read, bash, grep, find, ls
 ---
 
