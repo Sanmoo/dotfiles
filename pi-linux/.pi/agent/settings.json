@@ -12,7 +12,6 @@
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",
     "npm:@juicesharp/rpiv-todo",
-    "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-lens",
     "npm:pi-web-access",
     "npm:pi-auto-rename",
