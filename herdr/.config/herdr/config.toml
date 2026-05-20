@@ -1,3 +1,4 @@
+onboarding = false
 # herdr configuration
 # Place this file at ~/.config/herdr/config.toml
 
@@ -36,7 +37,7 @@ rename_workspace = "shift+n"
 # previous_workspace = "" # optional, unset by default
 # next_workspace = ""     # optional, unset by default
 # previous_agent = ""     # optional, unset by default
-# next_agent = ""         # optional, unset by default
+next_agent = "ctrl+p"     # optional, unset by default
 # detach = ""             # optional explicit detach shortcut in server/client mode
 # open_notification_target = "" # optional shortcut to jump to the visible notification target
 # new_tab = "c"

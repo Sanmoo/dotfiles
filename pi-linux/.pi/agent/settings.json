@@ -5,8 +5,6 @@
     "opencode-go/deepseek-v4-pro",
     "opencode-go/deepseek-v4-flash"
   ],
-  "defaultProvider": "opencode-go",
-  "defaultModel": "deepseek-v4-flash",
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "subagents": {
@@ -37,5 +35,7 @@
     "npm:pi-web-access",
     "npm:pi-auto-rename",
     "npm:pi-mcp-adapter"
-  ]
+  ],
+  "defaultModel": "gpt-5.5",
+  "defaultProvider": "openai-codex"
 }
