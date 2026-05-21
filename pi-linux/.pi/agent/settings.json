@@ -14,7 +14,6 @@
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-lens",
     "npm:pi-web-access",
-    "npm:pi-auto-rename",
     "npm:pi-mcp-adapter"
   ],
   "defaultModel": "gpt-5.5",
