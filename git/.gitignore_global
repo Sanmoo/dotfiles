@@ -31,3 +31,4 @@ kls_database.db
 longquery.sql
 my-references.txt
 .pi-lens
+.worktrees/
