@@ -3,6 +3,7 @@ max_agents: 3
 sources:
   - /home/sanmoo/dev/github.com/lorebase/lorebase-frontend
   - /home/sanmoo/dev/github.com/lorebase/lorebase-backend
+  - /home/sanmoo/dev/github.com/lorebase/lorebase-design
   - /home/sanmoo/dev/github.com/Sanmoo/workq
 prompt_template: |
   Contexto operacional:
