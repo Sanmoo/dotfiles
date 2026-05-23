@@ -10,7 +10,8 @@
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-lens",
     "npm:pi-web-access",
-    "npm:pi-mcp-adapter"
+    "npm:pi-mcp-adapter",
+    "npm:pi-intercom"
   ],
   "enabledModels": [
     "github-copilot/gpt-5.4",
