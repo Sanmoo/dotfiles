@@ -1,0 +1,14 @@
+actor_id: sanmoo
+sources:
+  - /home/sanmoo/dev/github.com/lorebase/lorebase-frontend
+prompt_template: |
+  Contexto operacional:
+  - Você foi iniciado pelo WorkQ.
+  - A task já está claimed.
+  - Não edite arquivos `.tasks` manualmente.
+  - Use a CLI `workq` para consultar ou alterar status.
+  - Só marque a task como done se o humano pedir explicitamente.
+launcher:
+  name: herdr-pi
+  mode: command
+  command: /home/sanmoo/.config/workq/launcher-herdr-pi.sh
