@@ -34,7 +34,7 @@ if [[ -z "$workspace_id" ]]; then
 fi
 
 prompt="$(cat "$TASK_PROMPT_FILE")"
-label="workq:${TASK_REF}"
+label="$TASK_REF"
 
 tab_json="$(herdr tab create \
 	--workspace "$workspace_id" \

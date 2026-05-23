@@ -39,7 +39,7 @@ chmod +x "$tmpdir/bin/pi"
 export PATH="$tmpdir/bin:$PATH"
 export HERDR_CALL_LOG="$tmpdir/herdr.log"
 export HERDR_PANE_ID="pane-1"
-export TASK_REF="TASK-123"
+export TASK_REF="workq:TASK-123"
 export TASK_REPO_PATH="$tmpdir/repo"
 export TASK_PROMPT_FILE="$tmpdir/prompt.txt"
 
@@ -48,6 +48,12 @@ export TASK_PROMPT_FILE="$tmpdir/prompt.txt"
 if ! grep -Fq 'herdr tab create --workspace workspace-1 --cwd ' "$HERDR_CALL_LOG" ||
 	! grep -Fq -- '--label workq:TASK-123 --focus' "$HERDR_CALL_LOG"; then
 	echo "expected launcher to create and focus a new tab in the current workspace" >&2
+	cat "$HERDR_CALL_LOG" >&2
+	exit 1
+fi
+
+if grep -Fq -- '--label workq:workq:TASK-123' "$HERDR_CALL_LOG"; then
+	echo "expected launcher not to duplicate the workq prefix in the tab label" >&2
 	cat "$HERDR_CALL_LOG" >&2
 	exit 1
 fi
