@@ -1,10 +1,16 @@
 actor_id: sanmoo
 sources:
   - /home/sanmoo/dev/github.com/lorebase/lorebase-frontend
+  - /home/sanmoo/dev/github.com/lorebase/lorebase-backend
+  - /home/sanmoo/dev/github.com/Sanmoo/workq
 prompt_template: |
   Contexto operacional:
   - Você foi iniciado pelo WorkQ.
-  - A task já está claimed.
+  - A task já está claimed: {{ .TaskRef }}
+  - Repositório: {{ .RepoID }}
+  - Backlog: {{ .BacklogID }}
+  - Task ID: {{ .TaskID }}
+  - Título: {{ .Title }}
   - Não edite arquivos `.tasks` manualmente.
   - Use a CLI `workq` para consultar ou alterar status.
   - Só marque a task como done se o humano pedir explicitamente.
