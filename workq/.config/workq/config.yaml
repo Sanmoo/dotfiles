@@ -16,6 +16,7 @@ prompt_template: |
   - Não edite arquivos `.tasks` manualmente.
   - Use a CLI `workq` para consultar ou alterar status.
   - Só marque a task como done se o humano pedir explicitamente.
+  - Use obrigatoriamente a skill brainstorming antes de qualquer edição.
 launcher:
   name: herdr-pi
   mode: command
