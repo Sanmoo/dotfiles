@@ -1,5 +1,5 @@
 actor_id: sanmoo
-max_agents: 3
+max_agents: 4
 sources:
   - /home/sanmoo/dev/github.com/lorebase/lorebase-frontend
   - /home/sanmoo/dev/github.com/lorebase/lorebase-backend

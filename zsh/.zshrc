@@ -148,6 +148,11 @@ alias upfin="gc -a -m \"update finance files\" && git push"
 alias gwt="git worktree"
 alias mai="myfin add income"
 alias mae="myfin add expense"
+alias wqd="workq done"
+alias wqr="workq ready"
+alias wqu="workq unclaim"
+alias wql="workq list"
+alias wqs="workq list"
 
 ## pi
 alias pask='pi --model "opencode-go/deepseek-v4-flash" --print'
