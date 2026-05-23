@@ -36,20 +36,18 @@ fi
 prompt="$(cat "$TASK_PROMPT_FILE")"
 label="workq:${TASK_REF}"
 
-tab_id="$(herdr tab create \
+tab_json="$(herdr tab create \
 	--workspace "$workspace_id" \
 	--cwd "$TASK_REPO_PATH" \
 	--label "$label" \
-	--no-focus | jq -r '.result.tab.tab_id // .result.tab_id // empty')"
+	--focus)"
 
-if [[ -z "$tab_id" ]]; then
-	echo "Could not create Herdr tab for launcher" >&2
+pane_id="$(jq -r '.result.root_pane.pane_id // empty' <<<"$tab_json")"
+
+if [[ -z "$pane_id" ]]; then
+	echo "Could not create Herdr tab root pane for launcher" >&2
 	exit 2
 fi
 
-exec herdr agent start "$label" \
-	--cwd "$TASK_REPO_PATH" \
-	--workspace "$workspace_id" \
-	--tab "$tab_id" \
-	--focus \
-	-- pi "$prompt"
+printf -v quoted_prompt '%q' "$prompt"
+exec herdr pane run "$pane_id" "exec pi $quoted_prompt"

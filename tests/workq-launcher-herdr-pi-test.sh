@@ -17,9 +17,9 @@ case "$1 $2" in
     printf '{"result":{"pane":{"workspace_id":"workspace-1"}}}\n'
     ;;
   "tab create")
-    printf '{"result":{"tab":{"tab_id":"workspace-1:99"}}}\n'
+    printf '{"result":{"root_pane":{"pane_id":"pane-99"},"tab":{"tab_id":"workspace-1:99"}}}\n'
     ;;
-  "agent start")
+  "pane run")
     exit 0
     ;;
   *)
@@ -45,15 +45,21 @@ export TASK_PROMPT_FILE="$tmpdir/prompt.txt"
 
 "$repo_root/workq/.config/workq/launcher-herdr-pi.sh"
 
-if ! grep -Fq 'herdr tab create --workspace workspace-1 --cwd ' "$HERDR_CALL_LOG"; then
-	echo "expected launcher to create a new tab in the current workspace" >&2
+if ! grep -Fq 'herdr tab create --workspace workspace-1 --cwd ' "$HERDR_CALL_LOG" ||
+	! grep -Fq -- '--label workq:TASK-123 --focus' "$HERDR_CALL_LOG"; then
+	echo "expected launcher to create and focus a new tab in the current workspace" >&2
 	cat "$HERDR_CALL_LOG" >&2
 	exit 1
 fi
 
-if ! grep -Fq 'herdr agent start workq:TASK-123 --cwd ' "$HERDR_CALL_LOG" ||
-	! grep -Fq -- '--workspace workspace-1 --tab workspace-1:99 --focus -- pi Fix the thing' "$HERDR_CALL_LOG"; then
-	echo "expected launcher to start pi in the newly created tab" >&2
+if grep -Fq 'herdr agent start' "$HERDR_CALL_LOG"; then
+	echo "expected launcher not to create a second agent pane" >&2
+	cat "$HERDR_CALL_LOG" >&2
+	exit 1
+fi
+
+if ! grep -Fq 'herdr pane run pane-99 exec pi Fix\ the\ thing' "$HERDR_CALL_LOG"; then
+	echo "expected launcher to run pi in the new tab's root pane" >&2
 	cat "$HERDR_CALL_LOG" >&2
 	exit 1
 fi
