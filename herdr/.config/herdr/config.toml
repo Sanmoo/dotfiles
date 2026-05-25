@@ -26,26 +26,25 @@ name = "gruvbox"
 # Most reliable bindings are plain keys, ctrl+letter, esc/tab/enter, and function keys.
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 prefix = "ctrl+a"
-next_tab = "ctrl+]"       # optional, unset by default
-previous_tab = "ctrl+["   # optional, unset by default
-reload_config = "shift+l" # optional shortcut to reload config.toml without restarting
+next_tab = "ctrl+]"              # optional, unset by default
+previous_tab = "ctrl+["          # optional, unset by default
+reload_config = "prefix+shift+l" # optional shortcut to reload config.toml without restarting
 
 # Navigate-mode actions
 # new_workspace = "n"
-rename_workspace = "shift+n"
 # close_workspace = "shift+d"
 # previous_workspace = "" # optional, unset by default
 # next_workspace = ""     # optional, unset by default
 # previous_agent = ""     # optional, unset by default
-next_agent = "ctrl+p"     # optional, unset by default
+next_agent = "ctrl+p" # optional, unset by default
 # detach = ""             # optional explicit detach shortcut in server/client mode
 # open_notification_target = "" # optional shortcut to jump to the visible notification target
 # new_tab = "c"
-rename_tab = "," # optional, unset by default
+rename_tab = "prefix+," # optional, unset by default
 # previous_tab = ""       # optional, unset by default
 # close_tab = ""          # optional, unset by default
 # rename_pane = ""        # optional, unset by default
-edit_scrollback = "e" # opens focused pane scrollback in $EDITOR
+edit_scrollback = "prefix+e" # opens focused pane scrollback in $EDITOR
 # focus_pane_left = ""    # optional, unset by default
 # focus_pane_down = ""    # optional, unset by default
 # focus_pane_up = ""      # optional, unset by default
@@ -53,7 +52,7 @@ edit_scrollback = "e" # opens focused pane scrollback in $EDITOR
 # split_vertical = "v"
 # split_horizontal = "-"
 # close_pane = "x"
-zoom = "z" # legacy alias: fullscreen
+zoom = "prefix+z" # legacy alias: fullscreen
 # resize_mode = "r"
 # toggle_sidebar = "b"
 
