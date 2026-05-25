@@ -1,1 +1,8 @@
-{"format":{"mode":"immediate"}}
+{
+  "widget": {
+    "visible": false
+  },
+  "format": {
+    "mode": "immediate"
+  }
+}
