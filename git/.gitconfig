@@ -10,7 +10,7 @@
   ddiff = -c diff.external=difft diff
 
 [user]
-  name = Samuel Santos
+	name = Samuel Santos
 
 [core]
   excludesfile = ~/.gitignore_global
@@ -22,7 +22,8 @@
 
 [delta]
   navigate = true    # use n and N to move between diff sections
-  light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+  dark = true        # use colors appropriate for a dark terminal background
+  detect-dark-light = never  # don't query terminal colors; avoids OSC replies leaking into the shell prompt
   max-line-length = 10000
 
 ; [merge]
