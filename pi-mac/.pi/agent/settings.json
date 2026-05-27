@@ -2,7 +2,7 @@
   "lastChangelogVersion": "0.75.5",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
-  "defaultThinkingLevel": "off",
+  "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "packages": [
     "git:github.com/obra/superpowers",
@@ -14,6 +14,6 @@
     "npm:pi-intercom"
   ],
   "enabledModels": [
-    "github-copilot/gpt-4.1"
+    "openai-codex/gpt-5.5"
   ]
 }
