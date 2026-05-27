@@ -29,6 +29,7 @@ import {
 
 const DEFAULT_PROVIDER = "anthropic";
 const DEFAULT_MODEL = "claude-haiku-4-5";
+const RENAME_TIMEOUT_MS = 15_000;
 const CUSTOM_ENTRY_TYPE = "pi-auto-rename-model";
 const CONFIG_PATH = join(
 	homedir(),
@@ -266,6 +267,26 @@ function notify(
 	if (ctx.hasUI) ctx.ui.notify(msg, level);
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(
+			() => reject(new Error(`timed out after ${ms}ms`)),
+			ms,
+		);
+		timer.unref?.();
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
+
 async function generateName(
 	ctx: ExtensionContext,
 	ref: ModelRef,
@@ -283,10 +304,13 @@ async function generateName(
 			] satisfies TextContent[],
 			timestamp: Date.now(),
 		};
-		const response = await complete(
-			resolved.model,
-			{ systemPrompt: SYSTEM_PROMPT, messages: [prompt] },
-			{ apiKey: resolved.apiKey, headers: resolved.headers, maxTokens: 128 },
+		const response = await withTimeout(
+			complete(
+				resolved.model,
+				{ systemPrompt: SYSTEM_PROMPT, messages: [prompt] },
+				{ apiKey: resolved.apiKey, headers: resolved.headers, maxTokens: 128 },
+			),
+			RENAME_TIMEOUT_MS,
 		);
 
 		if (response.stopReason === "error") {

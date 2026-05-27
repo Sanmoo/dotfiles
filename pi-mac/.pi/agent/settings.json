@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.75.5",
-  "defaultProvider": "github-copilot",
-  "defaultModel": "gpt-4.1",
-  "defaultThinkingLevel": "low",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
+  "defaultThinkingLevel": "off",
   "hideThinkingBlock": true,
   "packages": [
     "git:github.com/obra/superpowers",
