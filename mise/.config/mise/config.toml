@@ -17,6 +17,7 @@ gradle = "latest"
 aws = { version = "latest", symlink_bins = "true" }
 yarn = "1.22.22"
 bun = "latest"
+maven = "latest"
 
 [tools."http:flutter"]
 version = "latest"
