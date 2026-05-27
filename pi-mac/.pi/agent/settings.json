@@ -14,6 +14,6 @@
     "npm:pi-intercom"
   ],
   "enabledModels": [
-    "github-copilot/gpt-5.5"
+    "github-copilot/gpt-4.1"
   ]
 }
