@@ -157,7 +157,7 @@ alias wqd="workq done"
 alias wqr="workq ready"
 alias wqu="workq unclaim"
 alias wql="workq list"
-alias wqs="workq list"
+alias wqs="workq show"
 
 ## pi
 alias pask='pi --model "opencode-go/deepseek-v4-flash" --print'
