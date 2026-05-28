@@ -18,6 +18,7 @@ aws = { version = "latest", symlink_bins = "true" }
 yarn = "1.22.22"
 bun = "latest"
 maven = "latest"
+"github:gastownhall/beads" = "latest"
 
 [tools."http:flutter"]
 version = "latest"
