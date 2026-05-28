@@ -177,8 +177,6 @@ alias ":qa"="exit"
 eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
 
-source ~/.env
-
 # Lorebase
 get-lb-token() {
   export TOKEN=$(python /home/sanmoo/dev/github.com/lorebase/lorebase-frontend/scripts/get_cognito_token.py $LOREBASE_DEV_USEREMAIL $LOREBASE_DEV_USERPASSWORD --raw)
