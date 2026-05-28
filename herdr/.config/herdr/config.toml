@@ -121,6 +121,9 @@ delivery = "system"
 # droid = "off"
 
 [experimental]
+# Preserve pane screen history across full server restarts.
+pane_history = true
+
 # Allow launching herdr from inside a herdr-managed pane.
 # allow_nested = false
 # Experimental local Kitty graphics rendering for attached clients.

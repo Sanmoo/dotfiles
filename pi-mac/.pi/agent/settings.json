@@ -4,6 +4,9 @@
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
+  "extensions": [
+    "~/.pi/agent/extensions/herdr-subagent-guard.ts"
+  ],
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",

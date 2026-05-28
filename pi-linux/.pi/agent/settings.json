@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.76.0",
+  "lastChangelogVersion": "0.77.0",
   "enabledModels": [
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
@@ -8,6 +8,9 @@
   ],
   "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
+  "extensions": [
+    "~/.pi/agent/extensions/herdr-subagent-guard.ts"
+  ],
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",
