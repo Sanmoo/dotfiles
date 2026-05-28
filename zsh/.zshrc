@@ -6,7 +6,7 @@ export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm/.beads/
 # export BD_JSON_ENVELOPE=1
 
 alias remind="bd-overdue"
-remind
+# remind
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
