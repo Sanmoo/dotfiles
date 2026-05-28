@@ -29,6 +29,7 @@ prefix = "ctrl+a"
 next_tab = "ctrl+]"              # optional, unset by default
 previous_tab = "ctrl+["          # optional, unset by default
 reload_config = "prefix+shift+l" # optional shortcut to reload config.toml without restarting
+last_pane = "prefix+a"           # switch to the previously focused pane
 
 # Navigate-mode actions
 # new_workspace = "n"

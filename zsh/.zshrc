@@ -184,3 +184,4 @@ get-lb-token() {
 
 # opencode
 export PATH=$HOME/.opencode/bin:$PATH
+export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
