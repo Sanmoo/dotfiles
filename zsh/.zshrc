@@ -1,6 +1,11 @@
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 
-alias remind="tasks remind"
+# Beads Stuff
+export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
+export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm/.beads/
+# export BD_JSON_ENVELOPE=1
+
+alias remind="bd-overdue"
 remind
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
@@ -184,4 +189,3 @@ get-lb-token() {
 
 # opencode
 export PATH=$HOME/.opencode/bin:$PATH
-export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
