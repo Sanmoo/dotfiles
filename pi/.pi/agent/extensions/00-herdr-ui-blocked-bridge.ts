@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export const BLOCKED_LABEL = "Aguardando input";
 export const DIALOG_METHODS = ["select", "confirm", "input", "editor"] as const;
 
-const wrappedMarker = Symbol("herdr-ui-blocked-bridge.wrapped");
+const wrappedMarker = Symbol.for("herdr-ui-blocked-bridge.wrapped");
 
 type DialogMethodName = (typeof DIALOG_METHODS)[number];
 type UiLike = Record<string | symbol, unknown>;
@@ -34,12 +34,18 @@ function wrapDialogMethod(
 	ui: UiLike,
 	methodName: DialogMethodName,
 ): void {
-	const original = ui[methodName];
-	if (typeof original !== "function") {
+	let original: unknown;
+	try {
+		original = ui[methodName];
+	} catch {
 		return;
 	}
 
-	ui[methodName] = async function wrappedDialog(
+	if (typeof original !== "function" || original[wrappedMarker]) {
+		return;
+	}
+
+	const wrappedDialog = async function wrappedDialog(
 		this: unknown,
 		...args: unknown[]
 	) {
@@ -50,6 +56,14 @@ function wrapDialogMethod(
 			safeEmitBlocked(pi, false);
 		}
 	};
+
+	Object.defineProperty(wrappedDialog, wrappedMarker, { value: true });
+
+	try {
+		ui[methodName] = wrappedDialog;
+	} catch {
+		// Wrapping is best-effort: frozen/sealed/proxy UI objects must remain fail-open.
+	}
 }
 
 export function wrapUiForHerdrBlocked(pi: PiLike, ui: unknown): void {
@@ -58,15 +72,9 @@ export function wrapUiForHerdrBlocked(pi: PiLike, ui: unknown): void {
 	}
 
 	const uiObject = ui as UiLike;
-	if (uiObject[wrappedMarker]) {
-		return;
-	}
-
 	for (const methodName of DIALOG_METHODS) {
 		wrapDialogMethod(pi, uiObject, methodName);
 	}
-
-	uiObject[wrappedMarker] = true;
 }
 
 export default function (pi: ExtensionAPI) {

@@ -74,7 +74,7 @@ describe("herdr-ui-blocked-bridge", () => {
 		]);
 	});
 
-	it("is idempotent when the same ui object is wrapped more than once", async () => {
+	it("is idempotent when repeated wrapping sees the durable wrapped marker", async () => {
 		const { pi, events } = createFakePi();
 		const ui = {
 			async input() {
@@ -83,11 +83,66 @@ describe("herdr-ui-blocked-bridge", () => {
 		};
 
 		wrapUiForHerdrBlocked(pi, ui);
+		expect(Object.getOwnPropertySymbols(ui.input)).toContain(
+			Symbol.for("herdr-ui-blocked-bridge.wrapped"),
+		);
 		wrapUiForHerdrBlocked(pi, ui);
 
 		const result = await ui.input();
 
 		expect(result).toBe("typed value");
+		expect(events).toEqual([
+			{
+				name: "herdr:blocked",
+				data: { active: true, label: BLOCKED_LABEL },
+			},
+			{
+				name: "herdr:blocked",
+				data: { active: false },
+			},
+		]);
+	});
+
+	it("does not throw when the ui object is frozen", () => {
+		const { pi } = createFakePi();
+		const ui = Object.freeze({
+			async select() {
+				return "choice";
+			},
+		});
+
+		expect(() => wrapUiForHerdrBlocked(pi, ui)).not.toThrow();
+	});
+
+	it("does not throw when dialog property accessors or proxies throw", () => {
+		const { pi } = createFakePi();
+		const accessorUi = Object.defineProperty({}, "confirm", {
+			get() {
+				throw new Error("access denied");
+			},
+		});
+		const proxyUi = new Proxy(
+			{},
+			{
+				get() {
+					throw new Error("proxy get denied");
+				},
+			},
+		);
+
+		expect(() => wrapUiForHerdrBlocked(pi, accessorUi)).not.toThrow();
+		expect(() => wrapUiForHerdrBlocked(pi, proxyUi)).not.toThrow();
+	});
+
+	it("can wrap a dialog method added after an object initially has no methods", async () => {
+		const { pi, events } = createFakePi();
+		const ui: { select?: () => Promise<string> } = {};
+
+		wrapUiForHerdrBlocked(pi, ui);
+		ui.select = async () => "late choice";
+		wrapUiForHerdrBlocked(pi, ui);
+
+		await expect(ui.select()).resolves.toBe("late choice");
 		expect(events).toEqual([
 			{
 				name: "herdr:blocked",
