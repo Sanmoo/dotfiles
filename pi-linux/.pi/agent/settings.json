@@ -9,6 +9,7 @@
   "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "extensions": [
+    "~/.pi/agent/extensions/00-herdr-ui-blocked-bridge.ts",
     "~/.pi/agent/extensions/herdr-subagent-guard.ts"
   ],
   "packages": [
