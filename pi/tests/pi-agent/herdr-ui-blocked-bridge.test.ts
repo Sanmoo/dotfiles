@@ -74,23 +74,26 @@ describe("herdr-ui-blocked-bridge", () => {
 		]);
 	});
 
-	it("is idempotent when repeated wrapping sees the durable wrapped marker", async () => {
+	it("is idempotent for an already wrapped ui object", async () => {
 		const { pi, events } = createFakePi();
-		const ui = {
+		const ui: {
+			input: () => Promise<string>;
+			confirm?: () => Promise<boolean>;
+		} = {
 			async input() {
 				return "typed value";
 			},
 		};
 
 		wrapUiForHerdrBlocked(pi, ui);
-		expect(Object.getOwnPropertySymbols(ui.input)).toContain(
-			Symbol.for("herdr-ui-blocked-bridge.wrapped"),
+		expect(Object.getOwnPropertySymbols(ui)).toContain(
+			Symbol.for("herdr-ui-blocked-bridge.ui-wrapped"),
 		);
+		ui.confirm = async () => true;
 		wrapUiForHerdrBlocked(pi, ui);
 
-		const result = await ui.input();
-
-		expect(result).toBe("typed value");
+		await expect(ui.input()).resolves.toBe("typed value");
+		await expect(ui.confirm()).resolves.toBe(true);
 		expect(events).toEqual([
 			{
 				name: "herdr:blocked",
@@ -134,11 +137,14 @@ describe("herdr-ui-blocked-bridge", () => {
 		expect(() => wrapUiForHerdrBlocked(pi, proxyUi)).not.toThrow();
 	});
 
-	it("can wrap a dialog method added after an object initially has no methods", async () => {
+	it("does not mark an object that initially has no dialog methods", async () => {
 		const { pi, events } = createFakePi();
 		const ui: { select?: () => Promise<string> } = {};
 
 		wrapUiForHerdrBlocked(pi, ui);
+		expect(Object.getOwnPropertySymbols(ui)).not.toContain(
+			Symbol.for("herdr-ui-blocked-bridge.ui-wrapped"),
+		);
 		ui.select = async () => "late choice";
 		wrapUiForHerdrBlocked(pi, ui);
 
@@ -169,6 +175,9 @@ describe("herdr-ui-blocked-bridge", () => {
 
 		expect(result).toBe("custom result");
 		expect(events).toEqual([]);
+		expect(Object.getOwnPropertySymbols(ui)).not.toContain(
+			Symbol.for("herdr-ui-blocked-bridge.ui-wrapped"),
+		);
 		expect(DIALOG_METHODS).not.toContain("custom");
 	});
 

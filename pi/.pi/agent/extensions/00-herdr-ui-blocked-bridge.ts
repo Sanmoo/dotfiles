@@ -4,6 +4,7 @@ export const BLOCKED_LABEL = "Aguardando input";
 export const DIALOG_METHODS = ["select", "confirm", "input", "editor"] as const;
 
 const wrappedMarker = Symbol.for("herdr-ui-blocked-bridge.wrapped");
+const uiWrappedMarker = Symbol.for("herdr-ui-blocked-bridge.ui-wrapped");
 
 type DialogMethodName = (typeof DIALOG_METHODS)[number];
 type UiLike = Record<string | symbol, unknown>;
@@ -29,20 +30,36 @@ function safeEmitBlocked(pi: PiLike, active: boolean): void {
 	}
 }
 
+function isWrappedFunction(value: unknown): boolean {
+	if (typeof value !== "function") {
+		return false;
+	}
+
+	try {
+		return Boolean(value[wrappedMarker]);
+	} catch {
+		return false;
+	}
+}
+
 function wrapDialogMethod(
 	pi: PiLike,
 	ui: UiLike,
 	methodName: DialogMethodName,
-): void {
+): boolean {
 	let original: unknown;
 	try {
 		original = ui[methodName];
 	} catch {
-		return;
+		return false;
 	}
 
-	if (typeof original !== "function" || original[wrappedMarker]) {
-		return;
+	if (isWrappedFunction(original)) {
+		return true;
+	}
+
+	if (typeof original !== "function") {
+		return false;
 	}
 
 	const wrappedDialog = async function wrappedDialog(
@@ -61,8 +78,10 @@ function wrapDialogMethod(
 
 	try {
 		ui[methodName] = wrappedDialog;
+		return true;
 	} catch {
 		// Wrapping is best-effort: frozen/sealed/proxy UI objects must remain fail-open.
+		return false;
 	}
 }
 
@@ -72,8 +91,29 @@ export function wrapUiForHerdrBlocked(pi: PiLike, ui: unknown): void {
 	}
 
 	const uiObject = ui as UiLike;
+	try {
+		if (uiObject[uiWrappedMarker]) {
+			return;
+		}
+	} catch {
+		// Marker checks are best-effort: proxies/accessors must remain fail-open.
+	}
+
+	let hasWrappedOrAlreadyWrappedDialog = false;
 	for (const methodName of DIALOG_METHODS) {
-		wrapDialogMethod(pi, uiObject, methodName);
+		hasWrappedOrAlreadyWrappedDialog =
+			wrapDialogMethod(pi, uiObject, methodName) ||
+			hasWrappedOrAlreadyWrappedDialog;
+	}
+
+	if (!hasWrappedOrAlreadyWrappedDialog) {
+		return;
+	}
+
+	try {
+		Object.defineProperty(uiObject, uiWrappedMarker, { value: true });
+	} catch {
+		// Marking is best-effort: frozen/sealed/proxy UI objects must remain fail-open.
 	}
 }
 
