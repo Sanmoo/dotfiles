@@ -2,11 +2,11 @@ export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 
 # Beads Stuff
 export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
-export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm/.beads/
+export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm
 # export BD_JSON_ENVELOPE=1
 
 alias remind="bd-overdue"
-# remind
+remind
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
