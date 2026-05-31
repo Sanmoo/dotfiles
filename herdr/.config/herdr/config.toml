@@ -17,7 +17,7 @@ name = "gruvbox"
 # Balanced gruvbox contrast layer: keep the base palette, but make
 # selected/focused Herdr surfaces visually distinct from the normal background.
 accent = "#fe8019"
-surface = "#3c3836"
+surface0 = "#3c3836"
 yellow = "#fabd2f"
 
 [keys]
