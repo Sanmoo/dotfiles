@@ -9,3 +9,4 @@ types/
 tsconfig.verify.json
 herdr/.config/herdr/session.json
 herdr/.config/herdr/*.log
+.superpowers/
