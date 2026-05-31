@@ -19,6 +19,8 @@ name = "gruvbox"
 accent = "#fe8019"
 surface_dim = "#3c3836"
 surface0 = "#504945"
+# Compensate for Herdr rendering agent process labels with DIM.
+overlay0 = "#d5c4a1"
 yellow = "#fabd2f"
 
 [keys]
