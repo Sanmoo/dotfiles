@@ -13,11 +13,12 @@ name = "gruvbox"
 
 # Override individual color tokens on top of the base theme.
 # Accepts: hex (#rrggbb), named colors, rgb(r,g,b), or panel_bg = "reset"
-# [theme.custom]
-# panel_bg = "reset"
-# accent = "#f5c2e7"
-# red = "#ff6188"
-# green = "#a6e3a1"
+[theme.custom]
+# Balanced gruvbox contrast layer: keep the base palette, but make
+# selected/focused Herdr surfaces visually distinct from the normal background.
+accent = "#fe8019"
+surface = "#3c3836"
+yellow = "#fabd2f"
 
 [keys]
 # Prefix key to enter navigate mode (default: "ctrl+b")
