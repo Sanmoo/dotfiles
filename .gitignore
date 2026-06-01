@@ -10,3 +10,5 @@ tsconfig.verify.json
 herdr/.config/herdr/session.json
 herdr/.config/herdr/*.log
 .superpowers/
+herdr/.config/herdr/sessions/
+herdr/.config/herdr/release-notes.json

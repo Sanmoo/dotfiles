@@ -182,6 +182,10 @@ alias ":qa"="exit"
 eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
 
+## Tasks
+alias "inprogress"="bd list --status=in_progress"
+alias "next"="bd-next"
+
 # Lorebase
 get-lb-token() {
   export TOKEN=$(python /home/sanmoo/dev/github.com/lorebase/lorebase-frontend/scripts/get_cognito_token.py $LOREBASE_DEV_USEREMAIL $LOREBASE_DEV_USERPASSWORD --raw)
@@ -189,3 +193,4 @@ get-lb-token() {
 
 # opencode
 export PATH=$HOME/.opencode/bin:$PATH
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
