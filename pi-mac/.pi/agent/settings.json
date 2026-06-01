@@ -17,6 +17,10 @@
     "npm:pi-intercom"
   ],
   "enabledModels": [
-    "openai-codex/gpt-5.5"
+    "openai-codex/gpt-5.5",
+    "github-copilot/gpt-5-mini",
+    "github-copilot/gpt-5.4-mini",
+    "github-copilot/claude-sonnet-4.6",
+    "github-copilot/gpt-5.4"
   ]
 }
