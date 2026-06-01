@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.78.0",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
-  "defaultThinkingLevel": "low",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "claude-sonnet-4.6",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "extensions": [
     "~/.pi/agent/extensions/00-herdr-ui-blocked-bridge.ts"
