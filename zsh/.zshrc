@@ -2,7 +2,7 @@ export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 
 # Beads Stuff
 export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
-export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm
+export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm/.beads/
 # export BD_JSON_ENVELOPE=1
 
 alias remind="bd-overdue"
