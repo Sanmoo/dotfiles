@@ -4,9 +4,7 @@
   "defaultModel": "gpt-5-mini",
   "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
-  "extensions": [
-    "~/.pi/agent/extensions/00-herdr-ui-blocked-bridge.ts"
-  ],
+  "extensions": [],
   "packages": [
     "git:github.com/obra/superpowers",
     "npm:pi-subagents",
