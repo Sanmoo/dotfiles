@@ -4,9 +4,10 @@
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
     "opencode-go/deepseek-v4-flash",
-    "openai-codex/gpt-5.5"
+    "openai-codex/gpt-5.5",
+    "opencode-go/glm-5.1"
   ],
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -18,8 +19,8 @@
     "npm:pi-mcp-adapter",
     "npm:pi-intercom"
   ],
-  "defaultModel": "gpt-5.5",
-  "defaultProvider": "openai-codex",
+  "defaultModel": "deepseek-v4-pro",
+  "defaultProvider": "opencode-go",
   "subagents": {
     "agentOverrides": {
       "implementer": {

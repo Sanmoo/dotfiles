@@ -2,7 +2,7 @@
 go = "1.26.3"
 golangci-lint = "latest"
 golangci-lint-langserver = "latest"
-java = "21"
+java = "25"
 kotlin = "latest"
 node = "latest"
 erlang = "latest"
