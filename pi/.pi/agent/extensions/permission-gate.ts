@@ -11,6 +11,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
+	const emitHerdrBlocked = (data: { active: boolean; label?: string }) => {
+		try {
+			pi.events.emit("herdr:blocked", data);
+		} catch {
+			// Herdr status reporting is best-effort and must not affect permission gating.
+		}
+	};
+
 	const dangerousPatterns = [
 		/\brm\s+(-rf?|--recursive)/i,
 		/\bsudo\b/i,
@@ -33,13 +41,22 @@ export default function (pi: ExtensionAPI) {
 
 		if (isDangerous) {
 			if (!ctx.hasUI) {
-				return { block: true, reason: "Comando perigoso bloqueado (modo não interativo)" };
+				return {
+					block: true,
+					reason: "Comando perigoso bloqueado (modo não interativo)",
+				};
 			}
 
-			const choice = await ctx.ui.select(
-				`⚠️ Comando suspeito:\n\n  ${command}\n\nPermitir?`,
-				["Sim", "Não"],
-			);
+			let choice: string | undefined;
+			emitHerdrBlocked({ active: true, label: "Aguardando permissão" });
+			try {
+				choice = await ctx.ui.select(
+					`⚠️ Comando suspeito:\n\n  ${command}\n\nPermitir?`,
+					["Sim", "Não"],
+				);
+			} finally {
+				emitHerdrBlocked({ active: false });
+			}
 
 			if (choice !== "Sim") {
 				return { block: true, reason: "Bloqueado pelo usuário" };
