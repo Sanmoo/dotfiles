@@ -182,13 +182,19 @@ describe("permission-gate", () => {
 
 	it("continues permission prompt behavior when Herdr event emission fails", async () => {
 		const { handler, emitted } = setupPermissionGate({ emitThrows: true });
+		let selectCalls = 0;
 
 		const result = await handler(
 			bashEvent("sudo id"),
-			uiContext(async () => "Sim"),
+			uiContext(async (_message, choices) => {
+				selectCalls += 1;
+				expect(choices).toEqual(["Sim", "Não"]);
+				return "Sim";
+			}),
 		);
 
 		expect(result).toBeUndefined();
+		expect(selectCalls).toBe(1);
 		expect(emitted).toEqual([]);
 	});
 });
