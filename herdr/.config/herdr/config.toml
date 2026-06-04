@@ -42,8 +42,8 @@ last_pane = "prefix+a"           # switch to the previously focused pane
 # next_workspace = ""     # optional, unset by default
 # previous_agent = ""     # optional, unset by default
 next_agent = "prefix+p" # optional, unset by default
+open_notification_target = "prefix+o" # jump to the visible notification target
 # detach = ""             # optional explicit detach shortcut in server/client mode
-# open_notification_target = "" # optional shortcut to jump to the visible notification target
 # new_tab = "c"
 rename_tab = "prefix+," # optional, unset by default
 # previous_tab = ""       # optional, unset by default
@@ -109,7 +109,7 @@ show_agent_labels_on_pane_borders = true
 # herdr = show top-right in-app toasts
 # terminal = ask the outer terminal to show a desktop notification
 # system = ask the OS notification service directly
-delivery = "system"
+delivery = "herdr"
 
 # Play sounds when agents change state in background workspaces
 [ui.sound]
