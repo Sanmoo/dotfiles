@@ -183,8 +183,10 @@ eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
 
 ## Tasks
-alias "inprogress"="bd list --status=in_progress"
-alias "next"="bd-next"
+alias "inprogress-bjd"="bd list --status=in_progress --label area/bjd"
+alias "inprogress-studies"="bd list --status=in_progress --label area/studies"
+alias "next-bjd"="bd-next --area bjd"
+alias "next-studies"="bd-next --area studies"
 
 # Lorebase
 get-lb-token() {
