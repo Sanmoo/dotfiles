@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.78.0",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
-  "defaultThinkingLevel": "high",
+  "lastChangelogVersion": "0.79.0",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "gpt-5.4-mini",
+  "defaultThinkingLevel": "xhigh",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -12,7 +12,8 @@
     "npm:pi-lens",
     "npm:pi-web-access",
     "npm:pi-mcp-adapter",
-    "npm:pi-intercom"
+    "npm:pi-intercom",
+    "npm:pi-token-burden"
   ],
   "enabledModels": [
     "openai-codex/gpt-5.5",

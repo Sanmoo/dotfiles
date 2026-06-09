@@ -32,4 +32,5 @@ return {
     },
     opts = {},
   },
+  { "73/vim-klog" },
 }
