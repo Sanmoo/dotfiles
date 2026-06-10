@@ -5,12 +5,14 @@ argument-hint: "<contexto opcional>"
 
 Use a skill `summarizing-beads-for-dailies`.
 
-Quero um resumo falado da minha daily com base no Beads.
+Quero o resumo padrão da minha daily focado na área `area/bjd`.
 
 Contexto extra, se houver: $ARGUMENTS
 
-Padrão:
-- janela: de ontem às 09:00 até agora;
-- escopo: `area/bjd`;
-- idioma: português;
-- foco: Principais avanços.
+Deixe a resposta pronta para eu falar em reunião:
+- Principais avanços
+- Riscos / bloqueios
+- Próximo passo
+
+Idioma: português.
+Considere a janela padrão de ontem às 09:00 até agora, a menos que eu diga o contrário.

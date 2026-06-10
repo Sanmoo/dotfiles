@@ -13,4 +13,6 @@ Padrão:
 - janela: de ontem às 09:00 até agora;
 - escopo: `area/bjd`;
 - idioma: português;
-- formato: direto e falado.
+- formato: Principais avanços / Riscos / bloqueios / Próximo passo.
+
+Se eu não der mais contexto, siga esses padrões.
