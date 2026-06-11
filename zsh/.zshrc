@@ -198,3 +198,5 @@ get-lb-token() {
 # opencode
 export PATH=$HOME/.opencode/bin:$PATH
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+
+source ~/.env

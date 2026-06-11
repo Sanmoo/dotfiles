@@ -33,6 +33,7 @@ prefix = "ctrl+a"
 next_tab = "ctrl+]"     # optional, unset by default
 previous_tab = "ctrl+[" # optional, unset by default
 last_pane = "prefix+a"  # switch to the previously focused pane
+goto = "prefix+/"                # open pane/panel search
 
 # Navigate-mode actions
 # new_workspace = "n"

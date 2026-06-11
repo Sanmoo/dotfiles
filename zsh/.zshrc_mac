@@ -13,3 +13,6 @@ export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="/var/run/docker.sock"
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="$HOME/bin-jd:$PATH"
+
+alias setup-rest="source ~/.envrc"
+alias dev-token='setup-rest && export AUTH_TOKEN=$(client-credentials-token "$REV_KC_DEV_CLIENT_ID" "$KC_REV_CLIENT_SECRET" "$KEYCLOAK_DEV_TOKEN_URL") && echo $AUTH_TOKEN'
