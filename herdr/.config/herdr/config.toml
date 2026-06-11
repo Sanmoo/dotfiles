@@ -30,10 +30,9 @@ yellow = "#fabd2f"
 # Most reliable bindings are plain keys, ctrl+letter, esc/tab/enter, and function keys.
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 prefix = "ctrl+a"
-next_tab = "ctrl+]"              # optional, unset by default
-previous_tab = "ctrl+["          # optional, unset by default
-reload_config = "prefix+shift+l" # optional shortcut to reload config.toml without restarting
-last_pane = "prefix+a"           # switch to the previously focused pane
+next_tab = "ctrl+]"     # optional, unset by default
+previous_tab = "ctrl+[" # optional, unset by default
+last_pane = "prefix+a"  # switch to the previously focused pane
 
 # Navigate-mode actions
 # new_workspace = "n"
