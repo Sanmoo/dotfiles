@@ -5,7 +5,8 @@
     "opencode-go/deepseek-v4-pro",
     "opencode-go/deepseek-v4-flash",
     "openai-codex/gpt-5.5",
-    "opencode-go/glm-5.1"
+    "opencode-go/glm-5.1",
+    "opencode-go/minimax-m3"
   ],
   "defaultThinkingLevel": "xhigh",
   "hideThinkingBlock": true,
