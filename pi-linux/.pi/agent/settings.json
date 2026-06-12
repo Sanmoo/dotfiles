@@ -8,7 +8,7 @@
     "opencode-go/glm-5.1",
     "opencode-go/minimax-m3"
   ],
-  "defaultThinkingLevel": "xhigh",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -20,7 +20,7 @@
     "npm:pi-mcp-adapter",
     "npm:pi-intercom"
   ],
-  "defaultModel": "deepseek-v4-flash",
+  "defaultModel": "minimax-m3",
   "defaultProvider": "opencode-go",
   "subagents": {
     "agentOverrides": {
