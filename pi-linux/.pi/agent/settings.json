@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.79.0",
+  "lastChangelogVersion": "0.79.1",
   "enabledModels": [
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
@@ -8,7 +8,7 @@
     "opencode-go/glm-5.1",
     "opencode-go/minimax-m3"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -20,8 +20,8 @@
     "npm:pi-mcp-adapter",
     "npm:pi-intercom"
   ],
-  "defaultModel": "minimax-m3",
-  "defaultProvider": "opencode-go",
+  "defaultModel": "gpt-5.5",
+  "defaultProvider": "openai-codex",
   "subagents": {
     "agentOverrides": {
       "implementer": {
