@@ -33,7 +33,7 @@ prefix = "ctrl+a"
 next_tab = "ctrl+]"     # optional, unset by default
 previous_tab = "ctrl+[" # optional, unset by default
 last_pane = "prefix+a"  # switch to the previously focused pane
-goto = "prefix+/"                # open pane/panel search
+goto = "prefix+/"       # open pane/panel search
 
 # Navigate-mode actions
 # new_workspace = "n"
@@ -45,10 +45,10 @@ next_agent = "prefix+p"       # optional, unset by default
 open_notification_target = "" # disabled; prefix+o is used by custom actionable-agent shortcut
 # detach = ""             # optional explicit detach shortcut in server/client mode
 # new_tab = "c"
-rename_tab = "prefix+," # optional, unset by default
+rename_tab = "prefix+,"  # optional, unset by default
+rename_pane = "prefix+." # optional, unset by default
 # previous_tab = ""       # optional, unset by default
 # close_tab = ""          # optional, unset by default
-# rename_pane = ""        # optional, unset by default
 edit_scrollback = "prefix+e" # opens focused pane scrollback in $EDITOR
 # focus_pane_left = ""    # optional, unset by default
 # focus_pane_down = ""    # optional, unset by default

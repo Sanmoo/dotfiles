@@ -94,7 +94,7 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zoxide mise npm ssh tmuxinator vi-mode vscode dotenv fzf docker node)
+plugins=(git zoxide mise npm ssh tmuxinator vi-mode vscode fzf docker node)
 
 source $ZSH/oh-my-zsh.sh
 

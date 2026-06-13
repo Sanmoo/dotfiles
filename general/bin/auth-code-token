@@ -1,0 +1,255 @@
+#!python
+"""
+authorization-code-token — Get an OAuth2 access token via the Authorization
+Code flow with PKCE (public client, no client secret).
+
+This is the no-secret counterpart to client-credentials-token. It opens the
+system browser to the authorization endpoint, captures the redirect on a
+local loopback HTTP server (RFC 8252), and exchanges the code (with the PKCE
+verifier) for an access token. Only the access token is printed to stdout.
+
+Usage:
+  authorization-code-token <client_id> <authorization_url> <token_url>
+                         [--scope SCOPE] [--redirect-uri URI]
+                         [--timeout SECONDS] [--no-browser]
+
+The default loopback redirect URI is http://127.0.0.1:8765/callback — make
+sure that exact URI is registered in your OAuth client configuration (or
+pass --redirect-uri to use a different one).
+"""
+
+import argparse
+import base64
+import hashlib
+import http.server
+import json
+import secrets
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import webbrowser
+from threading import Thread
+
+
+# Default loopback redirect for CLI OAuth. 8765 is in the user range and
+# avoids clashes with well-known dev services (3000, 5000, 8000, 8080, 8443).
+DEFAULT_REDIRECT_PORT = 8765
+DEFAULT_CALLBACK_PATH = '/callback'
+
+
+def generate_pkce_pair():
+    """Return a (code_verifier, code_challenge) pair using PKCE S256."""
+    # 64 random bytes -> 86-char base64url string, well within the 43-128 limit.
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b'=').decode('ascii')
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode('ascii')).digest()
+    ).rstrip(b'=').decode('ascii')
+    return verifier, challenge
+
+
+def build_redirect_uri(port, path):
+    return f'http://127.0.0.1:{port}{path}'
+
+
+def serve_callback(port, path, expected_state, timeout):
+    """
+    Run a one-shot HTTP server on 127.0.0.1:port that captures a single GET
+    to `path` and validates the `state` parameter. Returns the authorization
+    `code` (str). Raises TimeoutError or RuntimeError on failure.
+    """
+    captured = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args, **kwargs):
+            return  # silence default access logging
+
+        def _reply(self, status, title):
+            body = (
+                b'<!doctype html><meta charset="utf-8">'
+                b'<title>authorization-code-token</title>'
+                b'<body style="font-family:system-ui;padding:2rem;max-width:32rem">'
+                b'<h1 style="font-size:1.1rem;margin:0 0 1rem">' + title.encode('utf-8') + b'</h1>'
+                b'<p style="color:#666">You can close this tab and return to your terminal.</p>'
+                b'</body>'
+            )
+            self.send_response(status)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path != path:
+                self._reply(404, 'Not Found')
+                return
+            qs = urllib.parse.parse_qs(parsed.query)
+            if 'error' in qs:
+                captured['error'] = qs['error'][0]
+                captured['description'] = qs.get('error_description', [''])[0]
+                self._reply(400, 'Authentication failed.')
+                return
+            if expected_state and qs.get('state', [None])[0] != expected_state:
+                captured['error'] = 'state_mismatch'
+                self._reply(400, 'State mismatch \u2014 possible CSRF, aborting.')
+                return
+            code = qs.get('code')
+            if not code:
+                captured['error'] = 'missing_code'
+                self._reply(400, 'No authorization code received.')
+                return
+            captured['code'] = code[0]
+            self._reply(200, 'Authentication successful.')
+
+    server = http.server.HTTPServer(('127.0.0.1', port), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        deadline = time.time() + timeout
+        while not captured and time.time() < deadline:
+            time.sleep(0.1)
+        if not captured:
+            raise TimeoutError(
+                f'No callback received within {timeout}s. '
+                f'Make sure the registered redirect URI is exactly '
+                f'{build_redirect_uri(port, path)!r} and that your firewall '
+                f'allows the connection.'
+            )
+        if 'error' in captured:
+            err = captured['error']
+            desc = captured.get('description')
+            raise RuntimeError(
+                f'authorization failed: {err}'
+                + (f' \u2014 {desc}' if desc else '')
+            )
+        return captured['code']
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def post_form(url, data):
+    body = urllib.parse.urlencode(data).encode('ascii')
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+        },
+        method='POST',
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Get an OAuth2 access token via the Authorization Code flow with PKCE.',
+    )
+    parser.add_argument('client_id', help='OAuth2 client ID (public client, no secret)')
+    parser.add_argument('authorization_url', help='Authorization endpoint URL')
+    parser.add_argument('token_url', help='Token endpoint URL')
+    parser.add_argument('--scope', default=None, help='OAuth2 scope (space-separated)')
+    parser.add_argument(
+        '--redirect-uri',
+        default=None,
+        help=(
+            f'Redirect URI to use. Must match a URI registered for the OAuth client. '
+            f'Default: {build_redirect_uri(DEFAULT_REDIRECT_PORT, DEFAULT_CALLBACK_PATH)}.'
+        ),
+    )
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=120,
+        help='Seconds to wait for the browser callback (default: 120).',
+    )
+    parser.add_argument(
+        '--no-browser',
+        action='store_true',
+        help="Print the authorization URL to stderr instead of opening the browser.",
+    )
+    return parser.parse_args(argv)
+
+
+def resolve_redirect_uri(arg):
+    """Return (port, path, redirect_uri_str) honoring the user-supplied URI or default."""
+    if not arg:
+        return DEFAULT_REDIRECT_PORT, DEFAULT_CALLBACK_PATH, build_redirect_uri(
+            DEFAULT_REDIRECT_PORT, DEFAULT_CALLBACK_PATH,
+        )
+    parsed = urllib.parse.urlparse(arg)
+    if parsed.scheme != 'http':
+        sys.exit(f'Error: --redirect-uri must be an http:// URL (got {arg!r})')
+    if parsed.hostname not in ('127.0.0.1', 'localhost', '::1'):
+        sys.exit(f'Error: --redirect-uri must use a loopback host (got {arg!r})')
+    if parsed.port is None:
+        sys.exit(f'Error: --redirect-uri must include an explicit port (got {arg!r})')
+    return parsed.port, (parsed.path or DEFAULT_CALLBACK_PATH), arg
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    port, path, redirect_uri = resolve_redirect_uri(args.redirect_uri)
+
+    verifier, challenge = generate_pkce_pair()
+    state = secrets.token_urlsafe(16)
+
+    auth_params = {
+        'response_type': 'code',
+        'client_id': args.client_id,
+        'redirect_uri': redirect_uri,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        'state': state,
+    }
+    if args.scope:
+        auth_params['scope'] = args.scope
+
+    sep = '&' if urllib.parse.urlparse(args.authorization_url).query else '?'
+    auth_url = args.authorization_url.rstrip('?') + sep + urllib.parse.urlencode(auth_params)
+
+    if args.no_browser:
+        print('Open this URL in a browser to authenticate:', file=sys.stderr)
+        print(f'  {auth_url}', file=sys.stderr)
+        print(f'Waiting for callback on {redirect_uri} ...', file=sys.stderr)
+    else:
+        print(f'Opening browser for authentication ({redirect_uri})', file=sys.stderr)
+        if not webbrowser.open(auth_url):
+            print('Warning: could not open the browser automatically.', file=sys.stderr)
+            print(f'Authorization URL: {auth_url}', file=sys.stderr)
+
+    try:
+        code = serve_callback(port, path, state, args.timeout)
+    except (TimeoutError, RuntimeError) as e:
+        sys.exit(f'Error: {e}')
+
+    try:
+        token_response = post_form(args.token_url, {
+            'grant_type': 'authorization_code',
+            'client_id': args.client_id,
+            'code': code,
+            'redirect_uri': redirect_uri,
+            'code_verifier': verifier,
+        })
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        sys.exit(f'Error: token endpoint returned {e.code} {e.reason}\n{body}')
+    except urllib.error.URLError as e:
+        sys.exit(f'Error: failed to reach token endpoint: {e.reason}')
+
+    access_token = token_response.get('access_token')
+    if not access_token:
+        print('Error: access_token not found in token response', file=sys.stderr)
+        print(json.dumps(token_response, indent=2), file=sys.stderr)
+        sys.exit(1)
+
+    print(access_token)
+
+
+if __name__ == '__main__':
+    main()
