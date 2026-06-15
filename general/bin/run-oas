@@ -13,7 +13,15 @@ if [ ! -f "$SWAGGER_PATH" ]; then
   exit 1
 fi
 
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/tmp/run-oas-lsof-"$PORT" 2>/dev/null; then
+  echo "Error: Port $PORT is already in use:" >&2
+  cat /tmp/run-oas-lsof-"$PORT" >&2
+  rm -f /tmp/run-oas-lsof-"$PORT"
+  exit 1
+fi
+rm -f /tmp/run-oas-lsof-"$PORT"
+
 SWAGGER_DIR=$(dirname "$SWAGGER_PATH")
 SWAGGER_FILE=$(basename "$SWAGGER_PATH")
 
-docker run -p "$PORT:8080" -e SWAGGER_JSON=/foo/"$SWAGGER_FILE" -v "$SWAGGER_DIR":/foo swaggerapi/swagger-ui
+docker run --rm -p "$PORT:8080" -e SWAGGER_JSON=/foo/"$SWAGGER_FILE" -v "$SWAGGER_DIR":/foo swaggerapi/swagger-ui
