@@ -185,6 +185,7 @@ eval "$(zoxide init zsh)"
 ## Tasks
 alias "inprogress-bjd"="bd list --status=in_progress --label area/bjd --exclude-label status/waiting"
 alias "inprogress-studies"="bd list --status=in_progress --label area/studies"
+alias "inprogress-dom"="bd list --status=in_progress --label area/dom"
 alias "next-bjd"="bd-next --area bjd"
 alias "next-studies"="bd-next --area studies"
 alias "waiting-bjd"="bd list --label status/waiting,area/bjd"
@@ -200,3 +201,4 @@ export PATH=$HOME/.opencode/bin:$PATH
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 
 source ~/.env
+export JDTLS_PATH=$HOME/.local/share/nvim/mason/bin/jdtls
