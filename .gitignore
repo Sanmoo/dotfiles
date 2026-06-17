@@ -13,3 +13,5 @@ herdr/.config/herdr/*.log
 herdr/.config/herdr/sessions/
 herdr/.config/herdr/release-notes.json
 herdr/.config/herdr/session-history.json
+# binary
+myfin
