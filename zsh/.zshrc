@@ -190,6 +190,10 @@ alias "next-bjd"="bd-next --area bjd"
 alias "next-studies"="bd-next --area studies"
 alias "waiting-bjd"="bd list --label status/waiting,area/bjd"
 alias "waiting-dom"="bd list --label status/waiting,area/dom"
+alias "get"='http get -t $ACCESS_TOKEN'
+alias "post"='http post -t $ACCESS_TOKEN'
+alias "put"='http put -t $ACCESS_TOKEN'
+alias "delete"='http delete -t $ACCESS_TOKEN'
 
 # Lorebase
 get-lb-token() {
