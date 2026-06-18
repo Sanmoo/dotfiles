@@ -142,4 +142,22 @@ run_http get -B https://api.example.com -t "abc" -H "Authorization: Bearer xyz" 
 grep -Fq -- "Authorization: Bearer abc" "$HTTP_CURL_ARGS" || { echo "FAIL: -t header missing" >&2; exit 1; }
 grep -Fq -- "Authorization: Bearer xyz" "$HTTP_CURL_ARGS" || { echo "FAIL: explicit -H missing" >&2; exit 1; }
 
+# ---------- Test 14: -q single ----------
+echo "test 14: single -q"
+run_http get -B https://api.example.com -q "status=active" items
+grep -Fq -- "https://api.example.com/items?status=active" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: query string missing" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 15: -q multiple, order preserved ----------
+echo "test 15: multiple -q"
+run_http get -B https://api.example.com -q "a=1" -q "b=2" items
+grep -Fq -- "?a=1&b=2" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: multi query order" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 16: -q value is URL-encoded ----------
+echo "test 16: -q URL-encoding"
+run_http get -B https://api.example.com -q "q=hello world&x" items
+grep -Fq -- "q=hello+world%26x" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: URL-encoding of value" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
 echo "OK"

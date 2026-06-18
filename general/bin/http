@@ -4,6 +4,7 @@ import argparse
 import os
 import shlex
 import sys
+from urllib.parse import quote_plus
 
 
 def _shared_args():
@@ -59,7 +60,17 @@ def build_curl_args(args, base_url, variables=None):
         out += ["-H", f"Authorization: Bearer {args.token}"]
     base = (base_url or "").rstrip("/")
     path = (args.path or "").lstrip("/")
-    out.append(f"{base}/{path}" if (base or path) else "")
+    url = f"{base}/{path}" if (base or path) else ""
+    if args.queries:
+        parts = []
+        for q in args.queries:
+            if "=" not in q:
+                k, v = q, ""
+            else:
+                k, v = q.split("=", 1)
+            parts.append(f"{k}={quote_plus(v)}")
+        url = f"{url}?{'&'.join(parts)}"
+    out.append(url)
     return out
 
 
