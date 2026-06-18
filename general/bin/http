@@ -53,6 +53,10 @@ def build_curl_args(args, base_url, variables=None):
         out.append("-k")
     if args.follow:
         out.append("-L")
+    for h in args.headers or []:
+        out += ["-H", h]
+    if args.token:
+        out += ["-H", f"Authorization: Bearer {args.token}"]
     base = (base_url or "").rstrip("/")
     path = (args.path or "").lstrip("/")
     out.append(f"{base}/{path}" if (base or path) else "")
@@ -65,6 +69,9 @@ def format_curl_command(curl_args):
 
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.token is not None and not args.token.strip():
+        print("error: --token is empty", file=sys.stderr)
+        return 2
     base_url = resolve_base_url(args, os.environ)
     if not base_url:
         print(

@@ -118,4 +118,28 @@ run_http_expect_fail get foo
 [ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero exit" >&2; exit 1; }
 assert_contains "$HTTP_TMPDIR/err" "no base URL provided" "error message"
 
+# ---------- Test 10: -H stacks and preserves order ----------
+echo "test 10: -H stacks"
+run_http get -B https://api.example.com \
+  -H "X-Foo: bar" -H "Accept: application/json" foo
+grep -Fq -- "X-Foo: bar" "$HTTP_CURL_ARGS" || { echo "FAIL: -H X-Foo" >&2; exit 1; }
+grep -Fq -- "Accept: application/json" "$HTTP_CURL_ARGS" || { echo "FAIL: -H Accept" >&2; exit 1; }
+
+# ---------- Test 11: -t expands to Authorization header ----------
+echo "test 11: -t bearer"
+run_http get -B https://api.example.com -t "abc123" foo
+grep -Fq -- "Authorization: Bearer abc123" "$HTTP_CURL_ARGS" || { echo "FAIL: bearer" >&2; exit 1; }
+
+# ---------- Test 12: -t with empty value is an error ----------
+echo "test 12: empty -t is an error"
+run_http_expect_fail get -B https://api.example.com -t "" foo
+[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+assert_contains "$HTTP_TMPDIR/err" "--token is empty" "empty token error"
+
+# ---------- Test 13: -t and explicit Authorization both pass through ----------
+echo "test 13: -t and explicit Authorization"
+run_http get -B https://api.example.com -t "abc" -H "Authorization: Bearer xyz" foo
+grep -Fq -- "Authorization: Bearer abc" "$HTTP_CURL_ARGS" || { echo "FAIL: -t header missing" >&2; exit 1; }
+grep -Fq -- "Authorization: Bearer xyz" "$HTTP_CURL_ARGS" || { echo "FAIL: explicit -H missing" >&2; exit 1; }
+
 echo "OK"
