@@ -57,4 +57,29 @@ assert_contains "$HTTP_CURL_ARGS" "-X POST" "post should emit -X POST"
 assert_contains "$HTTP_CURL_ARGS" "https://api.example.com/foo" "url should be base + path"
 assert_not_contains "$HTTP_CURL_ARGS" "-X GET" "post should not include -X GET"
 
+# ---------- Test 2: get emits no -X ----------
+echo "test 2: get emits no -X"
+run_http get -B https://api.example.com items/42
+assert_not_contains "$HTTP_CURL_ARGS" "-X " "get should not set -X"
+assert_contains "$HTTP_CURL_ARGS" "https://api.example.com/items/42" "url with id"
+
+# ---------- Test 3: delete emits -X DELETE ----------
+echo "test 3: delete emits -X DELETE"
+run_http delete -B https://api.example.com items/42
+assert_contains "$HTTP_CURL_ARGS" "-X DELETE" "delete should emit -X DELETE"
+assert_contains "$HTTP_CURL_ARGS" "https://api.example.com/items/42" "url with id"
+
+# ---------- Test 4: path with leading slash does not produce double slash ----------
+echo "test 4: dedup of leading slash in path"
+run_http get -B https://api.example.com/ /items/42
+assert_contains "$HTTP_CURL_ARGS" "https://api.example.com/items/42" "no double slash"
+assert_not_contains "$HTTP_CURL_ARGS" "https://api.example.com//items" "no double slash (negative)"
+
+# ---------- Test 5: -i, -k, -L pass through ----------
+echo "test 5: -i, -k, -L pass through"
+run_http post -B https://api.example.com -i -k -L foo
+grep -Fq -- ' -i ' "$HTTP_CURL_ARGS" || { echo "FAIL: -i missing" >&2; exit 1; }
+grep -Fq -- ' -k ' "$HTTP_CURL_ARGS" || { echo "FAIL: -k missing" >&2; exit 1; }
+grep -Fq -- ' -L ' "$HTTP_CURL_ARGS" || { echo "FAIL: -L missing" >&2; exit 1; }
+
 echo "OK"
