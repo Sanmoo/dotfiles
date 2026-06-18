@@ -5,84 +5,82 @@ set -euo pipefail
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/general/bin/http"
 
 assert_contains() {
- local haystack="$1" needle="$2" message="$3"
- if ! grep -Fq -- "$needle" "$haystack"; then
-  echo "FAIL: $message" >&2
-  echo "  expected to find: $needle" >&2
-  echo "  in:" >&2
-  sed 's/^/    /' "$haystack" >&2
-  exit 1
- fi
+	local haystack="$1" needle="$2" message="$3"
+	if ! grep -Fq -- "$needle" "$haystack"; then
+		echo "FAIL: $message" >&2
+		echo "  expected to find: $needle" >&2
+		echo "  in:" >&2
+		sed 's/^/    /' "$haystack" >&2
+		exit 1
+	fi
 }
 
 assert_not_contains() {
- local haystack="$1" needle="$2" message="$3"
- if grep -Fq -- "$needle" "$haystack"; then
-  echo "FAIL: $message" >&2
-  echo "  expected NOT to find: $needle" >&2
-  echo "  in:" >&2
-  sed 's/^/    /' "$haystack" >&2
-  exit 1
- fi
+	local haystack="$1" needle="$2" message="$3"
+	if grep -Fq -- "$needle" "$haystack"; then
+		echo "FAIL: $message" >&2
+		echo "  expected NOT to find: $needle" >&2
+		echo "  in:" >&2
+		sed 's/^/    /' "$haystack" >&2
+		exit 1
+	fi
 }
 
 run_http_expect_fail() {
- # run_http_expect_fail <args...>
- # Like run_http but expects non-zero exit. Sets HTTP_EXIT to the exit code.
- local tmpdir
- tmpdir="$(mktemp -d)"
- HTTP_TMPDIR="$tmpdir"
- HTTP_EXIT=0
- "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/err" || HTTP_EXIT=$?
- HTTP_STDERR="$(cat "$tmpdir/err")"
+	# run_http_expect_fail <args...>
+	# Like run_http but expects non-zero exit. Sets HTTP_EXIT to the exit code.
+	local tmpdir
+	tmpdir="$(mktemp -d)"
+	HTTP_TMPDIR="$tmpdir"
+	HTTP_EXIT=0
+	"$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/err" || HTTP_EXIT=$?
+	HTTP_STDERR="$(cat "$tmpdir/err")"
 }
-
 
 run_http_live() {
- # run_http_live <args...>
- # Runs the script WITHOUT -n (live execution).
- # Sets HTTP_STUB_LOG -> stub curl's recorded argv
- # Sets HTTP_STDOUT -> script's stdout
- local tmpdir
- tmpdir="$(mktemp -d)"
- mkdir -p "$tmpdir/bin"
- cat >"$tmpdir/bin/curl" <<'STUB'
+	# run_http_live <args...>
+	# Runs the script WITHOUT -n (live execution).
+	# Sets HTTP_STUB_LOG -> stub curl's recorded argv
+	# Sets HTTP_STDOUT -> script's stdout
+	local tmpdir
+	tmpdir="$(mktemp -d)"
+	mkdir -p "$tmpdir/bin"
+	cat >"$tmpdir/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CURL_ARGS_FILE"
 STUB
- chmod +x "$tmpdir/bin/curl"
+	chmod +x "$tmpdir/bin/curl"
 
- HTTP_STUB_LOG="$tmpdir/curl.args"
- export CURL_ARGS_FILE="$HTTP_STUB_LOG"
- PATH="$tmpdir/bin:$PATH" "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
- HTTP_STDOUT="$(cat "$tmpdir/stdout")"
- HTTP_STDERR="$(cat "$tmpdir/stderr")"
- HTTP_TMPDIR="$tmpdir"
+	HTTP_STUB_LOG="$tmpdir/curl.args"
+	export CURL_ARGS_FILE="$HTTP_STUB_LOG"
+	PATH="$tmpdir/bin:$PATH" "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
+	HTTP_STDOUT="$(cat "$tmpdir/stdout")"
+	HTTP_STDERR="$(cat "$tmpdir/stderr")"
+	HTTP_TMPDIR="$tmpdir"
 }
 
-
 run_http() {
- # run_http <args...>
- # Adds -n (dry-run) automatically. Captures stdout as the curl command.
- # Sets HTTP_CURL_ARGS -> printed curl command (stdout)
- # Sets HTTP_STUB_LOG -> stub curl's recorded argv (for live-execution tests)
- local tmpdir
- tmpdir="$(mktemp -d)"
- mkdir -p "$tmpdir/bin"
- cat >"$tmpdir/bin/curl" <<'STUB'
+	# run_http <args...>
+	# Adds -n (dry-run) automatically. Captures stdout as the curl command.
+	# Sets HTTP_CURL_ARGS -> printed curl command (stdout)
+	# Sets HTTP_STUB_LOG -> stub curl's recorded argv (for live-execution tests)
+	local tmpdir
+	tmpdir="$(mktemp -d)"
+	mkdir -p "$tmpdir/bin"
+	cat >"$tmpdir/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CURL_ARGS_FILE"
 STUB
- chmod +x "$tmpdir/bin/curl"
+	chmod +x "$tmpdir/bin/curl"
 
- HTTP_CURL_ARGS="$tmpdir/curl.args"
- export CURL_ARGS_FILE="$HTTP_CURL_ARGS"
- PATH="$tmpdir/bin:$PATH" "$SCRIPT" -n "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
- HTTP_CURL_ARGS="$tmpdir/stdout"  # use printed output, not stub log
- HTTP_STUB_LOG="$tmpdir/curl.args"
- HTTP_STDOUT="$(cat "$tmpdir/stdout")"
- HTTP_STDERR="$(cat "$tmpdir/stderr")"
- HTTP_TMPDIR="$tmpdir"
+	HTTP_CURL_ARGS="$tmpdir/curl.args"
+	export CURL_ARGS_FILE="$HTTP_CURL_ARGS"
+	PATH="$tmpdir/bin:$PATH" "$SCRIPT" -n "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
+	HTTP_CURL_ARGS="$tmpdir/stdout" # use printed output, not stub log
+	HTTP_STUB_LOG="$tmpdir/curl.args"
+	HTTP_STDOUT="$(cat "$tmpdir/stdout")"
+	HTTP_STDERR="$(cat "$tmpdir/stderr")"
+	HTTP_TMPDIR="$tmpdir"
 }
 
 # ---------- Test 1: simplest post call ----------
@@ -114,20 +112,29 @@ assert_not_contains "$HTTP_CURL_ARGS" "https://api.example.com//items" "no doubl
 # ---------- Test 5: -i, -k, -L pass through ----------
 echo "test 5: -i, -k, -L pass through"
 run_http post -B https://api.example.com -i -k -L foo
-grep -Fq -- ' -i ' "$HTTP_CURL_ARGS" || { echo "FAIL: -i missing" >&2; exit 1; }
-grep -Fq -- ' -k ' "$HTTP_CURL_ARGS" || { echo "FAIL: -k missing" >&2; exit 1; }
-grep -Fq -- ' -L ' "$HTTP_CURL_ARGS" || { echo "FAIL: -L missing" >&2; exit 1; }
+grep -Fq -- ' -i ' "$HTTP_CURL_ARGS" || {
+	echo "FAIL: -i missing" >&2
+	exit 1
+}
+grep -Fq -- ' -k ' "$HTTP_CURL_ARGS" || {
+	echo "FAIL: -k missing" >&2
+	exit 1
+}
+grep -Fq -- ' -L ' "$HTTP_CURL_ARGS" || {
+	echo "FAIL: -L missing" >&2
+	exit 1
+}
 
 # ---------- Test 6: -B flag wins over HTTP_BASE_URL and BASE_URL ----------
 echo "test 6: -B flag precedence"
 HTTP_BASE_URL="https://from-env-http.example.com" BASE_URL="https://from-base.example.com" \
-  run_http get -B https://from-flag.example.com foo
+	run_http get -B https://from-flag.example.com foo
 assert_contains "$HTTP_CURL_ARGS" "https://from-flag.example.com/foo" "flag wins"
 
 # ---------- Test 7: HTTP_BASE_URL wins over BASE_URL ----------
 echo "test 7: HTTP_BASE_URL wins over BASE_URL"
 HTTP_BASE_URL="https://from-env-http.example.com" BASE_URL="https://from-base.example.com" \
-  run_http get foo
+	run_http get foo
 assert_contains "$HTTP_CURL_ARGS" "https://from-env-http.example.com/foo" "HTTP_BASE_URL wins"
 
 # ---------- Test 8: BASE_URL is the fallback ----------
@@ -139,167 +146,317 @@ assert_contains "$HTTP_CURL_ARGS" "https://from-base.example.com/foo" "BASE_URL 
 echo "test 9: no base URL is an error"
 unset HTTP_BASE_URL BASE_URL
 run_http_expect_fail get foo
-[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero exit" >&2; exit 1; }
+[ "$HTTP_EXIT" -ne 0 ] || {
+	echo "FAIL: expected non-zero exit" >&2
+	exit 1
+}
 assert_contains "$HTTP_TMPDIR/err" "no base URL provided" "error message"
 
 # ---------- Test 10: -H stacks and preserves order ----------
 echo "test 10: -H stacks"
 run_http get -B https://api.example.com \
-  -H "X-Foo: bar" -H "Accept: application/json" foo
-grep -Fq -- "X-Foo: bar" "$HTTP_CURL_ARGS" || { echo "FAIL: -H X-Foo" >&2; exit 1; }
-grep -Fq -- "Accept: application/json" "$HTTP_CURL_ARGS" || { echo "FAIL: -H Accept" >&2; exit 1; }
+	-H "X-Foo: bar" -H "Accept: application/json" foo
+grep -Fq -- "X-Foo: bar" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: -H X-Foo" >&2
+	exit 1
+}
+grep -Fq -- "Accept: application/json" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: -H Accept" >&2
+	exit 1
+}
 
 # ---------- Test 11: -t expands to Authorization header ----------
 echo "test 11: -t bearer"
 run_http get -B https://api.example.com -t "abc123" foo
-grep -Fq -- "Authorization: Bearer abc123" "$HTTP_CURL_ARGS" || { echo "FAIL: bearer" >&2; exit 1; }
+grep -Fq -- "Authorization: Bearer abc123" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: bearer" >&2
+	exit 1
+}
 
 # ---------- Test 12: -t with empty value is an error ----------
 echo "test 12: empty -t is an error"
 run_http_expect_fail get -B https://api.example.com -t "" foo
-[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+[ "$HTTP_EXIT" -ne 0 ] || {
+	echo "FAIL: expected non-zero" >&2
+	exit 1
+}
 assert_contains "$HTTP_TMPDIR/err" "--token is empty" "empty token error"
 
 # ---------- Test 13: -t and explicit Authorization both pass through ----------
 echo "test 13: -t and explicit Authorization"
 run_http get -B https://api.example.com -t "abc" -H "Authorization: Bearer xyz" foo
-grep -Fq -- "Authorization: Bearer abc" "$HTTP_CURL_ARGS" || { echo "FAIL: -t header missing" >&2; exit 1; }
-grep -Fq -- "Authorization: Bearer xyz" "$HTTP_CURL_ARGS" || { echo "FAIL: explicit -H missing" >&2; exit 1; }
+grep -Fq -- "Authorization: Bearer abc" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: -t header missing" >&2
+	exit 1
+}
+grep -Fq -- "Authorization: Bearer xyz" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: explicit -H missing" >&2
+	exit 1
+}
 
 # ---------- Test 14: -q single ----------
 echo "test 14: single -q"
 run_http get -B https://api.example.com -q "status=active" items
-grep -Fq -- "https://api.example.com/items?status=active" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: query string missing" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "https://api.example.com/items?status=active" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: query string missing" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 15: -q multiple, order preserved ----------
 echo "test 15: multiple -q"
 run_http get -B https://api.example.com -q "a=1" -q "b=2" items
-grep -Fq -- "?a=1&b=2" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: multi query order" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "?a=1&b=2" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: multi query order" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 16: -q value is URL-encoded ----------
 echo "test 16: -q URL-encoding"
 run_http get -B https://api.example.com -q "q=hello world&x" items
-grep -Fq -- "q=hello+world%26x" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: URL-encoding of value" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "q=hello+world%26x" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: URL-encoding of value" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 17: -d inline body ----------
 echo "test 17: -d inline body"
 run_http post -B https://api.example.com -d '{"x":1}' foo
-grep -Fq -- "--data" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: --data present" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "--data" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: --data present" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 18: -f body from file with auto Content-Type ----------
 echo "test 18: -f with auto Content-Type"
 PAYLOAD="$HTTP_TMPDIR/payload.json"
-echo '{"x":1}' > "$PAYLOAD"
+echo '{"x":1}' >"$PAYLOAD"
 run_http post -B https://api.example.com -f "$PAYLOAD" foo
-grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: auto json content type" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
-grep -Fq -- "--data @${PAYLOAD}" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: --data @file" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: auto json content type" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
+grep -Fq -- "--data @${PAYLOAD}" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: --data @file" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 19: -f with .jsonc extension ----------
 echo "test 19: -f .jsonc auto Content-Type"
 PAYLOAD="$HTTP_TMPDIR/payload.jsonc"
-echo '// c' > "$PAYLOAD"; echo '{"x":1}' >> "$PAYLOAD"
+echo '// c' >"$PAYLOAD"
+echo '{"x":1}' >>"$PAYLOAD"
 run_http post -B https://api.example.com -f "$PAYLOAD" foo
-grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: jsonc content type" >&2; exit 1; }
+grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: jsonc content type" >&2
+		exit 1
+	}
 
 # ---------- Test 20: -f with .xml extension ----------
 echo "test 20: -f .xml auto Content-Type"
 PAYLOAD="$HTTP_TMPDIR/payload.xml"
-echo '<x/>' > "$PAYLOAD"
+echo '<x/>' >"$PAYLOAD"
 run_http post -B https://api.example.com -f "$PAYLOAD" foo
-grep -Fq -- "Content-Type: application/xml" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: xml content type" >&2; exit 1; }
+grep -Fq -- "Content-Type: application/xml" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: xml content type" >&2
+		exit 1
+	}
 
 # ---------- Test 21: -f with other extension -> octet-stream ----------
 echo "test 21: -f other extension -> octet-stream"
 PAYLOAD="$HTTP_TMPDIR/blob.bin"
-echo 'binary' > "$PAYLOAD"
+echo 'binary' >"$PAYLOAD"
 run_http post -B https://api.example.com -f "$PAYLOAD" foo
-grep -Fq -- "Content-Type: application/octet-stream" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: octet-stream" >&2; exit 1; }
+grep -Fq -- "Content-Type: application/octet-stream" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: octet-stream" >&2
+		exit 1
+	}
 
 # ---------- Test 22: explicit -H Content-Type wins over auto ----------
 echo "test 22: explicit -H Content-Type wins"
 PAYLOAD="$HTTP_TMPDIR/payload.json"
-echo '{}' > "$PAYLOAD"
+echo '{}' >"$PAYLOAD"
 run_http post -B https://api.example.com -H "Content-Type: application/vnd.custom+json" -f "$PAYLOAD" foo
-grep -Fq -- "Content-Type: application/vnd.custom+json" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: explicit content type" >&2; exit 1; }
+grep -Fq -- "Content-Type: application/vnd.custom+json" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: explicit content type" >&2
+		exit 1
+	}
 # The auto Content-Type must NOT appear as the only Content-Type.
 # If both show up that's wrong; if only auto shows up that's wrong.
 # We already checked the explicit one exists. Check that the auto doesn't:
 if grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS"; then
-  # Auto appeared too — check it's not the ONLY one
-  count="$(grep -Fc -- 'Content-Type:' "$HTTP_CURL_ARGS")"
-  [ "$count" -eq 1 ] || { echo "FAIL: both content types present" >&2; exit 1; }
+	# Auto appeared too — check it's not the ONLY one
+	count="$(grep -Fc -- 'Content-Type:' "$HTTP_CURL_ARGS")"
+	[ "$count" -eq 1 ] || {
+		echo "FAIL: both content types present" >&2
+		exit 1
+	}
 fi
 
 # ---------- Test 23: -f and -d together is an error ----------
 echo "test 23: -f and -d together is an error"
 PAYLOAD="$HTTP_TMPDIR/payload.json"
-echo '{}' > "$PAYLOAD"
+echo '{}' >"$PAYLOAD"
 run_http_expect_fail post -B https://api.example.com -f "$PAYLOAD" -d "x" foo
-[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+[ "$HTTP_EXIT" -ne 0 ] || {
+	echo "FAIL: expected non-zero" >&2
+	exit 1
+}
 assert_contains "$HTTP_TMPDIR/err" "mutually exclusive" "exclusive error"
 
 # ---------- Test 24: missing -f file is an error ----------
 echo "test 24: -f with missing file is an error"
 run_http_expect_fail post -B https://api.example.com -f /tmp/does-not-exist-12345.json foo
-[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+[ "$HTTP_EXIT" -ne 0 ] || {
+	echo "FAIL: expected non-zero" >&2
+	exit 1
+}
 assert_contains "$HTTP_TMPDIR/err" "file not found" "missing file error"
 
 # ---------- Test 25: -v substitutes in -d ----------
 echo "test 25: -v in -d"
 run_http post -B https://api.example.com -v "K=vb" -d 'a={{K}}' foo
-grep -Fq -- "--data a=vb" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: -v in -d" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "--data a=vb" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: -v in -d" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 26: -v substitutes in file body ----------
 echo "test 26: -v in file body"
 PAYLOAD="$HTTP_TMPDIR/payload.json"
-echo '{"name":"{{NAME}}"}' > "$PAYLOAD"
+echo '{"name":"{{NAME}}"}' >"$PAYLOAD"
 run_http post -B https://api.example.com -v "NAME=alice" -f "$PAYLOAD" foo
-grep -Fq -- '"name":"alice"' "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: -v in body" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- '"name":"alice"' "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: -v in body" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 27: undefined variable is an error ----------
 echo "test 27: undefined variable is an error"
 run_http_expect_fail post -B https://api.example.com -d 'a={{NOPE}}' foo
-[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+[ "$HTTP_EXIT" -ne 0 ] || {
+	echo "FAIL: expected non-zero" >&2
+	exit 1
+}
 assert_contains "$HTTP_TMPDIR/err" "undefined variable" "undefined var error"
 assert_contains "$HTTP_TMPDIR/err" "NOPE" "undefined var name in message"
 
 # ---------- Test 28: -v with empty value works ----------
 echo "test 28: -v with empty value"
 run_http post -B https://api.example.com -v "EMPTY=" -d 'a={{EMPTY}}b' foo
-grep -Fq -- "--data a=b" "$HTTP_CURL_ARGS" \
-  || { echo "FAIL: empty value" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "--data a=b" "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: empty value" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 # ---------- Test 29: dry-run prints curl line ----------
 echo "test 29: dry-run output"
 unset HTTP_BASE_URL BASE_URL
 run_http_live -n post -B https://api.example.com -d '{"x":1}' foo
-grep -Fq -- '-X POST' <<< "$HTTP_STDOUT" \
-  || { echo "FAIL: dry-run printed curl line" >&2; cat "$HTTP_STDOUT" >&2; exit 1; }
+grep -Fq -- '-X POST' <<<"$HTTP_STDOUT" ||
+	{
+		echo "FAIL: dry-run printed curl line" >&2
+		cat "$HTTP_STDOUT" >&2
+		exit 1
+	}
 
 # ---------- Test 30: dry-run output round-trips through shlex ----------
 echo "test 30: dry-run shlex roundtrip"
 run_http_live -n post -B https://api.example.com -t "abc def" -d 'x=y' foo
 # Verify the output round-trips through shlex.split (is a valid shell command string).
 parsed="$(python3 -c 'import shlex,sys; print(len(shlex.split(sys.argv[1])))' "$HTTP_STDOUT" 2>/dev/null)"
-[ "$parsed" -gt 0 ] 2>/dev/null || { echo "FAIL: shlex roundtrip produced no tokens" >&2; exit 1; }
+[ "$parsed" -gt 0 ] 2>/dev/null || {
+	echo "FAIL: shlex roundtrip produced no tokens" >&2
+	exit 1
+}
 
 # ---------- Test 31: live execution path runs the stub ----------
 echo "test 31: live execution hits the stub"
 HTTP_BASE_URL="https://api.example.com" run_http_live post foo
-[ -s "$HTTP_STUB_LOG" ] || { echo "FAIL: live execution did not invoke stub" >&2; exit 1; }
-grep -Fq -- '-X' "$HTTP_STUB_LOG" || { echo "FAIL: -X missing in live args" >&2; exit 1; }
-grep -Fq -- 'POST' "$HTTP_STUB_LOG" || { echo "FAIL: POST missing in live args" >&2; exit 1; }
+[ -s "$HTTP_STUB_LOG" ] || {
+	echo "FAIL: live execution did not invoke stub" >&2
+	exit 1
+}
+grep -Fq -- '-X' "$HTTP_STUB_LOG" || {
+	echo "FAIL: -X missing in live args" >&2
+	exit 1
+}
+grep -Fq -- 'POST' "$HTTP_STUB_LOG" || {
+	echo "FAIL: POST missing in live args" >&2
+	exit 1
+}
+
+# ---------- Test 32: .jsonc has comments stripped before sending ----------
+echo "test 32: .jsonc comments stripped"
+PAYLOAD="$HTTP_TMPDIR/payload.jsonc"
+cat >"$PAYLOAD" <<'JSONC'
+// this is a line comment
+{
+  /* block comment */
+  "name": "alice"
+}
+JSONC
+run_http post -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- '"name": "alice"' "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: body content missing" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
+if grep -Fq '// this is' "$HTTP_CURL_ARGS"; then
+	echo "FAIL: line comment not stripped" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+fi
+if grep -Fq 'block comment' "$HTTP_CURL_ARGS"; then
+	echo "FAIL: block comment not stripped" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+fi
+
+# ---------- Test 33: .jsonc preserves // inside strings ----------
+echo "test 33: .jsonc preserves // in strings"
+PAYLOAD="$HTTP_TMPDIR/protocol.jsonc"
+cat >"$PAYLOAD" <<'JSONC'
+{
+  "url": "https://api.example.com/foo",
+  "regex": "/foo/bar/",
+  "comment": "this // is not a comment"
+}
+JSONC
+run_http post -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- 'https://api.example.com/foo' "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: url with // not preserved" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
+grep -Fq -- '"this // is not a comment"' "$HTTP_CURL_ARGS" ||
+	{
+		echo "FAIL: string with // not preserved" >&2
+		cat "$HTTP_CURL_ARGS" >&2
+		exit 1
+	}
 
 echo "OK"

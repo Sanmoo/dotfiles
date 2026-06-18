@@ -13,6 +13,48 @@ from urllib.parse import quote_plus
 _TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
 
 
+def strip_jsonc_comments(text):
+    """Remove // and /* */ comments from JSONC text, respecting strings."""
+    result = []
+    i = 0
+    n = len(text)
+    in_string = False
+    string_char = None
+    while i < n:
+        c = text[i]
+        if in_string:
+            result.append(c)
+            if c == "\\" and i + 1 < n:
+                result.append(text[i + 1])
+                i += 2
+                continue
+            if c == string_char:
+                in_string = False
+            i += 1
+            continue
+        if c in ('"', "'"):
+            in_string = True
+            string_char = c
+            result.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            nxt = text[i + 1]
+            if nxt == "/":  # line comment
+                while i < n and text[i] != "\n":
+                    i += 1
+                continue
+            if nxt == "*":  # block comment
+                i += 2
+                while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                    i += 1
+                i += 2
+                continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+
 def apply_template(text, variables):
     def repl(m):
         name = m.group(1)
@@ -173,7 +215,9 @@ def main(argv=None):
         args.queries = [apply_template(q, variables) for q in args.queries]
     if args.file:
         content = Path(args.file).read_text()
-        if variables:
+        if Path(args.file).suffix.lower() == ".jsonc":
+            content = strip_jsonc_comments(content)
+        if variables or Path(args.file).suffix.lower() == ".jsonc":
             args.file_body = apply_template(content, variables)
     if args.base_url:
         args.base_url = apply_template(args.base_url, variables)
