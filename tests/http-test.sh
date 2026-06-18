@@ -75,7 +75,7 @@ STUB
 
 	HTTP_CURL_ARGS="$tmpdir/curl.args"
 	export CURL_ARGS_FILE="$HTTP_CURL_ARGS"
-	PATH="$tmpdir/bin:$PATH" "$SCRIPT" -n "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
+	PATH="$tmpdir/bin:$PATH" "$SCRIPT" "$@" -n >"$tmpdir/stdout" 2>"$tmpdir/stderr"
 	HTTP_CURL_ARGS="$tmpdir/stdout" # use printed output, not stub log
 	HTTP_STUB_LOG="$tmpdir/curl.args"
 	HTTP_STDOUT="$(cat "$tmpdir/stdout")"
@@ -373,7 +373,7 @@ grep -Fq -- "--data a=b" "$HTTP_CURL_ARGS" ||
 # ---------- Test 29: dry-run prints curl line ----------
 echo "test 29: dry-run output"
 unset HTTP_BASE_URL BASE_URL
-run_http_live -n post -B https://api.example.com -d '{"x":1}' foo
+run_http_live post -B https://api.example.com -d '{"x":1}' foo -n
 grep -Fq -- '-X POST' <<<"$HTTP_STDOUT" ||
 	{
 		echo "FAIL: dry-run printed curl line" >&2
@@ -383,7 +383,7 @@ grep -Fq -- '-X POST' <<<"$HTTP_STDOUT" ||
 
 # ---------- Test 30: dry-run output round-trips through shlex ----------
 echo "test 30: dry-run shlex roundtrip"
-run_http_live -n post -B https://api.example.com -t "abc def" -d 'x=y' foo
+run_http_live post -B https://api.example.com -t "abc def" -d 'x=y' foo -n
 # Verify the output round-trips through shlex.split (is a valid shell command string).
 parsed="$(python3 -c 'import shlex,sys; print(len(shlex.split(sys.argv[1])))' "$HTTP_STDOUT" 2>/dev/null)"
 [ "$parsed" -gt 0 ] 2>/dev/null || {

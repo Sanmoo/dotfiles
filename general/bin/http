@@ -95,6 +95,7 @@ def _shared_args():
     p.add_argument("-d", "--data", dest="data", default=None)
     p.add_argument("-v", "--var", dest="vars", action="append", default=[])
     p.add_argument("-i", "--include", dest="include", action="store_true")
+    p.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
     p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
     p.add_argument("-L", "--follow", dest="follow", action="store_true")
     return p
@@ -105,7 +106,6 @@ SHARED_ARGS = _shared_args()
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog="http", description=__doc__)
-    parser.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
     sub = parser.add_subparsers(dest="method", required=True)
     for m in ("get", "post", "put", "patch", "delete"):
         sub.add_parser(m, parents=[SHARED_ARGS])
