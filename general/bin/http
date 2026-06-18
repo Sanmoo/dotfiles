@@ -1,49 +1,82 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
+import os
+import re
 import shlex
+import subprocess
 import sys
+from pathlib import Path
+from urllib.parse import quote_plus
+
+
+_TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
+
+
+def apply_template(text, variables):
+    def repl(m):
+        name = m.group(1)
+        if name not in variables:
+            print(
+                f"error: undefined variable in template: {{{{{name}}}}}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        return variables[name]
+
+    return _TEMPLATE_RE.sub(repl, text)
+
+
+def parse_vars(var_list):
+    out = {}
+    for item in var_list or []:
+        if "=" not in item:
+            print(
+                f"error: --var expects KEY=VALUE, got: {item!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        k, v = item.split("=", 1)
+        out[k] = v
+    return out
+
+
+def _shared_args():
+    """Return an argument parser with shared flags used by every subcommand."""
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("-B", "--base-url", dest="base_url", default=None)
+    p.add_argument("path", nargs="?", default=None)
+    p.add_argument("-t", "--token", dest="token", default=None)
+    p.add_argument("-H", "--header", dest="headers", action="append", default=[])
+    p.add_argument("-q", "--query", dest="queries", action="append", default=[])
+    p.add_argument("-f", "--file", dest="file", default=None)
+    p.add_argument("-d", "--data", dest="data", default=None)
+    p.add_argument("-v", "--var", dest="vars", action="append", default=[])
+    p.add_argument("-i", "--include", dest="include", action="store_true")
+    p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
+    p.add_argument("-L", "--follow", dest="follow", action="store_true")
+    return p
+
+
+SHARED_ARGS = _shared_args()
 
 
 def parse_args(argv):
-    """Parse CLI arguments.
-
-    This parser allows subcommands for HTTP methods but accepts global options
-    either before or after the subcommand. To support options after the
-    subcommand we add the same set of "common" arguments to each method
-    subparser as well as the top-level parser.
-    """
     parser = argparse.ArgumentParser(prog="http", description=__doc__)
-    methods = ("get", "post", "put", "patch", "delete")
-    subparsers = parser.add_subparsers(dest="method", required=True)
-
-    # helper to add common args to any parser object
-    def add_common_args(p):
-        p.add_argument("-B", "--base-url", dest="base_url", default=None)
-        p.add_argument("path", nargs="?", default=None)
-        # The remaining flags are added in later tasks.
-        p.add_argument("-t", "--token", dest="token", default=None)
-        p.add_argument("-H", "--header", dest="headers", action="append", default=[])
-        p.add_argument("-q", "--query", dest="queries", action="append", default=[])
-        p.add_argument("-f", "--file", dest="file", default=None)
-        p.add_argument("-d", "--data", dest="data", default=None)
-        p.add_argument("-v", "--var", dest="vars", action="append", default=[])
-        p.add_argument("-i", "--include", dest="include", action="store_true")
-        p.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
-        p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
-        p.add_argument("-L", "--follow", dest="follow", action="store_true")
-
-    # Create subparsers for each method and add the common args so options
-    # placed after the method are accepted.
-    for m in methods:
-        sp = subparsers.add_parser(m)
-        add_common_args(sp)
-
+    parser.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
+    sub = parser.add_subparsers(dest="method", required=True)
+    for m in ("get", "post", "put", "patch", "delete"):
+        sub.add_parser(m, parents=[SHARED_ARGS])
     return parser.parse_args(argv)
 
 
-def build_curl_args(args, variables=None):
-    # variables is unused in this task; full template pass is wired in Task 6.
+def resolve_base_url(args, env):
+    if args.base_url:
+        return args.base_url
+    return env.get("HTTP_BASE_URL") or env.get("BASE_URL") or None
+
+
+def build_curl_args(args, base_url, variables=None):
     _ = variables
     out = []
     if args.method and args.method != "get":
@@ -54,9 +87,56 @@ def build_curl_args(args, variables=None):
         out.append("-k")
     if args.follow:
         out.append("-L")
-    base = (args.base_url or "").rstrip("/")
+    for h in args.headers or []:
+        out += ["-H", h]
+    if args.token:
+        out += ["-H", f"Authorization: Bearer {args.token}"]
+
+    # Body handling
+    body_arg = None
+    body_is_file = False
+    if args.file and args.data is not None:
+        pass  # main() guards this
+    elif args.file:
+        body_arg = f"@{args.file}"
+        body_is_file = True
+        if getattr(args, "file_body", None) is not None:
+            body_arg = args.file_body
+    elif args.data is not None:
+        body_arg = args.data
+
+    # Auto Content-Type for -f
+    if body_is_file:
+        ext = Path(args.file).suffix.lower()
+        has_ct = any(
+            h.split(":", 1)[0].strip().lower() == "content-type"
+            for h in (args.headers or [])
+        )
+        if not has_ct:
+            if ext in (".json", ".jsonc"):
+                out += ["-H", "Content-Type: application/json"]
+            elif ext == ".xml":
+                out += ["-H", "Content-Type: application/xml"]
+            else:
+                out += ["-H", "Content-Type: application/octet-stream"]
+
+    base = (base_url or "").rstrip("/")
     path = (args.path or "").lstrip("/")
-    out.append(f"{base}/{path}" if (base or path) else "")
+    url = f"{base}/{path}" if (base or path) else ""
+    if args.queries:
+        parts = []
+        for q in args.queries:
+            if "=" not in q:
+                k, v = q, ""
+            else:
+                k, v = q.split("=", 1)
+            parts.append(f"{k}={quote_plus(v)}")
+        url = f"{url}?{'&'.join(parts)}"
+    out.append(url)
+
+    if body_arg is not None:
+        out += ["--data", body_arg]
+
     return out
 
 
@@ -66,9 +146,51 @@ def format_curl_command(curl_args):
 
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    curl_args = build_curl_args(args)
-    print(format_curl_command(curl_args))
-    return 0
+    if args.token is not None and not args.token.strip():
+        print("error: --token is empty", file=sys.stderr)
+        return 2
+
+    if args.file and args.data is not None:
+        print("error: --file and --data are mutually exclusive", file=sys.stderr)
+        return 2
+
+    if args.file and not Path(args.file).is_file():
+        print(f"error: file not found: {args.file}", file=sys.stderr)
+        return 2
+
+    variables = parse_vars(args.vars)
+    if args.data is not None:
+        args.data = apply_template(args.data, variables)
+    if args.token is not None:
+        args.token = apply_template(args.token, variables)
+    if args.headers:
+        args.headers = [
+            apply_template(h, variables) for h in args.headers
+        ]
+    if args.path is not None:
+        args.path = apply_template(args.path, variables)
+    if args.queries:
+        args.queries = [apply_template(q, variables) for q in args.queries]
+    if args.file:
+        content = Path(args.file).read_text()
+        if variables:
+            args.file_body = apply_template(content, variables)
+    if args.base_url:
+        args.base_url = apply_template(args.base_url, variables)
+
+    base_url = resolve_base_url(args, os.environ)
+    if not base_url:
+        print(
+            "error: no base URL provided (use -B or set HTTP_BASE_URL)",
+            file=sys.stderr,
+        )
+        return 2
+    curl_args = build_curl_args(args, base_url)
+    if args.dry_run:
+        print(format_curl_command(curl_args))
+        return 0
+    result = subprocess.run(["curl", *curl_args])
+    return result.returncode
 
 
 if __name__ == "__main__":
