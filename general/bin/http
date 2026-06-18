@@ -4,6 +4,7 @@ import argparse
 import os
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -52,7 +53,6 @@ def _shared_args():
     p.add_argument("-d", "--data", dest="data", default=None)
     p.add_argument("-v", "--var", dest="vars", action="append", default=[])
     p.add_argument("-i", "--include", dest="include", action="store_true")
-    p.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
     p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
     p.add_argument("-L", "--follow", dest="follow", action="store_true")
     return p
@@ -63,6 +63,7 @@ SHARED_ARGS = _shared_args()
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog="http", description=__doc__)
+    parser.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
     sub = parser.add_subparsers(dest="method", required=True)
     for m in ("get", "post", "put", "patch", "delete"):
         sub.add_parser(m, parents=[SHARED_ARGS])
@@ -186,8 +187,11 @@ def main(argv=None):
         )
         return 2
     curl_args = build_curl_args(args, base_url)
-    print(format_curl_command(curl_args))
-    return 0
+    if args.dry_run:
+        print(format_curl_command(curl_args))
+        return 0
+    result = subprocess.run(["curl", *curl_args])
+    return result.returncode
 
 
 if __name__ == "__main__":

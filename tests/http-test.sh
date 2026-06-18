@@ -38,8 +38,32 @@ run_http_expect_fail() {
 }
 
 
+run_http_live() {
+ # run_http_live <args...>
+ # Runs the script WITHOUT -n (live execution).
+ # Sets HTTP_STUB_LOG -> stub curl's recorded argv
+ # Sets HTTP_STDOUT -> script's stdout
+ local tmpdir
+ tmpdir="$(mktemp -d)"
+ mkdir -p "$tmpdir/bin"
+ cat >"$tmpdir/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CURL_ARGS_FILE"
+STUB
+ chmod +x "$tmpdir/bin/curl"
+
+ HTTP_STUB_LOG="$tmpdir/curl.args"
+ export CURL_ARGS_FILE="$HTTP_STUB_LOG"
+ PATH="$tmpdir/bin:$PATH" "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
+ HTTP_STDOUT="$(cat "$tmpdir/stdout")"
+ HTTP_STDERR="$(cat "$tmpdir/stderr")"
+ HTTP_TMPDIR="$tmpdir"
+}
+
+
 run_http() {
  # run_http <args...>
+ # Adds -n (dry-run) automatically. Captures stdout as the curl command.
  # Sets HTTP_CURL_ARGS -> printed curl command (stdout)
  # Sets HTTP_STUB_LOG -> stub curl's recorded argv (for live-execution tests)
  local tmpdir
@@ -53,7 +77,7 @@ STUB
 
  HTTP_CURL_ARGS="$tmpdir/curl.args"
  export CURL_ARGS_FILE="$HTTP_CURL_ARGS"
- PATH="$tmpdir/bin:$PATH" "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
+ PATH="$tmpdir/bin:$PATH" "$SCRIPT" -n "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
  HTTP_CURL_ARGS="$tmpdir/stdout"  # use printed output, not stub log
  HTTP_STUB_LOG="$tmpdir/curl.args"
  HTTP_STDOUT="$(cat "$tmpdir/stdout")"
@@ -256,5 +280,26 @@ echo "test 28: -v with empty value"
 run_http post -B https://api.example.com -v "EMPTY=" -d 'a={{EMPTY}}b' foo
 grep -Fq -- "--data a=b" "$HTTP_CURL_ARGS" \
   || { echo "FAIL: empty value" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 29: dry-run prints curl line ----------
+echo "test 29: dry-run output"
+unset HTTP_BASE_URL BASE_URL
+run_http_live -n post -B https://api.example.com -d '{"x":1}' foo
+grep -Fq -- '-X POST' <<< "$HTTP_STDOUT" \
+  || { echo "FAIL: dry-run printed curl line" >&2; cat "$HTTP_STDOUT" >&2; exit 1; }
+
+# ---------- Test 30: dry-run output round-trips through shlex ----------
+echo "test 30: dry-run shlex roundtrip"
+run_http_live -n post -B https://api.example.com -t "abc def" -d 'x=y' foo
+# Verify the output round-trips through shlex.split (is a valid shell command string).
+parsed="$(python3 -c 'import shlex,sys; print(len(shlex.split(sys.argv[1])))' "$HTTP_STDOUT" 2>/dev/null)"
+[ "$parsed" -gt 0 ] 2>/dev/null || { echo "FAIL: shlex roundtrip produced no tokens" >&2; exit 1; }
+
+# ---------- Test 31: live execution path runs the stub ----------
+echo "test 31: live execution hits the stub"
+HTTP_BASE_URL="https://api.example.com" run_http_live post foo
+[ -s "$HTTP_STUB_LOG" ] || { echo "FAIL: live execution did not invoke stub" >&2; exit 1; }
+grep -Fq -- '-X' "$HTTP_STUB_LOG" || { echo "FAIL: -X missing in live args" >&2; exit 1; }
+grep -Fq -- 'POST' "$HTTP_STUB_LOG" || { echo "FAIL: POST missing in live args" >&2; exit 1; }
 
 echo "OK"
