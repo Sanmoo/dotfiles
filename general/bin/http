@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
+import os
 import shlex
 import sys
 
@@ -34,7 +35,13 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
-def build_curl_args(args, variables=None):
+def resolve_base_url(args, env):
+    if args.base_url:
+        return args.base_url
+    return env.get("HTTP_BASE_URL") or env.get("BASE_URL") or None
+
+
+def build_curl_args(args, base_url, variables=None):
     # variables is unused in this task; full template pass is wired in Task 7.
     _ = variables
     out = []
@@ -46,7 +53,7 @@ def build_curl_args(args, variables=None):
         out.append("-k")
     if args.follow:
         out.append("-L")
-    base = (args.base_url or "").rstrip("/")
+    base = (base_url or "").rstrip("/")
     path = (args.path or "").lstrip("/")
     out.append(f"{base}/{path}" if (base or path) else "")
     return out
@@ -58,7 +65,14 @@ def format_curl_command(curl_args):
 
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    curl_args = build_curl_args(args)
+    base_url = resolve_base_url(args, os.environ)
+    if not base_url:
+        print(
+            "error: no base URL provided (use -B or set HTTP_BASE_URL)",
+            file=sys.stderr,
+        )
+        return 2
+    curl_args = build_curl_args(args, base_url)
     print(format_curl_command(curl_args))
     return 0
 

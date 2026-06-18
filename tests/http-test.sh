@@ -26,6 +26,18 @@ assert_not_contains() {
  fi
 }
 
+run_http_expect_fail() {
+ # run_http_expect_fail <args...>
+ # Like run_http but expects non-zero exit. Sets HTTP_EXIT to the exit code.
+ local tmpdir
+ tmpdir="$(mktemp -d)"
+ HTTP_TMPDIR="$tmpdir"
+ HTTP_EXIT=0
+ "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/err" || HTTP_EXIT=$?
+ HTTP_STDERR="$(cat "$tmpdir/err")"
+}
+
+
 run_http() {
  # run_http <args...>
  # Sets HTTP_CURL_ARGS -> printed curl command (stdout)
@@ -81,5 +93,29 @@ run_http post -B https://api.example.com -i -k -L foo
 grep -Fq -- ' -i ' "$HTTP_CURL_ARGS" || { echo "FAIL: -i missing" >&2; exit 1; }
 grep -Fq -- ' -k ' "$HTTP_CURL_ARGS" || { echo "FAIL: -k missing" >&2; exit 1; }
 grep -Fq -- ' -L ' "$HTTP_CURL_ARGS" || { echo "FAIL: -L missing" >&2; exit 1; }
+
+# ---------- Test 6: -B flag wins over HTTP_BASE_URL and BASE_URL ----------
+echo "test 6: -B flag precedence"
+HTTP_BASE_URL="https://from-env-http.example.com" BASE_URL="https://from-base.example.com" \
+  run_http get -B https://from-flag.example.com foo
+assert_contains "$HTTP_CURL_ARGS" "https://from-flag.example.com/foo" "flag wins"
+
+# ---------- Test 7: HTTP_BASE_URL wins over BASE_URL ----------
+echo "test 7: HTTP_BASE_URL wins over BASE_URL"
+HTTP_BASE_URL="https://from-env-http.example.com" BASE_URL="https://from-base.example.com" \
+  run_http get foo
+assert_contains "$HTTP_CURL_ARGS" "https://from-env-http.example.com/foo" "HTTP_BASE_URL wins"
+
+# ---------- Test 8: BASE_URL is the fallback ----------
+echo "test 8: BASE_URL fallback"
+BASE_URL="https://from-base.example.com" run_http get foo
+assert_contains "$HTTP_CURL_ARGS" "https://from-base.example.com/foo" "BASE_URL fallback"
+
+# ---------- Test 9: no base URL is an error ----------
+echo "test 9: no base URL is an error"
+unset HTTP_BASE_URL BASE_URL
+run_http_expect_fail get foo
+[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero exit" >&2; exit 1; }
+assert_contains "$HTTP_TMPDIR/err" "no base URL provided" "error message"
 
 echo "OK"
