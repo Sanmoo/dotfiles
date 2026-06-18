@@ -4,6 +4,7 @@ import argparse
 import os
 import shlex
 import sys
+from pathlib import Path
 from urllib.parse import quote_plus
 
 
@@ -58,6 +59,33 @@ def build_curl_args(args, base_url, variables=None):
         out += ["-H", h]
     if args.token:
         out += ["-H", f"Authorization: Bearer {args.token}"]
+
+    # Body handling
+    body_arg = None
+    body_is_file = False
+    if args.file and args.data is not None:
+        pass  # main() guards this
+    elif args.file:
+        body_arg = f"@{args.file}"
+        body_is_file = True
+    elif args.data is not None:
+        body_arg = args.data
+
+    # Auto Content-Type for -f
+    if body_is_file:
+        ext = Path(args.file).suffix.lower()
+        has_ct = any(
+            h.split(":", 1)[0].strip().lower() == "content-type"
+            for h in (args.headers or [])
+        )
+        if not has_ct:
+            if ext in (".json", ".jsonc"):
+                out += ["-H", "Content-Type: application/json"]
+            elif ext == ".xml":
+                out += ["-H", "Content-Type: application/xml"]
+            else:
+                out += ["-H", "Content-Type: application/octet-stream"]
+
     base = (base_url or "").rstrip("/")
     path = (args.path or "").lstrip("/")
     url = f"{base}/{path}" if (base or path) else ""
@@ -71,6 +99,10 @@ def build_curl_args(args, base_url, variables=None):
             parts.append(f"{k}={quote_plus(v)}")
         url = f"{url}?{'&'.join(parts)}"
     out.append(url)
+
+    if body_arg is not None:
+        out += ["--data", body_arg]
+
     return out
 
 
@@ -83,6 +115,15 @@ def main(argv=None):
     if args.token is not None and not args.token.strip():
         print("error: --token is empty", file=sys.stderr)
         return 2
+
+    if args.file and args.data is not None:
+        print("error: --file and --data are mutually exclusive", file=sys.stderr)
+        return 2
+
+    if args.file and not Path(args.file).is_file():
+        print(f"error: file not found: {args.file}", file=sys.stderr)
+        return 2
+
     base_url = resolve_base_url(args, os.environ)
     if not base_url:
         print(

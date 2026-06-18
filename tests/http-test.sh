@@ -160,4 +160,74 @@ run_http get -B https://api.example.com -q "q=hello world&x" items
 grep -Fq -- "q=hello+world%26x" "$HTTP_CURL_ARGS" \
   || { echo "FAIL: URL-encoding of value" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
 
+# ---------- Test 17: -d inline body ----------
+echo "test 17: -d inline body"
+run_http post -B https://api.example.com -d '{"x":1}' foo
+grep -Fq -- "--data" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: --data present" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 18: -f body from file with auto Content-Type ----------
+echo "test 18: -f with auto Content-Type"
+PAYLOAD="$HTTP_TMPDIR/payload.json"
+echo '{"x":1}' > "$PAYLOAD"
+run_http post -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: auto json content type" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+grep -Fq -- "--data @${PAYLOAD}" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: --data @file" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 19: -f with .jsonc extension ----------
+echo "test 19: -f .jsonc auto Content-Type"
+PAYLOAD="$HTTP_TMPDIR/payload.jsonc"
+echo '// c' > "$PAYLOAD"; echo '{"x":1}' >> "$PAYLOAD"
+run_http post -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: jsonc content type" >&2; exit 1; }
+
+# ---------- Test 20: -f with .xml extension ----------
+echo "test 20: -f .xml auto Content-Type"
+PAYLOAD="$HTTP_TMPDIR/payload.xml"
+echo '<x/>' > "$PAYLOAD"
+run_http post -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- "Content-Type: application/xml" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: xml content type" >&2; exit 1; }
+
+# ---------- Test 21: -f with other extension -> octet-stream ----------
+echo "test 21: -f other extension -> octet-stream"
+PAYLOAD="$HTTP_TMPDIR/blob.bin"
+echo 'binary' > "$PAYLOAD"
+run_http post -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- "Content-Type: application/octet-stream" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: octet-stream" >&2; exit 1; }
+
+# ---------- Test 22: explicit -H Content-Type wins over auto ----------
+echo "test 22: explicit -H Content-Type wins"
+PAYLOAD="$HTTP_TMPDIR/payload.json"
+echo '{}' > "$PAYLOAD"
+run_http post -B https://api.example.com -H "Content-Type: application/vnd.custom+json" -f "$PAYLOAD" foo
+grep -Fq -- "Content-Type: application/vnd.custom+json" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: explicit content type" >&2; exit 1; }
+# The auto Content-Type must NOT appear as the only Content-Type.
+# If both show up that's wrong; if only auto shows up that's wrong.
+# We already checked the explicit one exists. Check that the auto doesn't:
+if grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS"; then
+  # Auto appeared too — check it's not the ONLY one
+  count="$(grep -Fc -- 'Content-Type:' "$HTTP_CURL_ARGS")"
+  [ "$count" -eq 1 ] || { echo "FAIL: both content types present" >&2; exit 1; }
+fi
+
+# ---------- Test 23: -f and -d together is an error ----------
+echo "test 23: -f and -d together is an error"
+PAYLOAD="$HTTP_TMPDIR/payload.json"
+echo '{}' > "$PAYLOAD"
+run_http_expect_fail post -B https://api.example.com -f "$PAYLOAD" -d "x" foo
+[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+assert_contains "$HTTP_TMPDIR/err" "mutually exclusive" "exclusive error"
+
+# ---------- Test 24: missing -f file is an error ----------
+echo "test 24: -f with missing file is an error"
+run_http_expect_fail post -B https://api.example.com -f /tmp/does-not-exist-12345.json foo
+[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+assert_contains "$HTTP_TMPDIR/err" "file not found" "missing file error"
+
 echo "OK"
