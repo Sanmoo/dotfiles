@@ -230,4 +230,31 @@ run_http_expect_fail post -B https://api.example.com -f /tmp/does-not-exist-1234
 [ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
 assert_contains "$HTTP_TMPDIR/err" "file not found" "missing file error"
 
+# ---------- Test 25: -v substitutes in -d ----------
+echo "test 25: -v in -d"
+run_http post -B https://api.example.com -v "K=vb" -d 'a={{K}}' foo
+grep -Fq -- "--data a=vb" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: -v in -d" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 26: -v substitutes in file body ----------
+echo "test 26: -v in file body"
+PAYLOAD="$HTTP_TMPDIR/payload.json"
+echo '{"name":"{{NAME}}"}' > "$PAYLOAD"
+run_http post -B https://api.example.com -v "NAME=alice" -f "$PAYLOAD" foo
+grep -Fq -- '"name":"alice"' "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: -v in body" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
+# ---------- Test 27: undefined variable is an error ----------
+echo "test 27: undefined variable is an error"
+run_http_expect_fail post -B https://api.example.com -d 'a={{NOPE}}' foo
+[ "$HTTP_EXIT" -ne 0 ] || { echo "FAIL: expected non-zero" >&2; exit 1; }
+assert_contains "$HTTP_TMPDIR/err" "undefined variable" "undefined var error"
+assert_contains "$HTTP_TMPDIR/err" "NOPE" "undefined var name in message"
+
+# ---------- Test 28: -v with empty value works ----------
+echo "test 28: -v with empty value"
+run_http post -B https://api.example.com -v "EMPTY=" -d 'a={{EMPTY}}b' foo
+grep -Fq -- "--data a=b" "$HTTP_CURL_ARGS" \
+  || { echo "FAIL: empty value" >&2; cat "$HTTP_CURL_ARGS" >&2; exit 1; }
+
 echo "OK"

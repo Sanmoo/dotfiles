@@ -2,10 +2,42 @@
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
 from urllib.parse import quote_plus
+
+
+_TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
+
+
+def apply_template(text, variables):
+    def repl(m):
+        name = m.group(1)
+        if name not in variables:
+            print(
+                f"error: undefined variable in template: {{{{{name}}}}}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        return variables[name]
+
+    return _TEMPLATE_RE.sub(repl, text)
+
+
+def parse_vars(var_list):
+    out = {}
+    for item in var_list or []:
+        if "=" not in item:
+            print(
+                f"error: --var expects KEY=VALUE, got: {item!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        k, v = item.split("=", 1)
+        out[k] = v
+    return out
 
 
 def _shared_args():
@@ -68,6 +100,8 @@ def build_curl_args(args, base_url, variables=None):
     elif args.file:
         body_arg = f"@{args.file}"
         body_is_file = True
+        if getattr(args, "file_body", None) is not None:
+            body_arg = args.file_body
     elif args.data is not None:
         body_arg = args.data
 
@@ -123,6 +157,26 @@ def main(argv=None):
     if args.file and not Path(args.file).is_file():
         print(f"error: file not found: {args.file}", file=sys.stderr)
         return 2
+
+    variables = parse_vars(args.vars)
+    if args.data is not None:
+        args.data = apply_template(args.data, variables)
+    if args.token is not None:
+        args.token = apply_template(args.token, variables)
+    if args.headers:
+        args.headers = [
+            apply_template(h, variables) for h in args.headers
+        ]
+    if args.path is not None:
+        args.path = apply_template(args.path, variables)
+    if args.queries:
+        args.queries = [apply_template(q, variables) for q in args.queries]
+    if args.file:
+        content = Path(args.file).read_text()
+        if variables:
+            args.file_body = apply_template(content, variables)
+    if args.base_url:
+        args.base_url = apply_template(args.base_url, variables)
 
     base_url = resolve_base_url(args, os.environ)
     if not base_url:
