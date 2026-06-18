@@ -77,7 +77,6 @@ def resolve_base_url(args, env):
 
 
 def build_curl_args(args, base_url, variables=None):
-    # variables is unused in this task; full template pass is wired in Task 7.
     _ = variables
     out = []
     if args.method and args.method != "get":
