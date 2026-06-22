@@ -33,7 +33,8 @@ prefix = "ctrl+a"
 next_tab = "ctrl+]"     # optional, unset by default
 previous_tab = "ctrl+[" # optional, unset by default
 last_pane = "prefix+a"  # switch to the previously focused pane
-goto = "prefix+/"       # open pane/panel search
+# prefix+/ is remapped below to a fuzzy pane picker over workspace / tab / pane.
+# goto = "prefix+/"     # open pane/panel search
 
 # Navigate-mode actions
 # new_workspace = "n"
@@ -69,6 +70,12 @@ key = "prefix+o"
 type = "shell"
 command = "~/.config/herdr/focus-next-actionable-agent.sh"
 description = "focus next blocked/done agent"
+
+[[keys.command]]
+key = "prefix+/"
+type = "pane"
+command = "~/.config/herdr/fuzzy-herdr-pane.sh"
+description = "fuzzy focus pane by workspace/tab/pane"
 
 # Optional modifier-only shortcuts expanded over number keys 1-9.
 # Empty means disabled. Examples: "ctrl", "ctrl+shift", "alt".
