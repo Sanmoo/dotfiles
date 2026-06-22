@@ -57,14 +57,70 @@ pick_row() {
 	fi
 }
 
+focus_direction_to_target() {
+	local current_pane_id="$1"
+	local target_pane_id="$2"
+
+	herdr pane layout --pane "$target_pane_id" | jq -r \
+		--arg current "$current_pane_id" \
+		--arg target "$target_pane_id" '
+    .result.layout.panes as $panes
+    | ($panes[] | select(.pane_id == $current) | .rect) as $current_rect
+    | ($panes[] | select(.pane_id == $target) | .rect) as $target_rect
+    | (($current_rect.x + ($current_rect.width / 2)) - ($target_rect.x + ($target_rect.width / 2))) as $dx
+    | (($current_rect.y + ($current_rect.height / 2)) - ($target_rect.y + ($target_rect.height / 2))) as $dy
+    | if (($dx | fabs) > ($dy | fabs)) then
+        if $dx > 0 then "left" else "right" end
+      else
+        if $dy > 0 then "up" else "down" end
+      end
+  '
+}
+
+focused_pane_in_tab() {
+	local tab_id="$1"
+	herdr pane list | jq -r --arg tab_id "$tab_id" '
+    .result.panes[]
+    | select(.tab_id == $tab_id and .focused == true)
+    | .pane_id
+  ' | head -n 1
+}
+
 focus_pane() {
 	local pane_id="$1"
 	if [[ -n "${HERDR_FUZZY_HERDR:-}" ]]; then
 		# Test hook. The command receives: pane current --pane <pane_id>
 		bash -lc "$HERDR_FUZZY_HERDR" -- pane current --pane "$pane_id"
-	else
-		herdr pane current --pane "$pane_id"
+		return
 	fi
+
+	local pane_json tab_id current_pane_id direction
+	pane_json="$(herdr pane get "$pane_id")"
+	tab_id="$(printf '%s\n' "$pane_json" | jq -r '.result.pane.tab_id')"
+
+	herdr tab focus "$tab_id" >/dev/null
+
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		current_pane_id="$(focused_pane_in_tab "$tab_id")"
+		if [[ "$current_pane_id" == "$pane_id" ]]; then
+			return 0
+		fi
+		if [[ -z "$current_pane_id" ]]; then
+			printf 'Could not determine focused pane in tab %s.\n' "$tab_id" >&2
+			return 1
+		fi
+
+		direction="$(focus_direction_to_target "$current_pane_id" "$pane_id")"
+		if [[ -z "$direction" || "$direction" == "null" ]]; then
+			printf 'Could not determine direction from %s to %s.\n' "$current_pane_id" "$pane_id" >&2
+			return 1
+		fi
+
+		herdr pane focus --direction "$direction" --pane "$current_pane_id" >/dev/null
+	done
+
+	printf 'Could not focus pane %s after navigation attempts.\n' "$pane_id" >&2
+	return 1
 }
 
 run_with_files() {
@@ -125,7 +181,7 @@ main() {
 
 	local tmpdir
 	tmpdir="$(mktemp -d)"
-	trap 'rm -rf "$tmpdir"' EXIT
+	trap "rm -rf '$tmpdir'" EXIT
 
 	if ! load_live_json "$tmpdir"; then
 		printf 'Could not read Herdr state via the Herdr CLI. Is the Herdr server running?\n' >&2
