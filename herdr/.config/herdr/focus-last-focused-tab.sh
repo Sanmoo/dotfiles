@@ -23,16 +23,10 @@ current_tab_id() {
 	jq -r '.result.tabs[] | select(.focused == true) | .tab_id' "$tabs_json" | head -n 1
 }
 
-tab_exists() {
-	local tabs_json="$1"
-	local tab_id="$2"
-	jq -e --arg tab_id "$tab_id" '.result.tabs[] | select(.tab_id == $tab_id)' "$tabs_json" >/dev/null
-}
-
 last_focused_tab_id() {
 	local tabs_json="$1"
 	local log_file="$2"
-	local current
+	local current existing_tabs
 	current="$(current_tab_id "$tabs_json")"
 
 	if [[ -z "$current" ]]; then
@@ -45,7 +39,15 @@ last_focused_tab_id() {
 		return 1
 	fi
 
-	awk '
+	existing_tabs="$(mktemp)"
+	trap 'rm -f "$existing_tabs"' RETURN
+	jq -r '.result.tabs[].tab_id' "$tabs_json" >"$existing_tabs"
+
+	awk -v current="$current" '
+		FNR == NR {
+			exists[$0] = 1
+			next
+		}
 		/tab focused event="tab.focus"/ {
 			if (match($0, /tab_id="[^"]+"/)) {
 				value = substr($0, RSTART + 8, RLENGTH - 9)
@@ -54,17 +56,13 @@ last_focused_tab_id() {
 		}
 		END {
 			for (i = count; i >= 1; i--) {
-				print focused[i]
+				if (focused[i] != current && exists[focused[i]]) {
+					print focused[i]
+					exit 0
+				}
 			}
 		}
-	' "$log_file" | while IFS= read -r tab_id; do
-		[[ -n "$tab_id" ]] || continue
-		[[ "$tab_id" != "$current" ]] || continue
-		if tab_exists "$tabs_json" "$tab_id"; then
-			printf '%s\n' "$tab_id"
-			return 0
-		fi
-	done | head -n 1
+	' "$existing_tabs" "$log_file"
 }
 
 focus_tab() {
