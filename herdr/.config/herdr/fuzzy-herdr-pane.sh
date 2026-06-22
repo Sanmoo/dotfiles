@@ -48,8 +48,11 @@ format_rows() {
 }
 
 pick_row() {
-	local picker_cmd="${HERDR_FUZZY_PICKER:-fzf --prompt='Herdr pane> ' --with-nth=1 --delimiter=$'\t'}"
-	bash -lc "$picker_cmd"
+	if [[ -n "${HERDR_FUZZY_PICKER:-}" ]]; then
+		bash -lc "$HERDR_FUZZY_PICKER"
+	else
+		fzf --prompt='Herdr pane> ' --with-nth=1 --delimiter=$'\t'
+	fi
 }
 
 focus_pane() {
