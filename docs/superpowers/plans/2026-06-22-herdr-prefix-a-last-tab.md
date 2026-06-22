@@ -30,10 +30,12 @@
 ### Task 1: Confirm Herdr native last-tab key
 
 **Files:**
+
 - Read: `herdr/.config/herdr/config.toml`
 - No modifications in this task.
 
 **Interfaces:**
+
 - Consumes: Installed `herdr` CLI/binary and current config.
 - Produces: The exact key name to use in Task 2, preferably `last_tab`.
 
@@ -77,9 +79,11 @@ No files changed in this task, so do not commit.
 ### Task 2: Update `prefix+a` binding
 
 **Files:**
+
 - Modify: `herdr/.config/herdr/config.toml`
 
 **Interfaces:**
+
 - Consumes: Exact native previous/last-tab key name from Task 1.
 - Produces: Config where `prefix+a` switches to the previously focused tab and `last_pane` is disabled.
 
@@ -187,9 +191,11 @@ Expected: commit succeeds and includes only `herdr/.config/herdr/config.toml`.
 ### Task 3: Manual verification instructions
 
 **Files:**
+
 - No modifications.
 
 **Interfaces:**
+
 - Consumes: Updated Herdr config from Task 2.
 - Produces: Manual verification evidence that `prefix+a` changes tabs.
 
