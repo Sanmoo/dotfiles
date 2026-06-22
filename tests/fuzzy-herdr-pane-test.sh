@@ -30,7 +30,8 @@ cat >"$PANES" <<'JSON'
   {"pane_id":"w1:p1","workspace_id":"w1","tab_id":"w1:t1","label":"pi"},
   {"pane_id":"w1:p2","workspace_id":"w1","tab_id":"w1:t1"},
   {"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","label":"agent"},
-  {"pane_id":"w2:p2","workspace_id":"w2","tab_id":"w2:t2","label":"agent"}
+  {"pane_id":"w2:p2","workspace_id":"w2","tab_id":"w2:t2","label":"agent"},
+  {"pane_id":"w1:pTemp","workspace_id":"w1","tab_id":"w1:t1"}
 ]}}
 JSON
 
@@ -52,11 +53,15 @@ assert_equals() {
 	fi
 }
 
-format_output="$(HERDR_FUZZY_TEST_MODE=format "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES")"
+format_output="$(HERDR_FUZZY_TEST_MODE=format HERDR_PANE_ID=w1:pTemp "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES")"
 assert_contains "$format_output" $'personal / coding / pi\tw1:p1'
 assert_contains "$format_output" $'personal / coding / pane w1:p2\tw1:p2'
 assert_contains "$format_output" $'work / backend / agent\tw2:p1'
 assert_contains "$format_output" $'work / backend / agent\tw2:p2'
+if [[ "$format_output" == *'w1:pTemp'* ]]; then
+	printf 'Expected temporary command pane w1:pTemp to be excluded:\n%s\n' "$format_output" >&2
+	exit 1
+fi
 
 selected_output="$(HERDR_FUZZY_TEST_MODE=select HERDR_FUZZY_PICKER='printf "%s\n" "work / backend / agent	w2:p2"' HERDR_FUZZY_HERDR='printf "herdr %s %s %s %s\n" "$@"' "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES")"
 assert_equals 'herdr pane current --pane w2:p2' "$selected_output"

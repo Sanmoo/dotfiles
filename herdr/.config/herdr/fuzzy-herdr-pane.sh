@@ -31,14 +31,16 @@ format_rows() {
 	local workspaces_json="$1"
 	local tabs_json="$2"
 	local panes_json="$3"
+	local exclude_pane_id="${HERDR_PANE_ID:-}"
 
-	jq -r -s '
+	jq -r -s --arg exclude_pane_id "$exclude_pane_id" '
     . as $docs
     | def workspace_label($id):
         ($docs[0].result.workspaces[] | select(.workspace_id == $id) | .label) // $id;
       def tab_label($id):
         ($docs[1].result.tabs[] | select(.tab_id == $id) | .label) // $id;
       $docs[2].result.panes[]
+      | select(.pane_id != $exclude_pane_id)
       | [
           ((workspace_label(.workspace_id)) + " / " + (tab_label(.tab_id)) + " / " + (.label // ("pane " + .pane_id))),
           .pane_id
