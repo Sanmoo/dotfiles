@@ -30,9 +30,9 @@ yellow = "#fabd2f"
 # Most reliable bindings are plain keys, ctrl+letter, esc/tab/enter, and function keys.
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 prefix = "ctrl+a"
-next_tab = "ctrl+]"       # optional, unset by default
-previous_tab = "prefix+a" # switch to the previous tab
-last_pane = ""            # disabled; prefix+a is used for previous tab
+next_tab = "ctrl+]"     # optional, unset by default
+previous_tab = "ctrl+[" # optional, unset by default
+last_pane = ""          # disabled; prefix+a is used for last focused tab
 # prefix+/ is remapped below to a fuzzy pane picker over workspace / tab / pane.
 # goto = "prefix+/"     # open pane/panel search
 
@@ -70,6 +70,12 @@ key = "prefix+o"
 type = "shell"
 command = "~/.config/herdr/focus-next-actionable-agent.sh"
 description = "focus next blocked/done agent"
+
+[[keys.command]]
+key = "prefix+a"
+type = "shell"
+command = "~/.config/herdr/focus-last-focused-tab.sh"
+description = "focus last focused tab"
 
 [[keys.command]]
 key = "prefix+/"
