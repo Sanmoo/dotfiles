@@ -5,8 +5,8 @@ usage() {
 	cat >&2 <<'EOF'
 Usage:
   fuzzy-herdr-pane.sh
-  HERDR_FUZZY_TEST_MODE=format fuzzy-herdr-pane.sh workspaces.json tabs.json panes.json
-  HERDR_FUZZY_TEST_MODE=select fuzzy-herdr-pane.sh workspaces.json tabs.json panes.json
+  HERDR_FUZZY_TEST_MODE=format fuzzy-herdr-pane.sh workspaces.json tabs.json panes.json [herdr-server.log]
+  HERDR_FUZZY_TEST_MODE=select fuzzy-herdr-pane.sh workspaces.json tabs.json panes.json [herdr-server.log]
 EOF
 }
 
@@ -27,26 +27,77 @@ load_live_json() {
 	"$herdr_cmd" pane list >"$out_dir/panes.json"
 }
 
+tab_recency_tsv() {
+	local tabs_json="$1"
+	local log_file="$2"
+	local log_lines="${HERDR_FUZZY_LOG_LINES:-5000}"
+
+	[[ -f "$log_file" ]] || return 0
+
+	jq -r '.result.tabs[].tab_id' "$tabs_json" | awk '
+		FNR == NR {
+			exists[$0] = 1
+			next
+		}
+		/tab focused event="tab.focus"/ {
+			if (match($0, /tab_id="[^"]+"/)) {
+				value = substr($0, RSTART + 8, RLENGTH - 9)
+				focused[++count] = value
+			}
+		}
+		END {
+			rank = 0
+			for (i = count; i >= 1; i--) {
+				if (exists[focused[i]] && !(focused[i] in seen)) {
+					seen[focused[i]] = 1
+					printf "%s\t%d\n", focused[i], rank++
+				}
+			}
+		}
+	' - <(tail -n "$log_lines" "$log_file")
+}
+
 format_rows() {
 	local workspaces_json="$1"
 	local tabs_json="$2"
 	local panes_json="$3"
+	local log_file="${4:-${HERDR_FUZZY_LOG:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr-server.log}}"
 	local exclude_pane_id="${HERDR_PANE_ID:-}"
+	local recency_file
 
-	jq -r -s --arg exclude_pane_id "$exclude_pane_id" '
+	recency_file="$(mktemp)"
+	tab_recency_tsv "$tabs_json" "$log_file" >"$recency_file"
+
+	jq -r -s --arg exclude_pane_id "$exclude_pane_id" --rawfile recency_raw "$recency_file" '
     . as $docs
+    | ($docs[1].result.tabs[] | select(.focused == true) | .tab_id) as $current_tab_id
+    | ($recency_raw
+        | split("\n")
+        | map(select(length > 0) | split("\t"))
+        | map({key: .[0], value: (.[1] | tonumber)})
+        | from_entries) as $recency
     | def workspace_label($id):
         ($docs[0].result.workspaces[] | select(.workspace_id == $id) | .label) // $id;
       def tab_label($id):
         ($docs[1].result.tabs[] | select(.tab_id == $id) | .label) // $id;
-      $docs[2].result.panes[]
-      | select(.pane_id != $exclude_pane_id)
-      | [
-          ((workspace_label(.workspace_id)) + " / " + (tab_label(.tab_id)) + " / " + (.label // ("pane " + .pane_id))),
-          .pane_id
-        ]
+      $docs[2].result.panes
+      | to_entries
+      | map(. as $entry
+        | $entry.value
+        | select(.pane_id != $exclude_pane_id)
+        | select(.tab_id != $current_tab_id)
+        | {
+            rank: ($recency[.tab_id] // 999999),
+            index: $entry.key,
+            label: ((workspace_label(.workspace_id)) + " / " + (tab_label(.tab_id)) + " / " + (.label // ("pane " + .pane_id))),
+            pane_id: .pane_id
+          })
+      | sort_by(.rank, .index)
+      | .[]
+      | [.label, .pane_id]
       | @tsv
   ' "$workspaces_json" "$tabs_json" "$panes_json"
+	rm -f "$recency_file"
 }
 
 pick_row() {
@@ -127,9 +178,10 @@ run_with_files() {
 	local workspaces_json="$1"
 	local tabs_json="$2"
 	local panes_json="$3"
+	local log_file="${4:-${HERDR_FUZZY_LOG:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr-server.log}}"
 
 	local rows selected pane_id
-	rows="$(format_rows "$workspaces_json" "$tabs_json" "$panes_json")"
+	rows="$(format_rows "$workspaces_json" "$tabs_json" "$panes_json" "$log_file")"
 	if [[ -z "$rows" ]]; then
 		printf 'No Herdr panes found.\n' >&2
 		return 1
@@ -160,20 +212,20 @@ main() {
 	fi
 
 	if [[ "$mode" == "format" ]]; then
-		[[ $# -eq 3 ]] || {
+		[[ $# -eq 3 || $# -eq 4 ]] || {
 			usage
 			return 2
 		}
-		format_rows "$1" "$2" "$3"
+		format_rows "$1" "$2" "$3" "${4:-}"
 		return 0
 	fi
 
 	if [[ "$mode" == "select" ]]; then
-		[[ $# -eq 3 ]] || {
+		[[ $# -eq 3 || $# -eq 4 ]] || {
 			usage
 			return 2
 		}
-		run_with_files "$1" "$2" "$3"
+		run_with_files "$1" "$2" "$3" "${4:-}"
 		return 0
 	fi
 
@@ -181,7 +233,8 @@ main() {
 
 	local tmpdir
 	tmpdir="$(mktemp -d)"
-	trap "rm -rf '$tmpdir'" EXIT
+	HERDR_FUZZY_TMPDIR="$tmpdir"
+	trap 'rm -rf "$HERDR_FUZZY_TMPDIR"' EXIT
 
 	if ! load_live_json "$tmpdir"; then
 		printf 'Could not read Herdr state via the Herdr CLI. Is the Herdr server running?\n' >&2

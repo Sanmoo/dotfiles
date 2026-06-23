@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.79.4",
+  "lastChangelogVersion": "0.79.10",
   "defaultProvider": "github-copilot",
-  "defaultModel": "gpt-5.4-mini",
-  "defaultThinkingLevel": "high",
+  "defaultModel": "gpt-5.5",
+  "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [

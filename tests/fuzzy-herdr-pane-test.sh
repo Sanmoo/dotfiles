@@ -9,6 +9,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 WORKSPACES="$TMPDIR/workspaces.json"
 TABS="$TMPDIR/tabs.json"
 PANES="$TMPDIR/panes.json"
+LOG="$TMPDIR/herdr-server.log"
 
 cat >"$WORKSPACES" <<'JSON'
 {"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[
@@ -19,9 +20,9 @@ JSON
 
 cat >"$TABS" <<'JSON'
 {"id":"cli:tab:list","result":{"type":"tab_list","tabs":[
-  {"tab_id":"w1:t1","workspace_id":"w1","label":"coding","number":1},
-  {"tab_id":"w2:t1","workspace_id":"w2","label":"backend","number":1},
-  {"tab_id":"w2:t2","workspace_id":"w2","label":"backend","number":2}
+  {"tab_id":"w1:t1","workspace_id":"w1","label":"coding","number":1,"focused":false},
+  {"tab_id":"w2:t1","workspace_id":"w2","label":"backend","number":1,"focused":true},
+  {"tab_id":"w2:t2","workspace_id":"w2","label":"backend","number":2,"focused":false}
 ]}}
 JSON
 
@@ -34,6 +35,12 @@ cat >"$PANES" <<'JSON'
   {"pane_id":"w1:pTemp","workspace_id":"w1","tab_id":"w1:t1"}
 ]}}
 JSON
+
+cat >"$LOG" <<'LOG'
+2026-06-22T18:22:55.798317Z INFO herdr::logging: tab focused event="tab.focus" subsystem="tab" outcome="ok" workspace_id="w1" tab_id="w1:t1"
+2026-06-22T18:22:56.401564Z INFO herdr::logging: tab focused event="tab.focus" subsystem="tab" outcome="ok" workspace_id="w2" tab_id="w2:t2"
+2026-06-22T18:22:57.180277Z INFO herdr::logging: tab focused event="tab.focus" subsystem="tab" outcome="ok" workspace_id="w2" tab_id="w2:t1"
+LOG
 
 assert_contains() {
 	local haystack="$1"
@@ -53,13 +60,11 @@ assert_equals() {
 	fi
 }
 
-format_output="$(HERDR_FUZZY_TEST_MODE=format HERDR_PANE_ID=w1:pTemp "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES")"
-assert_contains "$format_output" $'personal / coding / pi\tw1:p1'
-assert_contains "$format_output" $'personal / coding / pane w1:p2\tw1:p2'
-assert_contains "$format_output" $'work / backend / agent\tw2:p1'
-assert_contains "$format_output" $'work / backend / agent\tw2:p2'
-if [[ "$format_output" == *'w1:pTemp'* ]]; then
-	printf 'Expected temporary command pane w1:pTemp to be excluded:\n%s\n' "$format_output" >&2
+format_output="$(HERDR_FUZZY_TEST_MODE=format HERDR_PANE_ID=w2:p1 "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES" "$LOG")"
+expected_format_output=$'work / backend / agent\tw2:p2\npersonal / coding / pi\tw1:p1\npersonal / coding / pane w1:p2\tw1:p2\npersonal / coding / pane w1:pTemp\tw1:pTemp'
+assert_equals "$expected_format_output" "$format_output"
+if [[ "$format_output" == *$'work / backend / agent\tw2:p1'* ]]; then
+	printf 'Expected current focused tab w2:t1 to be excluded:\n%s\n' "$format_output" >&2
 	exit 1
 fi
 
