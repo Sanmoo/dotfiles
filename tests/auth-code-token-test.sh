@@ -129,9 +129,23 @@ if ! grep -Fq 'Error: --auth-param must use key=value format' "$TMPDIR/malformed
 	exit 1
 fi
 
+run_fail empty-auth-key "${BASE_ARGS[@]}" --auth-param =value
+if ! grep -Fq 'Error: --auth-param key cannot be empty' "$TMPDIR/empty-auth-key.err"; then
+	echo 'Expected empty --auth-param key error' >&2
+	cat "$TMPDIR/empty-auth-key.err" >&2
+	exit 1
+fi
+
 run_fail protected-param "${BASE_ARGS[@]}" --auth-param state=override
 if ! grep -Fq "Error: --auth-param cannot override reserved parameter 'state'" "$TMPDIR/protected-param.err"; then
 	echo 'Expected protected parameter rejection' >&2
 	cat "$TMPDIR/protected-param.err" >&2
+	exit 1
+fi
+
+run_fail protected-scope "${BASE_ARGS[@]}" --auth-param scope=openid
+if ! grep -Fq "Error: --auth-param cannot override reserved parameter 'scope'" "$TMPDIR/protected-scope.err"; then
+	echo 'Expected scope protected parameter rejection' >&2
+	cat "$TMPDIR/protected-scope.err" >&2
 	exit 1
 fi
