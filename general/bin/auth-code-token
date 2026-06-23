@@ -13,6 +13,7 @@ Usage:
   authorization-code-token <client_id> <authorization_url> <token_url>
                          [--scope SCOPE] [--redirect-uri URI]
                          [--timeout SECONDS] [--no-browser] [--json]
+                         [--force-login] [--auth-param KEY=VALUE]
 
 The default loopback redirect URI is http://127.0.0.1:8765/callback — make
 sure that exact URI is registered in your OAuth client configuration (or
@@ -38,6 +39,19 @@ from threading import Thread
 # avoids clashes with well-known dev services (3000, 5000, 8000, 8080, 8443).
 DEFAULT_REDIRECT_PORT = 8765
 DEFAULT_CALLBACK_PATH = '/callback'
+FORCE_LOGIN_DEFAULTS = {
+    'prompt': 'login',
+    'max_age': '0',
+}
+PROTECTED_AUTH_PARAMS = {
+    'response_type',
+    'client_id',
+    'redirect_uri',
+    'code_challenge',
+    'code_challenge_method',
+    'state',
+    'scope',
+}
 
 
 def generate_pkce_pair():
@@ -147,6 +161,39 @@ def post_form(url, data):
         return json.loads(resp.read())
 
 
+def parse_auth_params(raw_values):
+    params = {}
+    for raw in raw_values or []:
+        if '=' not in raw:
+            sys.exit('Error: --auth-param must use key=value format')
+        key, value = raw.split('=', 1)
+        if not key:
+            sys.exit('Error: --auth-param key cannot be empty')
+        if key in PROTECTED_AUTH_PARAMS:
+            sys.exit(
+                f"Error: --auth-param cannot override reserved parameter '{key}'"
+            )
+        params[key] = value
+    return params
+
+
+def build_authorization_params(args, redirect_uri, challenge, state):
+    auth_params = {
+        'response_type': 'code',
+        'client_id': args.client_id,
+        'redirect_uri': redirect_uri,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
+        'state': state,
+    }
+    if args.scope:
+        auth_params['scope'] = args.scope
+    if args.force_login:
+        auth_params.update(FORCE_LOGIN_DEFAULTS)
+    auth_params.update(parse_auth_params(args.auth_param))
+    return auth_params
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description='Get an OAuth2 access token via the Authorization Code flow with PKCE.',
@@ -179,6 +226,18 @@ def parse_args(argv=None):
         action='store_true',
         help='Print the full token endpoint response as JSON instead of only the access token.',
     )
+    parser.add_argument(
+        '--force-login',
+        action='store_true',
+        help='Request reauthentication by adding prompt=login and max_age=0.',
+    )
+    parser.add_argument(
+        '--auth-param',
+        action='append',
+        default=[],
+        metavar='KEY=VALUE',
+        help='Add or override a non-reserved authorization request parameter.',
+    )
     return parser.parse_args(argv)
 
 
@@ -205,16 +264,7 @@ def main(argv=None):
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(16)
 
-    auth_params = {
-        'response_type': 'code',
-        'client_id': args.client_id,
-        'redirect_uri': redirect_uri,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-        'state': state,
-    }
-    if args.scope:
-        auth_params['scope'] = args.scope
+    auth_params = build_authorization_params(args, redirect_uri, challenge, state)
 
     sep = '&' if urllib.parse.urlparse(args.authorization_url).query else '?'
     auth_url = args.authorization_url.rstrip('?') + sep + urllib.parse.urlencode(auth_params)
