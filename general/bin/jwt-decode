@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -ne 1 ]; then
+  echo 'Usage: jwt-decode <token>' >&2
+  exit 1
+fi
+
+for command in jq base64; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "Error: required command '$command' not found" >&2
+    exit 1
+  fi
+done
+
+token="$1"
+payload="$(printf '%s' "$token" | cut -d '.' -f 2)"
+
+if [ -z "$payload" ] || [ "$payload" = "$token" ]; then
+  echo 'Error: invalid JWT' >&2
+  exit 1
+fi
+
+payload="$(printf '%s' "$payload" | tr '_-' '/+')"
+
+case $((${#payload} % 4)) in
+  0) ;;
+  2) payload="${payload}==" ;;
+  3) payload="${payload}=" ;;
+  *)
+    echo 'Error: failed to decode JWT payload' >&2
+    exit 1
+    ;;
+esac
+
+decoded="$({ printf '%s' "$payload" | base64 -d; } 2>/dev/null)" || {
+  echo 'Error: failed to decode JWT payload' >&2
+  exit 1
+}
+
+printf '%s' "$decoded" | jq . >/dev/null 2>&1 || {
+  echo 'Error: invalid JWT payload JSON' >&2
+  exit 1
+}
+
+printf '%s' "$decoded" | jq .
