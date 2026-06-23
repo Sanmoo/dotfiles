@@ -6,12 +6,13 @@ Code flow with PKCE (public client, no client secret).
 This is the no-secret counterpart to client-credentials-token. It opens the
 system browser to the authorization endpoint, captures the redirect on a
 local loopback HTTP server (RFC 8252), and exchanges the code (with the PKCE
-verifier) for an access token. Only the access token is printed to stdout.
+verifier) for an access token. By default, only the access token is printed to stdout;
+with --json, the full token endpoint response is printed as JSON.
 
 Usage:
   authorization-code-token <client_id> <authorization_url> <token_url>
                          [--scope SCOPE] [--redirect-uri URI]
-                         [--timeout SECONDS] [--no-browser]
+                         [--timeout SECONDS] [--no-browser] [--json]
 
 The default loopback redirect URI is http://127.0.0.1:8765/callback — make
 sure that exact URI is registered in your OAuth client configuration (or
@@ -173,6 +174,11 @@ def parse_args(argv=None):
         action='store_true',
         help="Print the authorization URL to stderr instead of opening the browser.",
     )
+    parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Print the full token endpoint response as JSON instead of only the access token.',
+    )
     return parser.parse_args(argv)
 
 
@@ -241,6 +247,10 @@ def main(argv=None):
         sys.exit(f'Error: token endpoint returned {e.code} {e.reason}\n{body}')
     except urllib.error.URLError as e:
         sys.exit(f'Error: failed to reach token endpoint: {e.reason}')
+
+    if args.json:
+        print(json.dumps(token_response, indent=2))
+        return
 
     access_token = token_response.get('access_token')
     if not access_token:

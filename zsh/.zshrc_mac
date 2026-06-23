@@ -17,4 +17,4 @@ export PATH="$HOME/bin-jd:$PATH"
 alias setup-rest="source ~/.envrc"
 alias dev-token='setup-rest && export ACCESS_TOKEN=$(client-credentials-token "$REV_KC_DEV_CLIENT_ID" "$KC_REV_CLIENT_SECRET" "$KEYCLOAK_DEV_TOKEN_URL") && echo $ACCESS_TOKEN'
 alias atrium-dev-token='export ACCESS_TOKEN=$(auth-code-token "$ATRIUM_AUTH_CLIENT_ID" "$ATRIUM_AUTH_DEV_URL" "$ATRIUM_AUTH_TOKEN_DEV_URL" --redirect-uri "$ATRIUM_AUTH_CB_DEV_URL") && echo $ACCESS_TOKEN'
-alias atrium-qual-token='export ACCESS_TOKEN=$(auth-code-token "$ATRIUM_QUAL_AUTH_CLIENT_ID" "$ATRIUM_AUTH_QUAL_URL" "$ATRIUM_AUTH_TOKEN_QUAL_URL" --redirect-uri "$ATRIUM_AUTH_CB_QUAL_URL" --scope openid,dealerAccount) && echo $ACCESS_TOKEN'
+alias atrium-qual-token='export ACCESS_TOKEN=$(auth-code-token "$ATRIUM_QUAL_AUTH_CLIENT_ID" "$ATRIUM_AUTH_QUAL_URL" "$ATRIUM_AUTH_TOKEN_QUAL_URL" --redirect-uri "$ATRIUM_AUTH_CB_QUAL_URL" --scope dealerAccount) && echo $ACCESS_TOKEN'
