@@ -118,6 +118,29 @@ def resolve_base_url(args, env):
     return env.get("HTTP_BASE_URL") or env.get("BASE_URL") or None
 
 
+def has_header(headers, header_name):
+    needle = header_name.lower()
+    return any(
+        h.split(":", 1)[0].strip().lower() == needle
+        for h in headers or []
+    )
+
+
+def resolve_auto_content_type(args):
+    if has_header(args.headers, "Content-Type"):
+        return None
+    if args.file:
+        ext = Path(args.file).suffix.lower()
+        if ext in (".json", ".jsonc"):
+            return "application/json"
+        if ext == ".xml":
+            return "application/xml"
+        return "application/octet-stream"
+    if args.method == "get":
+        return "application/json"
+    return None
+
+
 def build_curl_args(args, base_url, variables=None):
     _ = variables
     out = []
@@ -134,33 +157,20 @@ def build_curl_args(args, base_url, variables=None):
     if args.token:
         out += ["-H", f"Authorization: Bearer {args.token}"]
 
+    auto_content_type = resolve_auto_content_type(args)
+    if auto_content_type is not None:
+        out += ["-H", f"Content-Type: {auto_content_type}"]
+
     # Body handling
     body_arg = None
-    body_is_file = False
     if args.file and args.data is not None:
         pass  # main() guards this
     elif args.file:
         body_arg = f"@{args.file}"
-        body_is_file = True
         if getattr(args, "file_body", None) is not None:
             body_arg = args.file_body
     elif args.data is not None:
         body_arg = args.data
-
-    # Auto Content-Type for -f
-    if body_is_file:
-        ext = Path(args.file).suffix.lower()
-        has_ct = any(
-            h.split(":", 1)[0].strip().lower() == "content-type"
-            for h in (args.headers or [])
-        )
-        if not has_ct:
-            if ext in (".json", ".jsonc"):
-                out += ["-H", "Content-Type: application/json"]
-            elif ext == ".xml":
-                out += ["-H", "Content-Type: application/xml"]
-            else:
-                out += ["-H", "Content-Type: application/octet-stream"]
 
     base = (base_url or "").rstrip("/")
     path = (args.path or "").lstrip("/")

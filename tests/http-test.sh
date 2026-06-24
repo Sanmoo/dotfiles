@@ -34,7 +34,6 @@ run_http_expect_fail() {
 	HTTP_TMPDIR="$tmpdir"
 	HTTP_EXIT=0
 	"$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/err" || HTTP_EXIT=$?
-	HTTP_STDERR="$(cat "$tmpdir/err")"
 }
 
 run_http_live() {
@@ -55,7 +54,6 @@ STUB
 	export CURL_ARGS_FILE="$HTTP_STUB_LOG"
 	PATH="$tmpdir/bin:$PATH" "$SCRIPT" "$@" >"$tmpdir/stdout" 2>"$tmpdir/stderr"
 	HTTP_STDOUT="$(cat "$tmpdir/stdout")"
-	HTTP_STDERR="$(cat "$tmpdir/stderr")"
 	HTTP_TMPDIR="$tmpdir"
 }
 
@@ -79,7 +77,6 @@ STUB
 	HTTP_CURL_ARGS="$tmpdir/stdout" # use printed output, not stub log
 	HTTP_STUB_LOG="$tmpdir/curl.args"
 	HTTP_STDOUT="$(cat "$tmpdir/stdout")"
-	HTTP_STDERR="$(cat "$tmpdir/stderr")"
 	HTTP_TMPDIR="$tmpdir"
 }
 
@@ -458,5 +455,62 @@ grep -Fq -- '"this // is not a comment"' "$HTTP_CURL_ARGS" ||
 		cat "$HTTP_CURL_ARGS" >&2
 		exit 1
 	}
+
+# ---------- Test 34: GET defaults Content-Type to application/json ----------
+echo "test 34: GET defaults Content-Type to application/json"
+run_http get -B https://api.example.com foo
+grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: GET should default to application/json" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+}
+count="$(grep -Fc -- 'Content-Type:' "$HTTP_CURL_ARGS")"
+[ "$count" -eq 1 ] || {
+	echo "FAIL: GET should emit exactly one Content-Type header" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+}
+
+# ---------- Test 35: explicit Content-Type wins on GET ----------
+echo "test 35: explicit Content-Type wins on GET"
+run_http get -B https://api.example.com -H "Content-Type: text/plain" foo
+grep -Fq -- "Content-Type: text/plain" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: explicit GET Content-Type missing" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+}
+if grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS"; then
+	echo "FAIL: explicit Content-Type should suppress the JSON default" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+fi
+count="$(grep -Fc -- 'Content-Type:' "$HTTP_CURL_ARGS")"
+[ "$count" -eq 1 ] || {
+	echo "FAIL: GET with explicit Content-Type should emit exactly one Content-Type header" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+}
+
+# ---------- Test 36: GET with -f keeps file-derived Content-Type ----------
+echo "test 36: GET with -f keeps file-derived Content-Type"
+PAYLOAD="$HTTP_TMPDIR/payload.xml"
+echo '<x/>' >"$PAYLOAD"
+run_http get -B https://api.example.com -f "$PAYLOAD" foo
+grep -Fq -- "Content-Type: application/xml" "$HTTP_CURL_ARGS" || {
+	echo "FAIL: GET + -f should keep application/xml" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+}
+if grep -Fq -- "Content-Type: application/json" "$HTTP_CURL_ARGS"; then
+	echo "FAIL: GET default must not override -f Content-Type" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+fi
+count="$(grep -Fc -- 'Content-Type:' "$HTTP_CURL_ARGS")"
+[ "$count" -eq 1 ] || {
+	echo "FAIL: GET + -f should emit exactly one Content-Type header" >&2
+	cat "$HTTP_CURL_ARGS" >&2
+	exit 1
+}
 
 echo "OK"
