@@ -32,7 +32,7 @@ cat >"$PANES" <<'JSON'
   {"pane_id":"w1:p2","workspace_id":"w1","tab_id":"w1:t1"},
   {"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","label":"agent"},
   {"pane_id":"w2:p2","workspace_id":"w2","tab_id":"w2:t2","label":"agent"},
-  {"pane_id":"w1:pTemp","workspace_id":"w1","tab_id":"w1:t1"}
+  {"pane_id":"w1:pTemp","workspace_id":"w1","tab_id":"w1:t1","label":""}
 ]}}
 JSON
 
@@ -61,7 +61,7 @@ assert_equals() {
 }
 
 format_output="$(HERDR_FUZZY_TEST_MODE=format HERDR_PANE_ID=w2:p1 "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES" "$LOG")"
-expected_format_output=$'work / backend / agent\tw2:p2\npersonal / coding / pi\tw1:p1\npersonal / coding / pane w1:p2\tw1:p2\npersonal / coding / pane w1:pTemp\tw1:pTemp'
+expected_format_output=$'work / backend / agent\tw2:p2\npersonal / coding / pi\tw1:p1\npersonal / coding\tw1:p2\npersonal / coding\tw1:pTemp'
 assert_equals "$expected_format_output" "$format_output"
 if [[ "$format_output" == *$'work / backend / agent\tw2:p1'* ]]; then
 	printf 'Expected current focused tab w2:t1 to be excluded:\n%s\n' "$format_output" >&2
@@ -74,7 +74,10 @@ assert_equals 'herdr pane current --pane w2:p2' "$selected_output"
 cancel_output="$(HERDR_FUZZY_TEST_MODE=select HERDR_FUZZY_PICKER='sh -c "exit 130"' HERDR_FUZZY_HERDR='printf "should-not-run\n"' "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES")"
 assert_equals '' "$cancel_output"
 
-missing_picker_output="$(PATH=/usr/bin:/bin HERDR_FUZZY_TEST_MODE=missing-picker "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES" 2>&1 || true)"
+STUB_BIN="$TMPDIR/bin"
+mkdir -p "$STUB_BIN"
+ln -s "$(command -v jq)" "$STUB_BIN/jq"
+missing_picker_output="$(PATH="$STUB_BIN" HERDR_FUZZY_TEST_MODE=missing-picker "$BASH" "$SCRIPT" "$WORKSPACES" "$TABS" "$PANES" 2>&1 || true)"
 assert_contains "$missing_picker_output" 'Missing dependency: fzf'
 
 printf 'fuzzy-herdr-pane tests passed\n'

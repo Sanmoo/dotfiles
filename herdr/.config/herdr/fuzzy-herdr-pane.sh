@@ -89,7 +89,7 @@ format_rows() {
         | {
             rank: ($recency[.tab_id] // 999999),
             index: $entry.key,
-            label: ((workspace_label(.workspace_id)) + " / " + (tab_label(.tab_id)) + " / " + (.label // ("pane " + .pane_id))),
+            label: ((workspace_label(.workspace_id)) + " / " + (tab_label(.tab_id)) + (if (.label // "") == "" then "" else " / " + .label end)),
             pane_id: .pane_id
           })
       | sort_by(.rank, .index)
