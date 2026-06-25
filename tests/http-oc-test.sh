@@ -538,4 +538,11 @@ run_http_oc --no-interactive -c collectionA -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "cached bearer token reused"
 assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "cache reuse should avoid a second token request"
 
+# ---------- Test 21: malformed oauth2 cache is treated as a miss ----------
+echo "test 21: malformed oauth2 cache is treated as a miss"
+printf '{"access_token":"cached-token","expires_at":"not-a-number"}\n' >"$cache_file"
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "malformed cache should fall back to a fresh token"
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "malformed cache should trigger a new token request"
+
 echo "OK"

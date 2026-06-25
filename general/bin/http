@@ -562,7 +562,11 @@ def load_cached_token(cache_dir, key, now=None):
     token = data.get("access_token")
     if not token or not expires_at:
         return None
-    if float(expires_at) <= now + 60:
+    try:
+        expires_at_value = float(expires_at)
+    except (TypeError, ValueError):
+        return None
+    if expires_at_value <= now + 60:
         return None
     return str(token)
 
@@ -580,7 +584,9 @@ def save_cached_token(cache_dir, key, token_response, now=None):
         "expires_at": now + int(expires_in),
     }
     path = cache_dir / key
-    path.write_text(json.dumps(data), encoding="utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f)
     path.chmod(0o600)
 
 
