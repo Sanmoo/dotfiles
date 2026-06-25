@@ -248,4 +248,40 @@ run_http_oc_expect_fail --no-interactive -c collectionA -n needs-var
 assert_contains "$OC_STDERR" "missing variables" "missing variable error"
 assert_contains "$OC_STDERR" "missingValue" "missing variable name"
 
+# ---------- Test 11: disabled and out-of-scope placeholders do not block Task 4 ----------
+echo "test 11: disabled and out-of-scope placeholders are ignored"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: development
+      variables:
+        - name: baseUrl
+          value: https://dev.example.com
+YAML
+cat >"$OC_ROOT/collectionA/requests/ignored-vars.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: "{{baseUrl}}/ok"
+  headers:
+    - name: X-Disabled
+      value: "{{ignoredHeader}}"
+      disabled: true
+  params:
+    - name: ignored
+      value: "{{ignoredQuery}}"
+      type: query
+      disabled: true
+  body:
+    type: json
+    data: '{"ignored":"{{ignoredBody}}"}'
+YAML
+run_http_oc --no-interactive -c collectionA -e development -n ignored-vars
+assert_contains "$OC_STDOUT" "https://dev.example.com/ok" "used URL variables should still resolve"
+assert_not_contains "$OC_STDERR" "missing variables" "ignored placeholders should not trigger missing-variable errors in Task 4"
+
 echo "OK"

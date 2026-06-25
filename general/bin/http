@@ -457,8 +457,26 @@ def find_template_variables(value):
     return found
 
 
-def collect_missing_variables(values, variables):
-    return find_template_variables(values) - set(variables)
+def collect_missing_variables(request_doc, variables):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    relevant = []
+    if request.get("url") is not None:
+        relevant.append(request.get("url"))
+    for header in request.get("headers") or []:
+        if not isinstance(header, dict) or header.get("disabled") is True:
+            continue
+        relevant.append(header.get("name", ""))
+        relevant.append(header.get("value", ""))
+    for param in request.get("params") or []:
+        if not isinstance(param, dict) or param.get("disabled") is True:
+            continue
+        if param.get("type") == "path":
+            continue
+        if param.get("type", "query") != "query":
+            continue
+        relevant.append(param.get("name", ""))
+        relevant.append(param.get("value", ""))
+    return find_template_variables(relevant) - set(variables)
 
 
 def prompt_missing_variables(missing):
