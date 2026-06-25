@@ -441,7 +441,10 @@ request:
     data: []
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n upload
-[ "$OC_EXIT" -eq 2 ] || { echo "FAIL: expected exit 2" >&2; exit 1; }
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
 assert_contains "$OC_STDERR" "unsupported request.body type" "unsupported body error"
 
 # ---------- Test 17: unsupported auth type errors ----------
@@ -462,7 +465,10 @@ request:
   url: https://api.example.com/ping
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n ping
-[ "$OC_EXIT" -eq 2 ] || { echo "FAIL: expected exit 2" >&2; exit 1; }
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
 assert_contains "$OC_STDERR" "unsupported auth type for MVP: basic" "unsupported auth error"
 
 # ---------- Test 18: request auth overrides collection auth ----------
@@ -528,9 +534,15 @@ assert_contains "$OC_CURL_ARGS" "client_id=my-client" "client id should be form-
 assert_contains "$OC_CURL_ARGS" "client_secret=my+secret%26secret" "client secret should be form-encoded"
 assert_contains "$OC_CURL_ARGS" "scope=scope+one%2Ftwo" "scope should be form-encoded"
 cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
-[ -n "$cache_file" ] || { echo "FAIL: expected cache file" >&2; exit 1; }
+[ -n "$cache_file" ] || {
+	echo "FAIL: expected cache file" >&2
+	exit 1
+}
 cache_mode="$(stat -f %Lp "$cache_file")"
-[ "$cache_mode" = "600" ] || { echo "FAIL: expected cache mode 600, got $cache_mode" >&2; exit 1; }
+[ "$cache_mode" = "600" ] || {
+	echo "FAIL: expected cache mode 600, got $cache_mode" >&2
+	exit 1
+}
 
 # ---------- Test 20: oauth2 token cache is reused ----------
 echo "test 20: oauth2 cache reused"
@@ -596,10 +608,15 @@ if command -v script >/dev/null 2>&1; then
 	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
 	status=$?
 	set -e
-	[ "$status" -eq 0 ] || { echo "FAIL: interactive fzf command failed" >&2; cat "$OC_TMPDIR/script.err" >&2; exit 1; }
+	[ "$status" -eq 0 ] || {
+		echo "FAIL: interactive fzf command failed" >&2
+		cat "$OC_TMPDIR/script.err" >&2
+		exit 1
+	}
 	assert_contains "$OC_TMPDIR/script.out" "Collection: collectionA" "summary should show collection"
 	assert_contains "$OC_TMPDIR/script.out" "Request: get-smart-conditions" "summary should show request"
 	assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/smart-conditions/env-customer" "dry run URL"
+	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development get-smart-conditions" "summary should show equivalent command"
 else
 	echo "skip: script command not available"
 fi
