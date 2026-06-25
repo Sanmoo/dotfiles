@@ -104,7 +104,44 @@ def _shared_args():
 SHARED_ARGS = _shared_args()
 
 
+def make_oc_parser():
+    p = argparse.ArgumentParser(prog="http oc", description="Run OpenCollection request")
+    p.add_argument("request_name", nargs="?", default=None)
+    p.add_argument("-c", "--collection", dest="collection", default=None)
+    p.add_argument("-e", "--environment", dest="environment", default=None)
+    p.add_argument("-v", "--var", dest="vars", action="append", default=[])
+    p.add_argument("--no-interactive", dest="no_interactive", action="store_true")
+    p.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
+    p.add_argument("-i", "--include", dest="include", action="store_true")
+    p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
+    p.add_argument("-L", "--follow", dest="follow", action="store_true")
+    p.add_argument("-H", "--header", dest="headers", action="append", default=[])
+    p.add_argument("-q", "--query", dest="queries", action="append", default=[])
+    return p
+
+
+def parse_oc_vars(raw_values):
+    out = {}
+    for raw in raw_values or []:
+        for item in raw.split(","):
+            if not item:
+                continue
+            if "=" not in item:
+                print(f"error: --var expects KEY=VALUE, got: {item!r}", file=sys.stderr)
+                sys.exit(2)
+            key, value = item.split("=", 1)
+            if not key:
+                print("error: --var key cannot be empty", file=sys.stderr)
+                sys.exit(2)
+            out[key] = value
+    return out
+
+
 def parse_args(argv):
+    if argv and argv[0] == "oc":
+        args = make_oc_parser().parse_args(argv[1:])
+        args.method = "oc"
+        return args
     parser = argparse.ArgumentParser(prog="http", description=__doc__)
     sub = parser.add_subparsers(dest="method", required=True)
     for m in ("get", "post", "put", "patch", "delete"):
@@ -196,8 +233,17 @@ def format_curl_command(curl_args):
     return " ".join(shlex.quote(a) for a in curl_args)
 
 
+def main_oc(args):
+    _ = parse_oc_vars(args.vars)
+    print("error: http oc is not implemented yet", file=sys.stderr)
+    return 2
+
+
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.method == "oc":
+        return main_oc(args)
+
     if args.token is not None and not args.token.strip():
         print("error: --token is empty", file=sys.stderr)
         return 2
