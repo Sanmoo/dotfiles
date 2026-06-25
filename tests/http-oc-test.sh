@@ -110,7 +110,7 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e development -n get-sm
 	echo "FAIL: expected exit 2" >&2
 	exit 1
 }
-assert_contains "$OC_STDERR" "request discovery is not implemented for collection collectionA" "oc should reach the intentional request-discovery placeholder"
+assert_contains "$OC_STDERR" "environment resolution is not implemented for request get-smart-conditions" "oc should reach the intentional environment-resolution placeholder"
 assert_not_contains "$OC_STDERR" "Traceback" "oc placeholder error should not traceback"
 assert_not_contains "$OC_CURL_ARGS" "https://dev.example.com" "dry-run should not execute curl"
 
@@ -179,10 +179,10 @@ run_http_oc_expect_fail --no-interactive -c fallbackCollection -e development -n
 	echo "FAIL: expected exit 2" >&2
 	exit 1
 }
-assert_contains "$OC_STDERR" "request discovery is not implemented for collection fallbackCollection" "directory name should identify collection"
+assert_contains "$OC_STDERR" "environment resolution is not implemented for request ping" "directory name should identify collection"
 
-# ---------- Test 4: request name is required in non-interactive mode ----------
-echo "test 4: request name required non-interactive"
+# ---------- Test 6: request name is required in non-interactive mode ----------
+echo "test 6: request name required non-interactive"
 setup_oc_tmp
 write_basic_collection
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n
@@ -192,8 +192,8 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e development -n
 }
 assert_contains "$OC_STDERR" "request name is required" "missing request should be clear"
 
-# ---------- Test 5: unknown request lists available requests ----------
-echo "test 5: unknown request lists available"
+# ---------- Test 7: unknown request lists available requests ----------
+echo "test 7: unknown request lists available"
 setup_oc_tmp
 write_basic_collection
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n nope
