@@ -355,4 +355,68 @@ run_http_oc --no-interactive -c collectionA -n text-body
 assert_contains "$OC_STDOUT" "Content-Type: application/custom" "explicit content type present"
 assert_not_contains "$OC_STDOUT" "Content-Type: text/plain" "default content type suppressed"
 
+# ---------- Test 14: missing variables in path params and body fail early ----------
+echo "test 14: missing variables in path params and body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: baseUrl
+    value: https://api.example.com
+YAML
+cat >"$OC_ROOT/collectionA/requests/missing-body-path.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: "{{baseUrl}}/customers/{{customerId}}"
+  params:
+    - name: customerId
+      value: "{{missingPathValue}}"
+      type: path
+  body:
+    type: json
+    data: '{"name":"{{missingBodyValue}}"}'
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n missing-body-path
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "missing variables" "missing path/body variables should fail during preflight"
+assert_contains "$OC_STDERR" "missingPathValue" "missing path variable should be reported"
+assert_contains "$OC_STDERR" "missingBodyValue" "missing body variable should be reported"
+
+# ---------- Test 15: xml and sparql body types map content type ----------
+echo "test 15: xml and sparql body types map content type"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/xml-body.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/xml
+  body:
+    type: xml
+    data: '<x/>'
+YAML
+cat >"$OC_ROOT/collectionA/requests/sparql-body.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/sparql
+  body:
+    type: sparql
+    data: 'SELECT * WHERE { ?s ?p ?o }'
+YAML
+run_http_oc --no-interactive -c collectionA -n xml-body
+assert_contains "$OC_STDOUT" "Content-Type: application/xml" "xml body should map to application/xml"
+run_http_oc --no-interactive -c collectionA -n sparql-body
+assert_contains "$OC_STDOUT" "Content-Type: application/sparql-query" "sparql body should map to application/sparql-query"
+
 echo "OK"

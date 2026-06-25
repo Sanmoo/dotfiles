@@ -470,12 +470,11 @@ def collect_missing_variables(request_doc, variables):
     for param in request.get("params") or []:
         if not isinstance(param, dict) or param.get("disabled") is True:
             continue
-        if param.get("type") == "path":
-            continue
-        if param.get("type", "query") != "query":
-            continue
         relevant.append(param.get("name", ""))
         relevant.append(param.get("value", ""))
+    body = request.get("body")
+    if isinstance(body, dict) and str(body.get("type") or "") in ("json", "xml", "text", "sparql"):
+        relevant.append(body.get("data", ""))
     return find_template_variables(relevant) - set(variables)
 
 
