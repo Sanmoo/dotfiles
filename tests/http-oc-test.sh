@@ -387,6 +387,7 @@ run_http_oc_expect_fail --no-interactive -c collectionA -n missing-body-path
 assert_contains "$OC_STDERR" "missing variables" "missing path/body variables should fail during preflight"
 assert_contains "$OC_STDERR" "missingPathValue" "missing path variable should be reported"
 assert_contains "$OC_STDERR" "missingBodyValue" "missing body variable should be reported"
+assert_not_contains "$OC_STDERR" "customerId" "URL placeholder supplied by path params should not be reported missing"
 
 # ---------- Test 15: xml and sparql body types map content type ----------
 echo "test 15: xml and sparql body types map content type"

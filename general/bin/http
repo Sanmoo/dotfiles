@@ -459,23 +459,31 @@ def find_template_variables(value):
 
 def collect_missing_variables(request_doc, variables):
     request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
-    relevant = []
-    if request.get("url") is not None:
-        relevant.append(request.get("url"))
-    for header in request.get("headers") or []:
-        if not isinstance(header, dict) or header.get("disabled") is True:
-            continue
-        relevant.append(header.get("name", ""))
-        relevant.append(header.get("value", ""))
+    found = set()
+    path_param_names = set()
     for param in request.get("params") or []:
         if not isinstance(param, dict) or param.get("disabled") is True:
             continue
-        relevant.append(param.get("name", ""))
-        relevant.append(param.get("value", ""))
+        if param.get("type") == "path":
+            name = param.get("name")
+            if name is not None:
+                path_param_names.add(str(name))
+            found.update(find_template_variables(param.get("value", "")))
+            continue
+        found.update(find_template_variables(param.get("name", "")))
+        found.update(find_template_variables(param.get("value", "")))
+    if request.get("url") is not None:
+        found.update(find_template_variables(request.get("url")))
+        found.difference_update(path_param_names)
+    for header in request.get("headers") or []:
+        if not isinstance(header, dict) or header.get("disabled") is True:
+            continue
+        found.update(find_template_variables(header.get("name", "")))
+        found.update(find_template_variables(header.get("value", "")))
     body = request.get("body")
     if isinstance(body, dict) and str(body.get("type") or "") in ("json", "xml", "text", "sparql"):
-        relevant.append(body.get("data", ""))
-    return find_template_variables(relevant) - set(variables)
+        found.update(find_template_variables(body.get("data", "")))
+    return found - set(variables)
 
 
 def prompt_missing_variables(missing):
