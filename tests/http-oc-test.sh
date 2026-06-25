@@ -489,4 +489,41 @@ run_http_oc --no-interactive -c collectionA -n override-auth
 assert_contains "$OC_STDOUT" "https://api.example.com/override-auth" "request-level supported auth should override collection-level unsupported auth"
 assert_not_contains "$OC_STDERR" "unsupported auth type for MVP: basic" "collection-level auth should not win over request auth"
 
+# ---------- Test 19: oauth2 client credentials adds bearer token ----------
+echo "test 19: oauth2 client credentials"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: tokenUrl
+    value: https://auth.example.com/token
+  - name: clientId
+    value: my-client
+  - name: clientSecret
+    value: my-secret
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: "{{tokenUrl}}"
+    clientId: "{{clientId}}"
+    clientSecret: "{{clientSecret}}"
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "bearer token from oauth stub"
+
+# ---------- Test 20: oauth2 token cache is reused ----------
+echo "test 20: oauth2 cache reused"
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "cached bearer token reused"
+assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "cache reuse should avoid a second token request"
+
 echo "OK"

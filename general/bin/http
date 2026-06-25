@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
+import hashlib
+import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -532,6 +535,113 @@ def validate_supported_oc_auth(auth):
         die("unsupported oauth2 grant type for MVP: " + str(grant_type))
 
 
+def cache_key_for_auth(collection, environment, auth):
+    env_name = environment.get("name") if environment else ""
+    parts = [
+        str(collection["path"]),
+        str(env_name),
+        str(auth.get("grantType") or auth.get("grant_type") or ""),
+        str(auth.get("tokenUrl") or ""),
+        str(auth.get("clientId") or ""),
+        str(auth.get("scope") or ""),
+    ]
+    raw = "\0".join(parts).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest() + ".json"
+
+
+def load_cached_token(cache_dir, key, now=None):
+    now = time.time() if now is None else now
+    path = cache_dir / key
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    expires_at = data.get("expires_at")
+    token = data.get("access_token")
+    if not token or not expires_at:
+        return None
+    if float(expires_at) <= now + 60:
+        return None
+    return str(token)
+
+
+def save_cached_token(cache_dir, key, token_response, now=None):
+    now = time.time() if now is None else now
+    token = token_response.get("access_token")
+    expires_in = token_response.get("expires_in")
+    if not token or expires_in is None:
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "access_token": token,
+        "token_type": token_response.get("token_type", "Bearer"),
+        "expires_at": now + int(expires_in),
+    }
+    (cache_dir / key).write_text(json.dumps(data), encoding="utf-8")
+
+
+def run_client_credentials(auth):
+    cmd = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--fail",
+        "-X",
+        "POST",
+        str(auth.get("tokenUrl")),
+        "-H",
+        "Content-Type: application/x-www-form-urlencoded",
+        "-d",
+        "grant_type=client_credentials",
+        "-d",
+        "client_id=" + str(auth.get("clientId")),
+        "-d",
+        "client_secret=" + str(auth.get("clientSecret")),
+    ]
+    if auth.get("scope"):
+        cmd += ["-d", "scope=" + str(auth.get("scope"))]
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr, end="")
+        die("oauth2 client_credentials token request failed")
+    try:
+        data = json.loads(result.stdout)
+    except Exception as e:
+        die(f"oauth2 token response was not JSON: {e}")
+    if not data.get("access_token"):
+        die("access_token not found in oauth2 token response")
+    return data
+
+
+def run_authorization_code(auth):
+    _ = auth
+    die("authorization_code OAuth2 is not implemented yet")
+
+
+def resolve_oauth2_token(collection, environment, auth, variables):
+    if auth is None:
+        return None
+    resolved = {}
+    for key, value in auth.items():
+        resolved[key] = apply_template(str(value), variables) if isinstance(value, str) else value
+    grant_type = resolved.get("grantType") or resolved.get("grant_type")
+    cache_dir = Path.home() / ".cache" / "http-oc"
+    key = cache_key_for_auth(collection, environment, resolved)
+    cached = load_cached_token(cache_dir, key)
+    if cached:
+        return cached
+    if grant_type == "client_credentials":
+        token_response = run_client_credentials(resolved)
+    elif grant_type == "authorization_code":
+        token_response = run_authorization_code(resolved)
+    else:
+        die("unsupported oauth2 grant type for MVP: " + str(grant_type))
+    save_cached_token(cache_dir, key, token_response)
+    return str(token_response.get("access_token"))
+
+
 def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_args):
     ns = argparse.Namespace()
     ns.method = method.lower()
@@ -632,7 +742,10 @@ def main_oc(args):
     variables = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
     auth = get_oc_auth(collection["manifest"], request["data"])
     validate_supported_oc_auth(auth)
+    token = resolve_oauth2_token(collection, environment, auth, variables)
     direct_args = build_basic_oc_args(args, request["data"], variables)
+    if token:
+        direct_args.headers.append(f"Authorization: Bearer {token}")
     curl_args = build_curl_args(direct_args, direct_args.base_url)
     if args.dry_run:
         print(format_curl_command(curl_args))
