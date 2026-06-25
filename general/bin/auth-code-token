@@ -1,4 +1,4 @@
-#!python
+#!/usr/bin/env python3
 """
 authorization-code-token — Get an OAuth2 access token via the Authorization
 Code flow with PKCE (public client, no client secret).

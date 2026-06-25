@@ -20,6 +20,18 @@ except ImportError:  # pragma: no cover - exercised manually in environments wit
 
 
 _TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
+_PROCESS_ENV_RE = re.compile(r"\{\{process\.env\.(\w+)\}\}")
+
+
+def expand_process_env(text, warn=True):
+    """Replace {{process.env.VAR}} with os.environ['VAR']. Warn if empty."""
+    def repl(m):
+        name = m.group(1)
+        value = os.environ.get(name)
+        if not value and warn:
+            print(f"warning: process.env.{name} is not set or empty", file=sys.stderr)
+        return value or ""
+    return _PROCESS_ENV_RE.sub(repl, text)
 
 
 def strip_jsonc_comments(text):
@@ -65,17 +77,21 @@ def strip_jsonc_comments(text):
 
 
 def apply_template(text, variables):
+    # First pass: resolve {{process.env.VAR}} from environment
+    expanded = expand_process_env(text, warn=True)
     def repl(m):
         name = m.group(1)
+        if name.startswith("process.env."):
+            return m.group(0)
         if name not in variables:
             print(
                 f"error: undefined variable in template: {{{{{name}}}}}",
                 file=sys.stderr,
             )
             sys.exit(2)
-        return variables[name]
-
-    return _TEMPLATE_RE.sub(repl, text)
+        value = variables[name]
+        return expand_process_env(str(value), warn=True)
+    return _TEMPLATE_RE.sub(repl, expanded)
 
 
 def parse_vars(var_list):
@@ -478,7 +494,11 @@ def select_environment(environments, name, interactive):
 def find_template_variables(value):
     found = set()
     if isinstance(value, str):
-        found.update(m.group(1) for m in _TEMPLATE_RE.finditer(value))
+        found.update(
+            m.group(1)
+            for m in _TEMPLATE_RE.finditer(value)
+            if not m.group(1).startswith("process.env.")
+        )
     elif isinstance(value, dict):
         for child in value.values():
             found.update(find_template_variables(child))
