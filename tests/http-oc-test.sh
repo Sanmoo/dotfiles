@@ -465,4 +465,28 @@ run_http_oc_expect_fail --no-interactive -c collectionA -n ping
 [ "$OC_EXIT" -eq 2 ] || { echo "FAIL: expected exit 2" >&2; exit 1; }
 assert_contains "$OC_STDERR" "unsupported auth type for MVP: basic" "unsupported auth error"
 
+# ---------- Test 18: request auth overrides collection auth ----------
+echo "test 18: request auth overrides collection auth"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+request:
+  auth:
+    type: basic
+YAML
+cat >"$OC_ROOT/collectionA/requests/override-auth.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/override-auth
+  auth:
+    type: oauth2
+    grantType: client_credentials
+YAML
+run_http_oc --no-interactive -c collectionA -n override-auth
+assert_contains "$OC_STDOUT" "https://api.example.com/override-auth" "request-level supported auth should override collection-level unsupported auth"
+assert_not_contains "$OC_STDERR" "unsupported auth type for MVP: basic" "collection-level auth should not win over request auth"
+
 echo "OK"
