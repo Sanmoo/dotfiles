@@ -502,7 +502,9 @@ variables:
   - name: clientId
     value: my-client
   - name: clientSecret
-    value: my-secret
+    value: my secret&secret
+  - name: scope
+    value: scope one/two
 request:
   auth:
     type: oauth2
@@ -510,6 +512,7 @@ request:
     tokenUrl: "{{tokenUrl}}"
     clientId: "{{clientId}}"
     clientSecret: "{{clientSecret}}"
+    scope: "{{scope}}"
 YAML
 cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
 type: http
@@ -519,6 +522,15 @@ request:
 YAML
 run_http_oc --no-interactive -c collectionA -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "bearer token from oauth stub"
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "token endpoint should be called"
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "client_credentials grant should be requested"
+assert_contains "$OC_CURL_ARGS" "client_id=my-client" "client id should be form-encoded"
+assert_contains "$OC_CURL_ARGS" "client_secret=my+secret%26secret" "client secret should be form-encoded"
+assert_contains "$OC_CURL_ARGS" "scope=scope+one%2Ftwo" "scope should be form-encoded"
+cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
+[ -n "$cache_file" ] || { echo "FAIL: expected cache file" >&2; exit 1; }
+cache_mode="$(stat -f %Lp "$cache_file")"
+[ "$cache_mode" = "600" ] || { echo "FAIL: expected cache mode 600, got $cache_mode" >&2; exit 1; }
 
 # ---------- Test 20: oauth2 token cache is reused ----------
 echo "test 20: oauth2 cache reused"

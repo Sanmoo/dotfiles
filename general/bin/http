@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 try:
     import yaml
@@ -579,10 +579,19 @@ def save_cached_token(cache_dir, key, token_response, now=None):
         "token_type": token_response.get("token_type", "Bearer"),
         "expires_at": now + int(expires_in),
     }
-    (cache_dir / key).write_text(json.dumps(data), encoding="utf-8")
+    path = cache_dir / key
+    path.write_text(json.dumps(data), encoding="utf-8")
+    path.chmod(0o600)
 
 
 def run_client_credentials(auth):
+    form = [
+        ("grant_type", "client_credentials"),
+        ("client_id", str(auth.get("clientId"))),
+        ("client_secret", str(auth.get("clientSecret"))),
+    ]
+    if auth.get("scope"):
+        form.append(("scope", str(auth.get("scope"))))
     cmd = [
         "curl",
         "--silent",
@@ -593,15 +602,9 @@ def run_client_credentials(auth):
         str(auth.get("tokenUrl")),
         "-H",
         "Content-Type: application/x-www-form-urlencoded",
-        "-d",
-        "grant_type=client_credentials",
-        "-d",
-        "client_id=" + str(auth.get("clientId")),
-        "-d",
-        "client_secret=" + str(auth.get("clientSecret")),
+        "--data",
+        urlencode(form),
     ]
-    if auth.get("scope"):
-        cmd += ["-d", "scope=" + str(auth.get("scope"))]
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
         print(result.stderr, file=sys.stderr, end="")
