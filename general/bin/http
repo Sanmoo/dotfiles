@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
-import json
 import os
-import shutil
-import time
-import hashlib
 import re
 import shlex
 import subprocess
@@ -277,6 +273,8 @@ def load_httprc(home):
     if not path.is_file():
         die("~/.config/.httprc not found; expected YAML with a collections: list")
     data = load_yaml_file(path)
+    if not isinstance(data, dict):
+        die("~/.config/.httprc must be a YAML mapping containing collections: as a list")
     roots = data.get("collections")
     if not isinstance(roots, list):
         die("~/.config/.httprc must contain collections: as a list")

@@ -105,9 +105,13 @@ YAML
 echo "test 1: oc parser is available"
 setup_oc_tmp
 write_basic_collection
-run_http_oc --no-interactive -c collectionA -e development -n get-smart-conditions
-assert_contains "$OC_STDOUT" "https://dev.example.com/smart-conditions/env-customer" "oc dry-run should build URL"
-assert_contains "$OC_STDOUT" "Accept: application/json" "oc dry-run should include request header"
+run_http_oc_expect_fail --no-interactive -c collectionA -e development -n get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "request discovery is not implemented for collection collectionA" "oc should reach the intentional request-discovery placeholder"
+assert_not_contains "$OC_STDERR" "Traceback" "oc placeholder error should not traceback"
 assert_not_contains "$OC_CURL_ARGS" "https://dev.example.com" "dry-run should not execute curl"
 
 # ---------- Test 2: missing .httprc is a clear error ----------
@@ -120,9 +124,24 @@ run_http_oc_expect_fail --no-interactive -c collectionA -n get-smart-conditions
 	exit 1
 }
 assert_contains "$OC_STDERR" "~/.config/.httprc" "missing rc should mention expected path"
+assert_not_contains "$OC_STDERR" "Traceback" "missing rc should not traceback"
 
-# ---------- Test 3: collection falls back to directory name ----------
-echo "test 3: collection fallback directory name"
+# ---------- Test 3: invalid .httprc top-level shape is a clear error ----------
+echo "test 3: invalid .httprc top-level shape is a clear error"
+setup_oc_tmp
+cat >"$OC_HOME/.config/.httprc" <<'YAML'
+- not-a-mapping
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "must be a YAML mapping" "invalid rc shape should be rejected clearly"
+assert_not_contains "$OC_STDERR" "Traceback" "invalid rc shape should not traceback"
+
+# ---------- Test 4: collection falls back to directory name ----------
+echo "test 4: collection fallback directory name"
 setup_oc_tmp
 mkdir -p "$OC_ROOT/fallbackCollection/requests"
 cat >"$OC_ROOT/fallbackCollection/opencollection.yaml" <<'YAML'
@@ -139,7 +158,11 @@ request:
   method: GET
   url: "{{baseUrl}}/ping"
 YAML
-run_http_oc --no-interactive -c fallbackCollection -e development -n ping
-assert_contains "$OC_STDOUT" "https://fallback.example.com/ping" "directory name should identify collection"
+run_http_oc_expect_fail --no-interactive -c fallbackCollection -e development -n ping
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "request discovery is not implemented for collection fallbackCollection" "directory name should identify collection"
 
 echo "OK"
