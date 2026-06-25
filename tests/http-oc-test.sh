@@ -181,4 +181,27 @@ run_http_oc_expect_fail --no-interactive -c fallbackCollection -e development -n
 }
 assert_contains "$OC_STDERR" "request discovery is not implemented for collection fallbackCollection" "directory name should identify collection"
 
+# ---------- Test 4: request name is required in non-interactive mode ----------
+echo "test 4: request name required non-interactive"
+setup_oc_tmp
+write_basic_collection
+run_http_oc_expect_fail --no-interactive -c collectionA -e development -n
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "request name is required" "missing request should be clear"
+
+# ---------- Test 5: unknown request lists available requests ----------
+echo "test 5: unknown request lists available"
+setup_oc_tmp
+write_basic_collection
+run_http_oc_expect_fail --no-interactive -c collectionA -e development -n nope
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "request not found: nope" "unknown request error"
+assert_contains "$OC_STDERR" "get-smart-conditions" "available request listed"
+
 echo "OK"

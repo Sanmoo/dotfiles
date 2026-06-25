@@ -340,13 +340,67 @@ def select_collection(collections, name, interactive):
     die("collection is required; pass -c/--collection")
 
 
+def is_collection_manifest(path):
+    return path.name in OC_MANIFEST_NAMES
+
+
+def is_http_request_doc(data):
+    if not isinstance(data, dict):
+        return False
+    if data.get("type") == "http":
+        return True
+    request = data.get("request")
+    return isinstance(request, dict) and ("method" in request or "url" in request)
+
+
+def discover_requests(collection):
+    found = []
+    base = collection["path"]
+    for current, _dirs, files in os.walk(base):
+        for filename in files:
+            path = Path(current) / filename
+            if path.suffix.lower() not in (".yaml", ".yml"):
+                continue
+            if is_collection_manifest(path):
+                continue
+            data = load_yaml_file(path)
+            if not is_http_request_doc(data):
+                continue
+            found.append({
+                "name": path.stem,
+                "path": path,
+                "data": data,
+                "display": data.get("name") or path.stem,
+            })
+    return sorted(found, key=lambda r: r["name"])
+
+
+def select_request(requests, name, interactive):
+    if not requests:
+        die("no HTTP request YAML files discovered in collection")
+    if name:
+        matches = [r for r in requests if r["name"] == name or r["display"] == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            if interactive:
+                return choose_with_fzf_or_prompt(matches, "request", lambda r: f"{r['name']}\t{r['path']}")
+            die("request name is ambiguous: " + ", ".join(str(r["path"]) for r in matches))
+        die("request not found: " + name + "; available: " + ", ".join(r["name"] for r in requests))
+    if interactive:
+        return choose_with_fzf_or_prompt(requests, "request", lambda r: f"{r['name']}\t{r['path']}")
+    die("request name is required in --no-interactive mode")
+
+
 def main_oc(args):
     parse_oc_vars(args.vars)
     interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
     config = load_httprc(Path.home())
     collections = discover_collections(config["roots"])
     collection = select_collection(collections, args.collection, interactive)
-    print(f"error: request discovery is not implemented for collection {collection['name']}", file=sys.stderr)
+    requests = discover_requests(collection)
+    request = select_request(requests, args.request_name, interactive)
+    print(f"error: environment resolution is not implemented for request {request['name']}", file=sys.stderr)
     return 2
 
 
