@@ -300,6 +300,8 @@ def discover_collections(roots):
             if not manifest:
                 continue
             data = load_yaml_file(manifest)
+            if not isinstance(data, dict):
+                die(f"collection manifest must be a YAML mapping: {manifest}")
             info = data.get("info") if isinstance(data.get("info"), dict) else {}
             name = info.get("name") or current_path.name
             found.append({

@@ -140,8 +140,24 @@ run_http_oc_expect_fail --no-interactive -c collectionA -n get-smart-conditions
 assert_contains "$OC_STDERR" "must be a YAML mapping" "invalid rc shape should be rejected clearly"
 assert_not_contains "$OC_STDERR" "Traceback" "invalid rc shape should not traceback"
 
-# ---------- Test 4: collection falls back to directory name ----------
-echo "test 4: collection fallback directory name"
+# ---------- Test 4: invalid collection manifest top-level shape is a clear error ----------
+echo "test 4: invalid collection manifest top-level shape is a clear error"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/badCollection"
+cat >"$OC_ROOT/badCollection/opencollection.yaml" <<'YAML'
+- not-a-mapping
+YAML
+run_http_oc_expect_fail --no-interactive -c badCollection -n request-name
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "must be a YAML mapping" "invalid collection manifest shape should be rejected clearly"
+assert_contains "$OC_STDERR" "opencollection.yaml" "invalid collection manifest should mention the manifest path"
+assert_not_contains "$OC_STDERR" "Traceback" "invalid collection manifest shape should not traceback"
+
+# ---------- Test 5: collection falls back to directory name ----------
+echo "test 5: collection fallback directory name"
 setup_oc_tmp
 mkdir -p "$OC_ROOT/fallbackCollection/requests"
 cat >"$OC_ROOT/fallbackCollection/opencollection.yaml" <<'YAML'

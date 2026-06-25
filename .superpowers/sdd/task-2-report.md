@@ -286,3 +286,86 @@ Self-review findings:
 
 Concerns:
 - none
+
+---
+
+## Task 2 review-fix pass 2 (2026-06-24)
+
+Status: DONE
+
+Summary of fixes:
+- hardened collection discovery so a malformed collection manifest top-level YAML shape now returns a clear user-facing error instead of raising `AttributeError`/traceback
+- added shell coverage in `tests/http-oc-test.sh` for malformed `opencollection.yaml` shape and explicit no-traceback behavior
+- preserved the intentional Task 2 red boundary: request discovery remains unimplemented
+
+Files changed:
+- `general/bin/http`
+- `tests/http-oc-test.sh`
+
+Test commands run and exact output:
+
+1. `bash tests/http-oc-test.sh`
+```text
+test 1: oc parser is available
+test 2: missing .httprc is a clear error
+test 3: invalid .httprc top-level shape is a clear error
+test 4: invalid collection manifest top-level shape is a clear error
+test 5: collection fallback directory name
+OK
+```
+
+2. `bash tests/http-test.sh`
+```text
+test 1: simplest post
+test 2: get emits no -X
+test 3: delete emits -X DELETE
+test 4: dedup of leading slash in path
+test 5: -i, -k, -L pass through
+test 6: -B flag precedence
+test 7: HTTP_BASE_URL wins over BASE_URL
+test 8: BASE_URL fallback
+test 9: no base URL is an error
+test 10: -H stacks
+test 11: -t bearer
+test 12: empty -t is an error
+test 13: -t and explicit Authorization
+test 14: single -q
+test 15: multiple -q
+test 16: -q URL-encoding
+test 17: -d inline body
+test 18: -f with auto Content-Type
+test 19: -f .jsonc auto Content-Type
+test 20: -f .xml auto Content-Type
+test 21: -f other extension -> octet-stream
+test 22: explicit -H Content-Type wins
+test 23: -f and -d together is an error
+test 24: -f with missing file is an error
+test 25: -v in -d
+test 26: -v in file body
+test 27: undefined variable is an error
+test 28: -v with empty value
+test 29: dry-run output
+test 30: dry-run shlex roundtrip
+test 31: live execution hits the stub
+test 32: .jsonc comments stripped
+test 33: .jsonc preserves // in strings
+test 34: GET defaults Content-Type to application/json
+test 35: explicit Content-Type wins on GET
+test 36: GET with -f keeps file-derived Content-Type
+OK
+```
+
+3. Direct malformed collection manifest proof command
+```text
+error: collection manifest must be a YAML mapping: /var/folders/p0/j3p22b7d4c35p17x0z_7485r0000gp/T/tmp.2RycKfgE1u/collections/badCollection/opencollection.yaml
+EXIT:2
+```
+
+Self-review findings:
+- scope stayed within the requested Task 2 review fix only
+- direct CLI behavior remains green via `tests/http-test.sh`
+- malformed collection manifests now fail cleanly with exit 2 and no traceback during discovery
+- no additional issues found
+
+Concerns:
+- none
