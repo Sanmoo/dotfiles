@@ -545,4 +545,40 @@ run_http_oc --no-interactive -c collectionA -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "malformed cache should fall back to a fresh token"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "malformed cache should trigger a new token request"
 
+# ---------- Test 22: oauth2 authorization code calls helper and adds bearer ----------
+echo "test 22: oauth2 authorization code"
+setup_oc_tmp
+cat >"$OC_BIN/auth-code-token" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$AUTH_CODE_ARGS_FILE"
+printf '{"access_token":"auth-code-token","token_type":"Bearer","expires_in":3600}\n'
+STUB
+chmod +x "$OC_BIN/auth-code-token"
+export AUTH_CODE_ARGS_FILE="$OC_TMPDIR/auth-code.args"
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+request:
+  auth:
+    type: oauth2
+    grantType: authorization_code
+    authorizationUrl: https://auth.example.com/authorize
+    tokenUrl: https://auth.example.com/token
+    clientId: browser-client
+    scope: openid profile
+    redirectUri: http://127.0.0.1:8765/callback
+YAML
+cat >"$OC_ROOT/collectionA/requests/browser.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/browser
+YAML
+run_http_oc --no-interactive -c collectionA -n browser
+assert_contains "$OC_STDOUT" "Authorization: Bearer auth-code-token" "auth code bearer token"
+assert_contains "$AUTH_CODE_ARGS_FILE" "browser-client" "helper gets client id"
+assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/authorize" "helper gets auth url"
+assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/token" "helper gets token url"
+
 echo "OK"

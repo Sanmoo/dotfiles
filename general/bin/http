@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -625,8 +626,34 @@ def run_client_credentials(auth):
 
 
 def run_authorization_code(auth):
-    _ = auth
-    die("authorization_code OAuth2 is not implemented yet")
+    helper = shutil.which("auth-code-token")
+    if helper is None:
+        local = Path(__file__).resolve().parent / "auth-code-token"
+        helper = str(local) if local.is_file() else None
+    if helper is None:
+        die("auth-code-token helper not found on PATH or next to http")
+    cmd = [
+        helper,
+        str(auth.get("clientId")),
+        str(auth.get("authorizationUrl")),
+        str(auth.get("tokenUrl")),
+        "--json",
+    ]
+    if auth.get("scope"):
+        cmd += ["--scope", str(auth.get("scope"))]
+    if auth.get("redirectUri"):
+        cmd += ["--redirect-uri", str(auth.get("redirectUri"))]
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr, end="")
+        die("oauth2 authorization_code token request failed")
+    try:
+        data = json.loads(result.stdout)
+    except Exception as e:
+        die(f"authorization_code token response was not JSON: {e}")
+    if not data.get("access_token"):
+        die("access_token not found in authorization_code token response")
+    return data
 
 
 def resolve_oauth2_token(collection, environment, auth, variables):
