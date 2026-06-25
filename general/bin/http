@@ -215,8 +215,12 @@ def build_curl_args(args, base_url, variables=None):
         body_arg = args.data
 
     base = (base_url or "").rstrip("/")
-    path = (args.path or "").lstrip("/")
-    url = f"{base}/{path}" if (base or path) else ""
+    raw_path = args.path
+    if raw_path in (None, ""):
+        url = base
+    else:
+        path = str(raw_path).lstrip("/")
+        url = f"{base}/{path}" if base else path
     if args.queries:
         parts = []
         for q in args.queries:
@@ -392,16 +396,161 @@ def select_request(requests, name, interactive):
     die("request name is required in --no-interactive mode")
 
 
+def variables_list_to_dict(values):
+    out = {}
+    if not isinstance(values, list):
+        return out
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if name is None:
+            continue
+        out[str(name)] = str(item.get("value", ""))
+    return out
+
+
+def get_collection_variables(collection_manifest):
+    return variables_list_to_dict(collection_manifest.get("variables"))
+
+
+def get_request_variables(request_doc):
+    out = variables_list_to_dict(request_doc.get("variables"))
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    out.update(variables_list_to_dict(request.get("variables")))
+    return out
+
+
+def get_environments(collection_manifest):
+    config = collection_manifest.get("config") if isinstance(collection_manifest.get("config"), dict) else {}
+    envs = config.get("environments") or []
+    return [e for e in envs if isinstance(e, dict) and e.get("name")]
+
+
+def select_environment(environments, name, interactive):
+    if name:
+        matches = [e for e in environments if e.get("name") == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            die("environment name is ambiguous: " + name)
+        die("environment not found: " + name + "; available: " + ", ".join(str(e.get("name")) for e in environments))
+    if not environments:
+        return None
+    if len(environments) == 1:
+        return environments[0]
+    if interactive:
+        return choose_with_fzf_or_prompt(environments, "environment", lambda e: str(e.get("name")))
+    die("environment is required when multiple environments exist; pass -e/--environment")
+
+
+def find_template_variables(value):
+    found = set()
+    if isinstance(value, str):
+        found.update(m.group(1) for m in _TEMPLATE_RE.finditer(value))
+    elif isinstance(value, dict):
+        for child in value.values():
+            found.update(find_template_variables(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.update(find_template_variables(child))
+    return found
+
+
+def collect_missing_variables(values, variables):
+    return find_template_variables(values) - set(variables)
+
+
+def prompt_missing_variables(missing):
+    values = {}
+    for name in sorted(missing):
+        values[name] = input(f"value for {name}: ")
+    return values
+
+
+def resolve_oc_variables(collection, request, environment, cli_vars, interactive):
+    variables = {}
+    variables.update(get_collection_variables(collection["manifest"]))
+    variables.update(get_request_variables(request["data"]))
+    if environment:
+        variables.update(variables_list_to_dict(environment.get("variables")))
+    variables.update(cli_vars)
+    missing = collect_missing_variables(request["data"], variables)
+    if missing:
+        if interactive:
+            variables.update(prompt_missing_variables(missing))
+        else:
+            die("missing variables: " + ", ".join(sorted(missing)))
+    return variables
+
+
+def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_args):
+    ns = argparse.Namespace()
+    ns.method = method.lower()
+    ns.base_url = url
+    ns.path = None
+    ns.token = None
+    ns.headers = headers + list(passthrough_args.headers or [])
+    ns.queries = queries + list(passthrough_args.queries or [])
+    ns.file = None
+    ns.data = body
+    ns.vars = []
+    ns.include = passthrough_args.include
+    ns.dry_run = passthrough_args.dry_run
+    ns.insecure = passthrough_args.insecure
+    ns.follow = passthrough_args.follow
+    return ns
+
+
+def build_basic_oc_args(args, request_doc, variables):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    method = str(request.get("method") or "GET")
+    url = apply_template(str(request.get("url") or ""), variables)
+    if not url:
+        die("request.url is required")
+    headers = []
+    for header in request.get("headers") or []:
+        if not isinstance(header, dict) or header.get("disabled") is True:
+            continue
+        name = header.get("name")
+        value = header.get("value")
+        if name is None or value is None:
+            continue
+        headers.append(f"{apply_template(str(name), variables)}: {apply_template(str(value), variables)}")
+    queries = []
+    for param in request.get("params") or []:
+        if not isinstance(param, dict) or param.get("disabled") is True:
+            continue
+        if param.get("type") == "path":
+            continue
+        if param.get("type", "query") != "query":
+            continue
+        name = param.get("name")
+        value = param.get("value", "")
+        if name is None:
+            continue
+        queries.append(f"{apply_template(str(name), variables)}={apply_template(str(value), variables)}")
+    return make_direct_args_from_oc(method, url, headers, queries, None, args)
+
+
 def main_oc(args):
-    parse_oc_vars(args.vars)
     interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
     config = load_httprc(Path.home())
     collections = discover_collections(config["roots"])
     collection = select_collection(collections, args.collection, interactive)
     requests = discover_requests(collection)
     request = select_request(requests, args.request_name, interactive)
-    print(f"error: environment resolution is not implemented for request {request['name']}", file=sys.stderr)
-    return 2
+    environments = get_environments(collection["manifest"])
+    environment = select_environment(environments, args.environment, interactive)
+    cli_vars = parse_oc_vars(args.vars)
+    variables = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
+    direct_args = build_basic_oc_args(args, request["data"], variables)
+    curl_args = build_curl_args(direct_args, direct_args.base_url)
+    if args.dry_run:
+        print(format_curl_command(curl_args))
+        return 0
+    result = subprocess.run(["curl", *curl_args])
+    return result.returncode
 
 
 def main(argv=None):

@@ -101,17 +101,15 @@ request:
 YAML
 }
 
-# ---------- Test 1: oc parser is available ----------
-echo "test 1: oc parser is available"
+# ---------- Test 1: basic oc dry-run builds curl args ----------
+echo "test 1: basic oc dry-run builds curl args"
 setup_oc_tmp
 write_basic_collection
-run_http_oc_expect_fail --no-interactive -c collectionA -e development -n get-smart-conditions
-[ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
-}
-assert_contains "$OC_STDERR" "environment resolution is not implemented for request get-smart-conditions" "oc should reach the intentional environment-resolution placeholder"
-assert_not_contains "$OC_STDERR" "Traceback" "oc placeholder error should not traceback"
+run_http_oc --no-interactive -c collectionA -e development -n get-smart-conditions
+assert_contains "$OC_STDOUT" "https://dev.example.com/smart-conditions/env-customer" "environment variables should resolve in URL"
+assert_contains "$OC_STDOUT" "Accept: application/json" "request headers should be included"
+assert_contains "$OC_STDOUT" "X-Default: from-collection" "collection variables should resolve in headers"
+assert_not_contains "$OC_STDERR" "Traceback" "oc happy path should not traceback"
 assert_not_contains "$OC_CURL_ARGS" "https://dev.example.com" "dry-run should not execute curl"
 
 # ---------- Test 2: missing .httprc is a clear error ----------
@@ -174,15 +172,19 @@ request:
   method: GET
   url: "{{baseUrl}}/ping"
 YAML
-run_http_oc_expect_fail --no-interactive -c fallbackCollection -e development -n ping
-[ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
-}
-assert_contains "$OC_STDERR" "environment resolution is not implemented for request ping" "directory name should identify collection"
+run_http_oc --no-interactive -c fallbackCollection -e development -n ping
+assert_contains "$OC_STDOUT" "https://fallback.example.com/ping" "directory name should identify collection"
 
-# ---------- Test 6: request name is required in non-interactive mode ----------
-echo "test 6: request name required non-interactive"
+# ---------- Test 6: cli vars override environment vars and comma-separated vars work ----------
+echo "test 6: cli vars override environment"
+setup_oc_tmp
+write_basic_collection
+run_http_oc --no-interactive -c collectionA -e development -v "customerId=cli-customer,defaultHeader=cli-header" -n get-smart-conditions
+assert_contains "$OC_STDOUT" "https://dev.example.com/smart-conditions/cli-customer" "CLI customer should win"
+assert_contains "$OC_STDOUT" "X-Default: cli-header" "CLI header var should win"
+
+# ---------- Test 7: request name is required in non-interactive mode ----------
+echo "test 7: request name required non-interactive"
 setup_oc_tmp
 write_basic_collection
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n
@@ -192,8 +194,8 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e development -n
 }
 assert_contains "$OC_STDERR" "request name is required" "missing request should be clear"
 
-# ---------- Test 7: unknown request lists available requests ----------
-echo "test 7: unknown request lists available"
+# ---------- Test 8: unknown request lists available requests ----------
+echo "test 8: unknown request lists available"
 setup_oc_tmp
 write_basic_collection
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n nope
@@ -204,8 +206,8 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e development -n nope
 assert_contains "$OC_STDERR" "request not found: nope" "unknown request error"
 assert_contains "$OC_STDERR" "get-smart-conditions" "available request listed"
 
-# ---------- Test 8: ambiguous request name is rejected non-interactive ----------
-echo "test 8: ambiguous request name is rejected non-interactive"
+# ---------- Test 9: ambiguous request name is rejected non-interactive ----------
+echo "test 9: ambiguous request name is rejected non-interactive"
 setup_oc_tmp
 write_basic_collection
 mkdir -p "$OC_ROOT/collectionA/requests/duplicate"
@@ -223,5 +225,27 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e development -n get-sm
 assert_contains "$OC_STDERR" "request name is ambiguous:" "ambiguous request should be clear"
 assert_contains "$OC_STDERR" "requests/get-smart-conditions.yaml" "first ambiguous request path listed"
 assert_contains "$OC_STDERR" "requests/duplicate/get-smart-conditions.yaml" "second ambiguous request path listed"
+
+# ---------- Test 10: missing variable fails in non-interactive mode ----------
+echo "test 10: missing variable non-interactive"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/needs-var.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: "https://api.example.com/{{missingValue}}"
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n needs-var
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "missing variables" "missing variable error"
+assert_contains "$OC_STDERR" "missingValue" "missing variable name"
 
 echo "OK"
