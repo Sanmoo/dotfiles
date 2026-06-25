@@ -474,7 +474,6 @@ def collect_missing_variables(request_doc, variables):
         found.update(find_template_variables(param.get("value", "")))
     if request.get("url") is not None:
         found.update(find_template_variables(request.get("url")))
-        found.difference_update(path_param_names)
     for header in request.get("headers") or []:
         if not isinstance(header, dict) or header.get("disabled") is True:
             continue
@@ -483,6 +482,7 @@ def collect_missing_variables(request_doc, variables):
     body = request.get("body")
     if isinstance(body, dict) and str(body.get("type") or "") in ("json", "xml", "text", "sparql"):
         found.update(find_template_variables(body.get("data", "")))
+    found.difference_update(path_param_names)
     return found - set(variables)
 
 

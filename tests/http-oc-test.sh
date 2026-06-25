@@ -302,6 +302,8 @@ request:
   headers:
     - name: X-Enabled
       value: "yes"
+    - name: X-Customer
+      value: "{{customerId}}"
     - name: X-Disabled
       value: "no"
       disabled: true
@@ -324,6 +326,7 @@ run_http_oc --no-interactive -c collectionA -v itemName=book -H "X-CLI: yes" -q 
 assert_contains "$OC_STDOUT" "-X POST" "POST should emit method"
 assert_contains "$OC_STDOUT" "https://api.example.com/customers/path-customer/items?enabled=1&cli=1" "path/query params should resolve"
 assert_contains "$OC_STDOUT" "X-Enabled: yes" "enabled header present"
+assert_contains "$OC_STDOUT" "X-Customer: path-customer" "path-param-derived variables should resolve in other templated fields"
 assert_contains "$OC_STDOUT" "X-CLI: yes" "CLI header appended"
 assert_contains "$OC_STDOUT" "Content-Type: application/json" "json body content type"
 assert_contains "$OC_STDOUT" "--data" "body data flag present"
