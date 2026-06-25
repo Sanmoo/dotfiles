@@ -520,8 +520,33 @@ def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_ar
     return ns
 
 
+def content_type_for_oc_body(body_type):
+    return {
+        "json": "application/json",
+        "xml": "application/xml",
+        "text": "text/plain",
+        "sparql": "application/sparql-query",
+    }.get(body_type)
+
+
+def add_path_params_to_variables(request_doc, variables):
+    out = dict(variables)
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    for param in request.get("params") or []:
+        if not isinstance(param, dict) or param.get("disabled") is True:
+            continue
+        if param.get("type") != "path":
+            continue
+        name = param.get("name")
+        if name is None:
+            continue
+        out[str(name)] = apply_template(str(param.get("value", "")), out)
+    return out
+
+
 def build_basic_oc_args(args, request_doc, variables):
     request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    variables = add_path_params_to_variables(request_doc, variables)
     method = str(request.get("method") or "GET")
     url = apply_template(str(request.get("url") or ""), variables)
     if not url:
@@ -548,7 +573,20 @@ def build_basic_oc_args(args, request_doc, variables):
         if name is None:
             continue
         queries.append(f"{apply_template(str(name), variables)}={apply_template(str(value), variables)}")
-    return make_direct_args_from_oc(method, url, headers, queries, None, args)
+    body_value = None
+    body = request.get("body")
+    if body is not None:
+        if not isinstance(body, dict):
+            die("unsupported request.body shape; expected object with type and data")
+        body_type = str(body.get("type") or "")
+        if body_type not in ("json", "xml", "text", "sparql"):
+            die("unsupported request.body type for MVP: " + body_type)
+        body_value = apply_template(str(body.get("data", "")), variables)
+        default_ct = content_type_for_oc_body(body_type)
+        combined_headers = headers + list(args.headers or [])
+        if default_ct and not has_header(combined_headers, "Content-Type"):
+            headers.append(f"Content-Type: {default_ct}")
+    return make_direct_args_from_oc(method, url, headers, queries, body_value, args)
 
 
 def main_oc(args):

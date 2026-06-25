@@ -248,8 +248,8 @@ run_http_oc_expect_fail --no-interactive -c collectionA -n needs-var
 assert_contains "$OC_STDERR" "missing variables" "missing variable error"
 assert_contains "$OC_STDERR" "missingValue" "missing variable name"
 
-# ---------- Test 11: disabled and out-of-scope placeholders do not block Task 4 ----------
-echo "test 11: disabled and out-of-scope placeholders are ignored"
+# ---------- Test 11: disabled placeholders do not block resolved requests ----------
+echo "test 11: disabled placeholders are ignored"
 setup_oc_tmp
 mkdir -p "$OC_ROOT/collectionA/requests"
 cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
@@ -276,12 +276,83 @@ request:
       value: "{{ignoredQuery}}"
       type: query
       disabled: true
-  body:
-    type: json
-    data: '{"ignored":"{{ignoredBody}}"}'
 YAML
 run_http_oc --no-interactive -c collectionA -e development -n ignored-vars
 assert_contains "$OC_STDOUT" "https://dev.example.com/ok" "used URL variables should still resolve"
-assert_not_contains "$OC_STDERR" "missing variables" "ignored placeholders should not trigger missing-variable errors in Task 4"
+assert_not_contains "$OC_STDERR" "missing variables" "disabled placeholders should not trigger missing-variable errors"
+
+# ---------- Test 12: body disabled entries and CLI append ----------
+echo "test 12: body disabled entries and CLI append"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: baseUrl
+    value: https://api.example.com
+  - name: customerId
+    value: from-path-param
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: "{{baseUrl}}/customers/{{customerId}}/items"
+  headers:
+    - name: X-Enabled
+      value: "yes"
+    - name: X-Disabled
+      value: "no"
+      disabled: true
+  params:
+    - name: customerId
+      value: path-customer
+      type: path
+    - name: enabled
+      value: "1"
+      type: query
+    - name: disabled
+      value: "1"
+      type: query
+      disabled: true
+  body:
+    type: json
+    data: '{"name":"{{itemName}}"}'
+YAML
+run_http_oc --no-interactive -c collectionA -v itemName=book -H "X-CLI: yes" -q "cli=1" -n create
+assert_contains "$OC_STDOUT" "-X POST" "POST should emit method"
+assert_contains "$OC_STDOUT" "https://api.example.com/customers/path-customer/items?enabled=1&cli=1" "path/query params should resolve"
+assert_contains "$OC_STDOUT" "X-Enabled: yes" "enabled header present"
+assert_contains "$OC_STDOUT" "X-CLI: yes" "CLI header appended"
+assert_contains "$OC_STDOUT" "Content-Type: application/json" "json body content type"
+assert_contains "$OC_STDOUT" "--data" "body data flag present"
+assert_contains "$OC_STDOUT" '"name":"book"' "body variable resolved"
+assert_not_contains "$OC_STDOUT" "X-Disabled" "disabled header ignored"
+assert_not_contains "$OC_STDOUT" "disabled=1" "disabled query ignored"
+
+# ---------- Test 13: explicit content type wins ----------
+echo "test 13: explicit content type wins"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/text-body.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/text
+  headers:
+    - name: Content-Type
+      value: application/custom
+  body:
+    type: text
+    data: hello
+YAML
+run_http_oc --no-interactive -c collectionA -n text-body
+assert_contains "$OC_STDOUT" "Content-Type: application/custom" "explicit content type present"
+assert_not_contains "$OC_STDOUT" "Content-Type: text/plain" "default content type suppressed"
 
 echo "OK"
