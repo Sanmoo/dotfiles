@@ -509,6 +509,29 @@ def resolve_oc_variables(collection, request, environment, cli_vars, interactive
     return variables
 
 
+def get_oc_auth(collection_manifest, request_doc):
+    if isinstance(request_doc.get("auth"), dict):
+        return request_doc.get("auth")
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    if isinstance(request.get("auth"), dict):
+        return request.get("auth")
+    defaults = collection_manifest.get("request") if isinstance(collection_manifest.get("request"), dict) else {}
+    if isinstance(defaults.get("auth"), dict):
+        return defaults.get("auth")
+    return None
+
+
+def validate_supported_oc_auth(auth):
+    if auth is None:
+        return
+    auth_type = auth.get("type")
+    if auth_type != "oauth2":
+        die("unsupported auth type for MVP: " + str(auth_type))
+    grant_type = auth.get("grantType") or auth.get("grant_type")
+    if grant_type not in ("client_credentials", "authorization_code"):
+        die("unsupported oauth2 grant type for MVP: " + str(grant_type))
+
+
 def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_args):
     ns = argparse.Namespace()
     ns.method = method.lower()
@@ -607,6 +630,8 @@ def main_oc(args):
     environment = select_environment(environments, args.environment, interactive)
     cli_vars = parse_oc_vars(args.vars)
     variables = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
+    auth = get_oc_auth(collection["manifest"], request["data"])
+    validate_supported_oc_auth(auth)
     direct_args = build_basic_oc_args(args, request["data"], variables)
     curl_args = build_curl_args(direct_args, direct_args.base_url)
     if args.dry_run:

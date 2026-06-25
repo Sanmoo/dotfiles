@@ -423,4 +423,46 @@ assert_contains "$OC_STDOUT" "Content-Type: application/xml" "xml body should ma
 run_http_oc --no-interactive -c collectionA -n sparql-body
 assert_contains "$OC_STDOUT" "Content-Type: application/sparql-query" "sparql body should map to application/sparql-query"
 
+# ---------- Test 16: unsupported body type errors ----------
+echo "test 16: unsupported body type"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/upload.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/upload
+  body:
+    type: multipart-form
+    data: []
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n upload
+[ "$OC_EXIT" -eq 2 ] || { echo "FAIL: expected exit 2" >&2; exit 1; }
+assert_contains "$OC_STDERR" "unsupported request.body type" "unsupported body error"
+
+# ---------- Test 17: unsupported auth type errors ----------
+echo "test 17: unsupported auth type"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+request:
+  auth:
+    type: basic
+YAML
+cat >"$OC_ROOT/collectionA/requests/ping.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/ping
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n ping
+[ "$OC_EXIT" -eq 2 ] || { echo "FAIL: expected exit 2" >&2; exit 1; }
+assert_contains "$OC_STDERR" "unsupported auth type for MVP: basic" "unsupported auth error"
+
 echo "OK"
