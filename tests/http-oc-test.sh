@@ -110,4 +110,36 @@ assert_contains "$OC_STDOUT" "https://dev.example.com/smart-conditions/env-custo
 assert_contains "$OC_STDOUT" "Accept: application/json" "oc dry-run should include request header"
 assert_not_contains "$OC_CURL_ARGS" "https://dev.example.com" "dry-run should not execute curl"
 
+# ---------- Test 2: missing .httprc is a clear error ----------
+echo "test 2: missing .httprc is a clear error"
+setup_oc_tmp
+rm -f "$OC_HOME/.config/.httprc"
+run_http_oc_expect_fail --no-interactive -c collectionA -n get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "~/.config/.httprc" "missing rc should mention expected path"
+
+# ---------- Test 3: collection falls back to directory name ----------
+echo "test 3: collection fallback directory name"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/fallbackCollection/requests"
+cat >"$OC_ROOT/fallbackCollection/opencollection.yaml" <<'YAML'
+config:
+  environments:
+    - name: development
+      variables:
+        - name: baseUrl
+          value: https://fallback.example.com
+YAML
+cat >"$OC_ROOT/fallbackCollection/requests/ping.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: "{{baseUrl}}/ping"
+YAML
+run_http_oc --no-interactive -c fallbackCollection -e development -n ping
+assert_contains "$OC_STDOUT" "https://fallback.example.com/ping" "directory name should identify collection"
+
 echo "OK"

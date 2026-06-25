@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
+import json
 import os
+import shutil
+import time
+import hashlib
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import quote_plus
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - exercised manually in environments without PyYAML
+    yaml = None
 
 
 _TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
@@ -233,9 +242,111 @@ def format_curl_command(curl_args):
     return " ".join(shlex.quote(a) for a in curl_args)
 
 
+OC_MANIFEST_NAMES = (
+    "opencollection.yaml",
+    "opencollection.yml",
+    "collection.yaml",
+    "collection.yml",
+)
+
+
+def die(message):
+    print(f"error: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def load_yaml_file(path):
+    if yaml is None:
+        die("PyYAML is required for http oc")
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except FileNotFoundError:
+        die(f"YAML file not found: {path}")
+    except Exception as e:
+        die(f"invalid YAML in {path}: {e}")
+    return data or {}
+
+
+def expand_config_path(value):
+    return Path(os.path.expandvars(os.path.expanduser(str(value))))
+
+
+def load_httprc(home):
+    path = home / ".config" / ".httprc"
+    if not path.is_file():
+        die("~/.config/.httprc not found; expected YAML with a collections: list")
+    data = load_yaml_file(path)
+    roots = data.get("collections")
+    if not isinstance(roots, list):
+        die("~/.config/.httprc must contain collections: as a list")
+    return {"path": path, "roots": [expand_config_path(p) for p in roots]}
+
+
+def find_collection_manifest(directory):
+    for name in OC_MANIFEST_NAMES:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def discover_collections(roots):
+    found = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for current, dirs, _files in os.walk(root):
+            current_path = Path(current)
+            manifest = find_collection_manifest(current_path)
+            if not manifest:
+                continue
+            data = load_yaml_file(manifest)
+            info = data.get("info") if isinstance(data.get("info"), dict) else {}
+            name = info.get("name") or current_path.name
+            found.append({
+                "name": str(name),
+                "path": current_path,
+                "manifest_path": manifest,
+                "manifest": data,
+            })
+            dirs[:] = []
+    return found
+
+
+def choose_with_fzf_or_prompt(items, label, format_item):
+    if not items:
+        die(f"no {label} choices available")
+    # Full fzf behavior is added in a later task. For now, a single item can be selected.
+    if len(items) == 1:
+        return items[0]
+    die(f"interactive {label} selection is not implemented yet; pass an explicit value")
+
+
+def select_collection(collections, name, interactive):
+    if not collections:
+        die("no collections discovered from ~/.config/.httprc roots")
+    if name:
+        matches = [c for c in collections if c["name"] == name or c["path"].name == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            if interactive:
+                return choose_with_fzf_or_prompt(matches, "collection", lambda c: f"{c['name']}\t{c['path']}")
+            die("collection name is ambiguous: " + ", ".join(str(c["path"]) for c in matches))
+        die("collection not found: " + name + "; available: " + ", ".join(c["name"] for c in collections))
+    if interactive:
+        return choose_with_fzf_or_prompt(collections, "collection", lambda c: f"{c['name']}\t{c['path']}")
+    die("collection is required; pass -c/--collection")
+
+
 def main_oc(args):
-    _ = parse_oc_vars(args.vars)
-    print("error: http oc is not implemented yet", file=sys.stderr)
+    parse_oc_vars(args.vars)
+    interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
+    config = load_httprc(Path.home())
+    collections = discover_collections(config["roots"])
+    collection = select_collection(collections, args.collection, interactive)
+    print(f"error: request discovery is not implemented for collection {collection['name']}", file=sys.stderr)
     return 2
 
 
