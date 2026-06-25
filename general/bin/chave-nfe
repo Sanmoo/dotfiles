@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+formatted=false
+cuf=""
+cnpj=""
+
+usage() {
+  echo "Usage: chave-nfe [-f] [-u UF] [-c CNPJ]" >&2
+  echo "  -f        Formatted output (with separators)" >&2
+  echo "  -u UF     Two-digit IBGE state code (random if omitted)" >&2
+  echo "  -c CNPJ   14-digit CNPJ to embed (random if omitted)" >&2
+  exit 2
+}
+
+while getopts ":fu:c:" opt; do
+  case "$opt" in
+    f) formatted=true ;;
+    u) cuf="$OPTARG" ;;
+    c) cnpj="${OPTARG//[^0-9]/}" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+# Validate cUF if provided (common IBGE state codes)
+if [[ -n "$cuf" ]]; then
+  if [[ ! "$cuf" =~ ^[0-9]{2}$ ]]; then
+    echo "Error: cUF must be exactly 2 digits" >&2
+    exit 1
+  fi
+else
+  # Random IBGE state code (common ones)
+  cufs=(11 12 13 14 15 16 17 21 22 23 24 25 26 27 28 29 31 32 33 35 41 42 43 50 51 52 53)
+  cuf="${cufs[$((RANDOM % ${#cufs[@]}))]}"
+fi
+
+# Validate or generate CNPJ
+if [[ -n "$cnpj" ]]; then
+  if [[ ! "$cnpj" =~ ^[0-9]{14}$ ]]; then
+    echo "Error: CNPJ must be exactly 14 digits" >&2
+    exit 1
+  fi
+else
+  cnpj_bin="$(dirname "$0")/cnpj"
+  if [[ -x "$cnpj_bin" ]]; then
+    cnpj="$("$cnpj_bin")"
+  else
+    # Fallback: generate random 14 digits (won't be a valid CNPJ but works structurally)
+    cnpj=""
+    for ((i = 0; i < 14; i++)); do
+      cnpj+="$((RANDOM % 10))"
+    done
+  fi
+fi
+
+# Year/Month (2020–2026 range)
+ano=$((2020 + RANDOM % 7))
+mes=$(printf '%02d' $((1 + RANDOM % 12)))
+aamm="${ano:2:2}${mes}"
+
+# Model: 55 (NF-e) or 65 (NFC-e)
+# We'll use 55 as default (most common)
+mod="55"
+
+# Random 3-digit series
+serie=$(printf '%03d' $((RANDOM % 1000)))
+
+# Random 9-digit invoice number
+nnf=$(printf '%09d' $((1 + RANDOM % 999999999)))
+
+# Emission type: mostly 1 (normal)
+tpEmis="1"
+
+# Random 8-digit control code
+cnf=$(printf '%08d' $((RANDOM % 99999999)))
+
+# Build the first 43 digits
+key43="${cuf}${aamm}${cnpj}${mod}${serie}${nnf}${tpEmis}${cnf}"
+
+# Calculate check digit (mod 11, weights 2→9 cycled right to left)
+sum=0
+weight=2
+for ((i = 42; i >= 0; i--)); do
+  sum=$((sum + ${key43:i:1} * weight))
+  weight=$((weight + 1))
+  if ((weight > 9)); then
+    weight=2
+  fi
+done
+remainder=$((sum % 11))
+dv=$((remainder < 2 ? 0 : 11 - remainder))
+
+key44="${key43}${dv}"
+
+if $formatted; then
+  # Format: NNNN NNNN NNNN NNNN NNNN NNNN NNNN NNNN NNNN NNNN NNNN (11 groups of 4)
+  printf '%s %s %s %s %s %s %s %s %s %s %s\n' \
+    "${key44:0:4}"   "${key44:4:4}"   "${key44:8:4}"   "${key44:12:4}" \
+    "${key44:16:4}"  "${key44:20:4}"  "${key44:24:4}"  "${key44:28:4}" \
+    "${key44:32:4}"  "${key44:36:4}"  "${key44:40:4}"
+else
+  printf '%s\n' "$key44"
+fi

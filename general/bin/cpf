@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+formatted=false
+
+while getopts ":f" opt; do
+  case "$opt" in
+    f) formatted=true ;;
+    *) echo "Usage: cpf [-f]" >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+# Generate 9 random digits
+digits=()
+for ((i = 0; i < 9; i++)); do
+  digits[i]=$((RANDOM % 10))
+done
+
+# Calculate first check digit (weights 10 down to 2)
+sum=0
+for ((i = 0; i < 9; i++)); do
+  weight=$((10 - i))
+  sum=$((sum + digits[i] * weight))
+done
+remainder=$((sum % 11))
+d10=$((remainder < 2 ? 0 : 11 - remainder))
+
+# Calculate second check digit (weights 11 down to 2)
+digits[9]=$d10
+sum=0
+for ((i = 0; i < 10; i++)); do
+  weight=$((11 - i))
+  sum=$((sum + digits[i] * weight))
+done
+remainder=$((sum % 11))
+d11=$((remainder < 2 ? 0 : 11 - remainder))
+
+digits[10]=$d11
+
+cpf_raw=""
+for ((i = 0; i < 11; i++)); do
+  cpf_raw+="${digits[i]}"
+done
+
+if $formatted; then
+  printf '%s.%s.%s-%s\n' \
+    "${cpf_raw:0:3}" \
+    "${cpf_raw:3:3}" \
+    "${cpf_raw:6:3}" \
+    "${cpf_raw:9:2}"
+else
+  printf '%s\n' "$cpf_raw"
+fi
