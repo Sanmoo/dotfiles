@@ -204,4 +204,24 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e development -n nope
 assert_contains "$OC_STDERR" "request not found: nope" "unknown request error"
 assert_contains "$OC_STDERR" "get-smart-conditions" "available request listed"
 
+# ---------- Test 8: ambiguous request name is rejected non-interactive ----------
+echo "test 8: ambiguous request name is rejected non-interactive"
+setup_oc_tmp
+write_basic_collection
+mkdir -p "$OC_ROOT/collectionA/requests/duplicate"
+cat >"$OC_ROOT/collectionA/requests/duplicate/get-smart-conditions.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: "{{baseUrl}}/duplicate-smart-conditions/{{customerId}}"
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -e development -n get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "request name is ambiguous:" "ambiguous request should be clear"
+assert_contains "$OC_STDERR" "requests/get-smart-conditions.yaml" "first ambiguous request path listed"
+assert_contains "$OC_STDERR" "requests/duplicate/get-smart-conditions.yaml" "second ambiguous request path listed"
+
 echo "OK"
