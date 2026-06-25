@@ -581,4 +581,27 @@ assert_contains "$AUTH_CODE_ARGS_FILE" "browser-client" "helper gets client id"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/authorize" "helper gets auth url"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/token" "helper gets token url"
 
+# ---------- Test 23: interactive fzf can choose collection and request ----------
+echo "test 23: fzf selection"
+setup_oc_tmp
+write_basic_collection
+cat >"$OC_BIN/fzf" <<'STUB'
+#!/usr/bin/env bash
+IFS= read -r first
+printf '%s\n' "$first"
+STUB
+chmod +x "$OC_BIN/fzf"
+if command -v script >/dev/null 2>&1; then
+	set +e
+	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	status=$?
+	set -e
+	[ "$status" -eq 0 ] || { echo "FAIL: interactive fzf command failed" >&2; cat "$OC_TMPDIR/script.err" >&2; exit 1; }
+	assert_contains "$OC_TMPDIR/script.out" "Collection: collectionA" "summary should show collection"
+	assert_contains "$OC_TMPDIR/script.out" "Request: get-smart-conditions" "summary should show request"
+	assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/smart-conditions/env-customer" "dry run URL"
+else
+	echo "skip: script command not available"
+fi
+
 echo "OK"

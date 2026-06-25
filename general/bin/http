@@ -252,6 +252,7 @@ OC_MANIFEST_NAMES = (
     "collection.yaml",
     "collection.yml",
 )
+OC_INTERACTIVE_USED = False
 
 
 def die(message):
@@ -322,13 +323,39 @@ def discover_collections(roots):
     return found
 
 
+def run_fzf(lines):
+    if shutil.which("fzf") is None:
+        return None
+    proc = subprocess.run(["fzf"], input="\n".join(lines) + "\n", text=True, capture_output=True)
+    if proc.returncode != 0:
+        return None
+    selected = proc.stdout.rstrip("\n")
+    if selected in lines:
+        return lines.index(selected)
+    return None
+
+
 def choose_with_fzf_or_prompt(items, label, format_item):
+    global OC_INTERACTIVE_USED
     if not items:
         die(f"no {label} choices available")
-    # Full fzf behavior is added in a later task. For now, a single item can be selected.
-    if len(items) == 1:
-        return items[0]
-    die(f"interactive {label} selection is not implemented yet; pass an explicit value")
+    lines = [format_item(item) for item in items]
+    idx = run_fzf(lines)
+    if idx is not None:
+        OC_INTERACTIVE_USED = True
+        return items[idx]
+    print(f"Choose {label}:", file=sys.stderr)
+    for i, line in enumerate(lines, start=1):
+        print(f"  {i}) {line}", file=sys.stderr)
+    raw = input(f"{label} number: ").strip()
+    try:
+        chosen = int(raw)
+    except ValueError:
+        die(f"invalid {label} selection: {raw}")
+    if chosen < 1 or chosen > len(items):
+        die(f"invalid {label} selection: {raw}")
+    OC_INTERACTIVE_USED = True
+    return items[chosen - 1]
 
 
 def select_collection(collections, name, interactive):
@@ -491,8 +518,10 @@ def collect_missing_variables(request_doc, variables):
 
 
 def prompt_missing_variables(missing):
+    global OC_INTERACTIVE_USED
     values = {}
     for name in sorted(missing):
+        OC_INTERACTIVE_USED = True
         values[name] = input(f"value for {name}: ")
     return values
 
@@ -765,7 +794,18 @@ def build_basic_oc_args(args, request_doc, variables):
     return make_direct_args_from_oc(method, url, headers, queries, body_value, args)
 
 
+def print_oc_summary(collection, environment, request, direct_args):
+    env_name = environment.get("name") if environment else ""
+    print(f"Collection: {collection['name']}")
+    if env_name:
+        print(f"Environment: {env_name}")
+    print(f"Request: {request['name']}")
+    print(f"{direct_args.method.upper()} {direct_args.base_url}")
+
+
 def main_oc(args):
+    global OC_INTERACTIVE_USED
+    OC_INTERACTIVE_USED = False
     interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
     config = load_httprc(Path.home())
     collections = discover_collections(config["roots"])
@@ -782,6 +822,8 @@ def main_oc(args):
     direct_args = build_basic_oc_args(args, request["data"], variables)
     if token:
         direct_args.headers.append(f"Authorization: Bearer {token}")
+    if OC_INTERACTIVE_USED:
+        print_oc_summary(collection, environment, request, direct_args)
     curl_args = build_curl_args(direct_args, direct_args.base_url)
     if args.dry_run:
         print(format_curl_command(curl_args))
