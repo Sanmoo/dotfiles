@@ -142,6 +142,8 @@ def make_oc_parser():
     p.add_argument("-L", "--follow", dest="follow", action="store_true")
     p.add_argument("-H", "--header", dest="headers", action="append", default=[])
     p.add_argument("-q", "--query", dest="queries", action="append", default=[])
+    p.add_argument("--auth-no-cache", dest="auth_no_cache", action="store_true",
+                   help="force OAuth token regeneration, ignoring the cache")
     return p
 
 
@@ -676,7 +678,7 @@ def run_client_credentials(auth):
     return data
 
 
-def run_authorization_code(auth):
+def run_authorization_code(auth, force=False):
     helper = shutil.which("auth-code-token")
     if helper is None:
         local = Path(__file__).resolve().parent / "auth-code-token"
@@ -694,6 +696,8 @@ def run_authorization_code(auth):
         cmd += ["--scope", str(auth.get("scope"))]
     if auth.get("redirectUri"):
         cmd += ["--redirect-uri", str(auth.get("redirectUri"))]
+    if force:
+        cmd.append("--force-login")
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
         print(result.stderr, file=sys.stderr, end="")
@@ -707,7 +711,7 @@ def run_authorization_code(auth):
     return data
 
 
-def resolve_oauth2_token(collection, environment, auth, variables):
+def resolve_oauth2_token(collection, environment, auth, variables, force=False):
     if auth is None:
         return None
     resolved = {}
@@ -716,13 +720,14 @@ def resolve_oauth2_token(collection, environment, auth, variables):
     grant_type = resolved.get("grantType") or resolved.get("grant_type")
     cache_dir = Path.home() / ".cache" / "http-oc"
     key = cache_key_for_auth(collection, environment, resolved)
-    cached = load_cached_token(cache_dir, key)
-    if cached:
-        return cached
+    if not force:
+        cached = load_cached_token(cache_dir, key)
+        if cached:
+            return cached
     if grant_type == "client_credentials":
         token_response = run_client_credentials(resolved)
     elif grant_type == "authorization_code":
-        token_response = run_authorization_code(resolved)
+        token_response = run_authorization_code(resolved, force=force)
     else:
         die("unsupported oauth2 grant type for MVP: " + str(grant_type))
     save_cached_token(cache_dir, key, token_response)
@@ -846,7 +851,8 @@ def main_oc(args):
         variables = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
         auth = get_oc_auth(collection["manifest"], request["data"])
         validate_supported_oc_auth(auth)
-        token = resolve_oauth2_token(collection, environment, auth, variables)
+        token = resolve_oauth2_token(collection, environment, auth, variables,
+                                      force=args.auth_no_cache)
         direct_args = build_basic_oc_args(args, request["data"], variables)
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")

@@ -592,6 +592,10 @@ assert_contains "$OC_STDOUT" "Authorization: Bearer auth-code-token" "auth code 
 assert_contains "$AUTH_CODE_ARGS_FILE" "browser-client" "helper gets client id"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/authorize" "helper gets auth url"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/token" "helper gets token url"
+assert_not_contains "$AUTH_CODE_ARGS_FILE" "--force-login" "default call should not force login"
+run_http_oc --no-interactive -c collectionA --auth-no-cache -n browser
+assert_contains "$OC_STDOUT" "Authorization: Bearer auth-code-token" "auth code bearer token with auth-no-cache"
+assert_contains "$AUTH_CODE_ARGS_FILE" "--force-login" "auth-no-cache should pass --force-login to helper"
 
 # ---------- Test 23: interactive fzf can choose collection and request ----------
 echo "test 23: fzf selection"
@@ -620,5 +624,43 @@ if command -v script >/dev/null 2>&1; then
 else
 	echo "skip: script command not available"
 fi
+
+# ---------- Test 24: --auth-no-cache forces fresh token ----------
+echo "test 24: auth-no-cache forces fresh token"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: tokenUrl
+    value: https://auth.example.com/token
+  - name: clientId
+    value: my-client
+  - name: clientSecret
+    value: my-secret
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: "{{tokenUrl}}"
+    clientId: "{{clientId}}"
+    clientSecret: "{{clientSecret}}"
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "first call should get token"
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "first call should request token"
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "second call from cache"
+assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "second call should use cache"
+run_http_oc --no-interactive -c collectionA --auth-no-cache -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "auth-no-cache should get token"
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "auth-no-cache should force a new token request"
 
 echo "OK"
