@@ -527,7 +527,7 @@ request:
   url: https://api.example.com/secure
 YAML
 run_http_oc --no-interactive -c collectionA -n secure
-assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "bearer token from oauth stub"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "bearer token from oauth stub"
 assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "token endpoint should be called"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "client_credentials grant should be requested"
 assert_contains "$OC_CURL_ARGS" "client_id=my-client" "client id should be form-encoded"
@@ -547,14 +547,14 @@ cache_mode="$(stat -f %Lp "$cache_file")"
 # ---------- Test 20: oauth2 token cache is reused ----------
 echo "test 20: oauth2 cache reused"
 run_http_oc --no-interactive -c collectionA -n secure
-assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "cached bearer token reused"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "cached bearer token reused"
 assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "cache reuse should avoid a second token request"
 
 # ---------- Test 21: malformed oauth2 cache is treated as a miss ----------
 echo "test 21: malformed oauth2 cache is treated as a miss"
 printf '{"access_token":"cached-token","expires_at":"not-a-number"}\n' >"$cache_file"
 run_http_oc --no-interactive -c collectionA -n secure
-assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "malformed cache should fall back to a fresh token"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "malformed cache should fall back to a fresh token"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "malformed cache should trigger a new token request"
 
 # ---------- Test 22: oauth2 authorization code calls helper and adds bearer ----------
@@ -588,13 +588,13 @@ request:
   url: https://api.example.com/browser
 YAML
 run_http_oc --no-interactive -c collectionA -n browser
-assert_contains "$OC_STDOUT" "Authorization: Bearer auth-code-token" "auth code bearer token"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "auth code bearer token"
 assert_contains "$AUTH_CODE_ARGS_FILE" "browser-client" "helper gets client id"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/authorize" "helper gets auth url"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/token" "helper gets token url"
 assert_not_contains "$AUTH_CODE_ARGS_FILE" "--force-login" "default call should not force login"
 run_http_oc --no-interactive -c collectionA --auth-no-cache -n browser
-assert_contains "$OC_STDOUT" "Authorization: Bearer auth-code-token" "auth code bearer token with auth-no-cache"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "auth code bearer token with auth-no-cache"
 assert_contains "$AUTH_CODE_ARGS_FILE" "--force-login" "auth-no-cache should pass --force-login to helper"
 
 # ---------- Test 23: interactive fzf can choose collection and request ----------
@@ -625,8 +625,51 @@ else
 	echo "skip: script command not available"
 fi
 
-# ---------- Test 24: --auth-no-cache forces fresh token ----------
-echo "test 24: auth-no-cache forces fresh token"
+# ---------- Test 24: equivalent command is printed even on failure ----------
+echo "test 24: equivalent command on failure"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: development
+      variables:
+        - name: baseUrl
+          value: https://dev.example.com
+request:
+  auth:
+    type: basic
+YAML
+cat >"$OC_ROOT/collectionA/requests/ping.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: "{{baseUrl}}/ping"
+YAML
+cat >"$OC_BIN/fzf" <<'STUB'
+#!/usr/bin/env bash
+IFS= read -r first
+printf '%s\n' "$first"
+STUB
+chmod +x "$OC_BIN/fzf"
+if command -v script >/dev/null 2>&1; then
+	set +e
+	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	status=$?
+	set -e
+	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development ping" "equivalent command should appear even when auth fails"
+	[ "$status" -ne 0 ] || {
+		echo "FAIL: expected non-zero exit" >&2
+		exit 1
+	}
+else
+	echo "skip: script command not available"
+fi
+
+# ---------- Test 25: --auth-no-cache forces fresh token ----------
+echo "test 25: auth-no-cache forces fresh token"
 setup_oc_tmp
 mkdir -p "$OC_ROOT/collectionA/requests"
 cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
@@ -654,13 +697,13 @@ request:
   url: https://api.example.com/secure
 YAML
 run_http_oc --no-interactive -c collectionA -n secure
-assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "first call should get token"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "first call should get token"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "first call should request token"
 run_http_oc --no-interactive -c collectionA -n secure
-assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "second call from cache"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "second call from cache"
 assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "second call should use cache"
 run_http_oc --no-interactive -c collectionA --auth-no-cache -n secure
-assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "auth-no-cache should get token"
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "auth-no-cache should get token"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "auth-no-cache should force a new token request"
 
 echo "OK"

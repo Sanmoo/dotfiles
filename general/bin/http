@@ -261,7 +261,15 @@ def build_curl_args(args, base_url, variables=None):
 
 
 def format_curl_command(curl_args):
-    return " ".join(shlex.quote(a) for a in curl_args)
+    return "curl " + " ".join(shlex.quote(a) for a in curl_args)
+
+
+def mask_bearer_token(line):
+    return re.sub(
+        r"(Authorization: Bearer )\S+",
+        r"\1***",
+        line,
+    )
 
 
 OC_MANIFEST_NAMES = (
@@ -821,23 +829,32 @@ def build_basic_oc_args(args, request_doc, variables):
     return make_direct_args_from_oc(method, url, headers, queries, body_value, args)
 
 
-def print_oc_summary(collection, environment, request, direct_args):
+def build_equivalent_command(collection_name, env_name, request_name, cli_vars=None):
+    cmd = ["http", "oc", "-c", collection_name]
+    if env_name:
+        cmd += ["-e", env_name]
+    if cli_vars:
+        var_pairs = ",".join(f"{k}={v}" for k, v in sorted(cli_vars.items()))
+        cmd += ["-v", var_pairs]
+    cmd.append(request_name)
+    return " ".join(cmd)
+
+
+def print_oc_summary(collection, environment, request, direct_args, cli_vars=None):
     env_name = environment.get("name") if environment else ""
     print(f"Collection: {collection['name']}")
     if env_name:
         print(f"Environment: {env_name}")
     print(f"Request: {request['name']}")
     print(f"{direct_args.method.upper()} {direct_args.base_url}")
-    cmd = ["http", "oc", "-c", collection["name"]]
-    if env_name:
-        cmd += ["-e", env_name]
-    cmd.append(request["name"])
-    print(f"Comando equivalente: {' '.join(cmd)}")
+    cmd = build_equivalent_command(collection["name"], env_name, request["name"], cli_vars)
+    print(f"Comando equivalente: {cmd}")
 
 
 def main_oc(args):
     global OC_INTERACTIVE_USED
     OC_INTERACTIVE_USED = False
+    equivalent_cmd = None
     try:
         interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
         config = load_httprc(Path.home())
@@ -849,6 +866,12 @@ def main_oc(args):
         environment = select_environment(environments, args.environment, interactive)
         cli_vars = parse_oc_vars(args.vars)
         variables = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
+
+        env_name = environment.get("name") if environment else ""
+        equivalent_cmd = build_equivalent_command(
+            collection["name"], env_name, request["name"], cli_vars,
+        )
+
         auth = get_oc_auth(collection["manifest"], request["data"])
         validate_supported_oc_auth(auth)
         token = resolve_oauth2_token(collection, environment, auth, variables,
@@ -857,16 +880,19 @@ def main_oc(args):
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
         if OC_INTERACTIVE_USED:
-            print_oc_summary(collection, environment, request, direct_args)
+            print_oc_summary(collection, environment, request, direct_args, cli_vars)
         curl_args = build_curl_args(direct_args, direct_args.base_url)
         if args.dry_run:
-            print(format_curl_command(curl_args))
+            print(mask_bearer_token(format_curl_command(curl_args)))
             return 0
         result = subprocess.run(["curl", *curl_args])
         return result.returncode
     except KeyboardInterrupt:
         print(file=sys.stderr)
         return 130
+    finally:
+        if OC_INTERACTIVE_USED and equivalent_cmd:
+            print(f"Comando equivalente: {equivalent_cmd}")
 
 
 def main(argv=None):
