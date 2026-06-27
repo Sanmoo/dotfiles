@@ -266,7 +266,7 @@ def format_curl_command(curl_args):
 
 def mask_bearer_token(line):
     return re.sub(
-        r"(Authorization: Bearer )\S+",
+        r"(Authorization: Bearer )\S+?(?=\s|')",
         r"\1***",
         line,
     )
@@ -559,6 +559,7 @@ def prompt_missing_variables(missing):
 
 
 def resolve_oc_variables(collection, request, environment, cli_vars, interactive):
+    """Resolve all variables and return (resolved_vars, prompted_vars)."""
     variables = {}
     variables.update(get_collection_variables(collection["manifest"]))
     variables.update(get_request_variables(request["data"]))
@@ -566,12 +567,14 @@ def resolve_oc_variables(collection, request, environment, cli_vars, interactive
         variables.update(variables_list_to_dict(environment.get("variables")))
     variables.update(cli_vars)
     missing = collect_missing_variables(request["data"], variables)
+    prompted = {}
     if missing:
         if interactive:
-            variables.update(prompt_missing_variables(missing))
+            prompted = prompt_missing_variables(missing)
+            variables.update(prompted)
         else:
             die("missing variables: " + ", ".join(sorted(missing)))
-    return variables
+    return variables, prompted
 
 
 def get_oc_auth(collection_manifest, request_doc):
@@ -855,6 +858,7 @@ def main_oc(args):
     global OC_INTERACTIVE_USED
     OC_INTERACTIVE_USED = False
     equivalent_cmd = None
+    summary_printed = False
     try:
         interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
         config = load_httprc(Path.home())
@@ -865,11 +869,13 @@ def main_oc(args):
         environments = get_environments(collection["manifest"])
         environment = select_environment(environments, args.environment, interactive)
         cli_vars = parse_oc_vars(args.vars)
-        variables = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
+        variables, prompted = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
+        effective_vars = dict(cli_vars)
+        effective_vars.update(prompted)
 
         env_name = environment.get("name") if environment else ""
         equivalent_cmd = build_equivalent_command(
-            collection["name"], env_name, request["name"], cli_vars,
+            collection["name"], env_name, request["name"], effective_vars,
         )
 
         auth = get_oc_auth(collection["manifest"], request["data"])
@@ -880,7 +886,8 @@ def main_oc(args):
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
         if OC_INTERACTIVE_USED:
-            print_oc_summary(collection, environment, request, direct_args, cli_vars)
+            print_oc_summary(collection, environment, request, direct_args, effective_vars)
+            summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)
         if args.dry_run:
             print(mask_bearer_token(format_curl_command(curl_args)))
@@ -891,7 +898,7 @@ def main_oc(args):
         print(file=sys.stderr)
         return 130
     finally:
-        if OC_INTERACTIVE_USED and equivalent_cmd:
+        if OC_INTERACTIVE_USED and equivalent_cmd and not summary_printed:
             print(f"Comando equivalente: {equivalent_cmd}")
 
 

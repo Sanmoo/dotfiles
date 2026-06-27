@@ -528,6 +528,7 @@ request:
 YAML
 run_http_oc --no-interactive -c collectionA -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "bearer token from oauth stub"
+assert_contains "$OC_STDOUT" "'Authorization: Bearer ***'" "closing quote should be preserved on masked bearer header"
 assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "token endpoint should be called"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "client_credentials grant should be requested"
 assert_contains "$OC_CURL_ARGS" "client_id=my-client" "client id should be form-encoded"
@@ -589,6 +590,7 @@ request:
 YAML
 run_http_oc --no-interactive -c collectionA -n browser
 assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "auth code bearer token"
+assert_contains "$OC_STDOUT" "'Authorization: Bearer ***'" "closing quote should be preserved on masked bearer header (auth code)"
 assert_contains "$AUTH_CODE_ARGS_FILE" "browser-client" "helper gets client id"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/authorize" "helper gets auth url"
 assert_contains "$AUTH_CODE_ARGS_FILE" "https://auth.example.com/token" "helper gets token url"
@@ -705,5 +707,75 @@ assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "second call
 run_http_oc --no-interactive -c collectionA --auth-no-cache -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "auth-no-cache should get token"
 assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "auth-no-cache should force a new token request"
+
+# ---------- Test 26: -v flag appears in equivalent command ----------
+echo "test 26: -v in equivalent command"
+setup_oc_tmp
+write_basic_collection
+cat >"$OC_BIN/fzf" <<'STUB'
+#!/usr/bin/env bash
+IFS= read -r first
+printf '%s\n' "$first"
+STUB
+chmod +x "$OC_BIN/fzf"
+if command -v script >/dev/null 2>&1; then
+	set +e
+	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n -v "customerId=cli-override" >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	status=$?
+	set -e
+	[ "$status" -eq 0 ] || {
+		echo "FAIL: interactive fzf command with -v failed" >&2
+		cat "$OC_TMPDIR/script.err" >&2
+		exit 1
+	}
+	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development -v customerId=cli-override get-smart-conditions" "equivalent command should include -v"
+else
+	echo "skip: script command not available"
+fi
+
+# ---------- Test 27: interactively prompted variable appears in equivalent command ----------
+echo "test 27: prompted variable in equivalent command"
+python3 <<'PYEOF'
+import importlib.machinery, sys, builtins, os
+loader = importlib.machinery.SourceFileLoader('http', 'general/bin/http')
+http = loader.load_module()
+collection_manifest = {
+    "info": {"name": "test-collection"},
+    "config": {"environments": []},
+}
+request_data = {
+    "request": {"method": "GET", "url": "https://api.example.com/{{apiToken}}"},
+}
+environment = {"name": "development"}
+cli_vars = {"x": "1"}
+original_input = builtins.input
+responses = iter(["my-token-123"])
+def fake_input(prompt=""):
+    try:
+        val = next(responses)
+        return val
+    except StopIteration:
+        return original_input(prompt)
+builtins.input = fake_input
+try:
+    variables, prompted = http.resolve_oc_variables(
+        collection={"manifest": collection_manifest},
+        request={"data": request_data},
+        environment=environment,
+        cli_vars=cli_vars,
+        interactive=True,
+    )
+finally:
+    builtins.input = original_input
+assert "apiToken" in prompted, "prompted should contain apiToken"
+assert prompted["apiToken"] == "my-token-123", f"expected my-token-123, got {prompted['apiToken']}"
+effective = dict(cli_vars)
+effective.update(prompted)
+cmd = http.build_equivalent_command("test-collection", "development", "my-request", effective)
+assert "-v" in cmd, f"equivalent command should include -v: {cmd}"
+assert "x=1" in cmd, f"equivalent command should include cli var: {cmd}"
+assert "apiToken=my-token-123" in cmd, f"equivalent command should include prompted var: {cmd}"
+print("OK")
+PYEOF
 
 echo "OK"
