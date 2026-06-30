@@ -30,9 +30,13 @@ yellow = "#fabd2f"
 # Most reliable bindings are plain keys, ctrl+letter, esc/tab/enter, and function keys.
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 prefix = "ctrl+a"
-next_tab = "ctrl+]"     # optional, unset by default
+next_tab = "ctrl+]" # optional, unset by default
 previous_tab = "ctrl+[" # optional, unset by default
-last_pane = ""          # disabled; prefix+a is used for last focused tab
+switch_tab = [
+  "prefix+1..9",
+  "ctrl+1..9",
+] # both prefix+1..9 and ctrl+1..9 switch tabs
+last_pane = "" # disabled; prefix+a is used for last focused tab
 # prefix+/ is remapped below to a fuzzy pane picker over workspace / tab / pane.
 # goto = "prefix+/"     # open pane/panel search
 
@@ -86,7 +90,7 @@ description = "fuzzy focus pane by workspace/tab/pane"
 # Optional modifier-only shortcuts expanded over number keys 1-9.
 # Empty means disabled. Examples: "ctrl", "ctrl+shift", "alt".
 [keys.indexed]
-tabs = "ctrl"             # e.g. "ctrl" makes ctrl+1..9 switch tabs
+# tabs = "ctrl" moved to [keys].switch_tab as an array (prefix+1..9 + ctrl+1..9)
 workspaces = "ctrl+shift" # e.g. "ctrl+shift" makes ctrl+shift+1..9 switch workspaces
 agents = "ctrl+shift+alt" # e.g. "alt" makes alt+1..9 focus agent rows
 
