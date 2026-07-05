@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.80.2",
+  "lastChangelogVersion": "0.80.3",
   "enabledModels": [
     "opencode-go/kimi-k2.6",
     "opencode-go/deepseek-v4-pro",
@@ -9,7 +9,7 @@
     "opencode-go/minimax-m3",
     "opencode-go/kimi-k2.7-code"
   ],
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
