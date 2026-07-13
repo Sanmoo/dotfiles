@@ -1,6 +1,6 @@
 ---
 name: jira-issue-formatting
-description: Use when creating or updating Jira issue descriptions through MCP/API, especially with sections, bullets, inline paths, acceptance criteria, YAML/code blocks, or subtasks.
+description: Use when creating or updating Jira issue descriptions or links through MCP/API, especially with sections, bullets, inline paths, acceptance criteria, YAML/code blocks, subtasks, or issue dependencies.
 ---
 
 # Jira Issue Formatting
@@ -180,6 +180,27 @@ tables:
 - If the MCP tool schema says `description` is a Markdown string, send Markdown string, not Atlassian Document Format JSON.
 - Use ADF only when the tool explicitly requires ADF or raw Jira REST v3 document objects.
 - For Jira projects localized in Portuguese, issue types may also be localized, e.g. `Tarefa` and `Subtarefa`.
+
+## Issue Links and Dependencies
+
+For `jira_jira_create_issue_link` with `link_type: "Blocks"`, set the issue that **blocks** as `inward_issue_key` and the issue that **is blocked by it** as `outward_issue_key`.
+
+Example dependency chain: `VAN-962` must finish before `VAN-963`.
+
+```json
+{
+  "link_type": "Blocks",
+  "inward_issue_key": "VAN-962",
+  "outward_issue_key": "VAN-963"
+}
+```
+
+Expected Jira wording:
+
+- `VAN-962` **blocks** `VAN-963`.
+- `VAN-963` **is blocked by** `VAN-962`.
+
+Do not invert these fields. If the intended blocked issue shows the predecessor as `outward_issue`, remove the link and recreate it with the predecessor as `inward_issue_key`.
 
 ## Common Mistakes
 
