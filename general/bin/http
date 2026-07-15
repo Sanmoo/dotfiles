@@ -588,11 +588,54 @@ def validate_optional_query_selection(request_doc, requested, names):
         die(f"query parameter not found: {name}; available: {available}")
 
 
-def collect_missing_variables(request_doc, variables):
+def optional_query_is_covered(param, requested, names):
+    if not requested:
+        return False
+    if not names:
+        return True
+    name = param.get("name")
+    return name is not None and str(name) in names
+
+
+def resolve_optional_queries(request_doc, cli_vars, variables, requested, names, interactive):
+    prompted = {}
+    disabled_indexes = set()
+    prompt_cache = {}
+    for index, param in enumerate(get_request_params(request_doc)):
+        if param.get("disabled") is True or param.get("type", "query") != "query":
+            continue
+        if not optional_query_is_covered(param, requested, names):
+            continue
+        needed = find_template_variables(param.get("name", ""))
+        needed.update(find_template_variables(param.get("value", "")))
+        disable = False
+        for variable_name in sorted(needed):
+            if variable_name in cli_vars:
+                value = cli_vars[variable_name]
+            elif interactive:
+                if variable_name not in prompt_cache:
+                    prompt_cache[variable_name] = input(f"value for {variable_name} (leave empty to disable): ")
+                value = prompt_cache[variable_name]
+                prompted[variable_name] = value
+            else:
+                value = ""
+            if value == "":
+                disable = True
+            else:
+                variables[variable_name] = value
+        if disable:
+            disabled_indexes.add(index)
+    return variables, prompted, disabled_indexes
+
+
+def collect_missing_variables(request_doc, variables, disabled_query_indexes=None):
     request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
     found = set()
     path_param_names = set()
-    for param in request.get("params") or []:
+    disabled_query_indexes = disabled_query_indexes or set()
+    for index, param in enumerate(request.get("params") or []):
+        if index in disabled_query_indexes:
+            continue
         if not isinstance(param, dict) or param.get("disabled") is True:
             continue
         if param.get("type") == "path":
@@ -626,23 +669,28 @@ def prompt_missing_variables(missing):
     return values
 
 
-def resolve_oc_variables(collection, request, environment, cli_vars, interactive):
-    """Resolve all variables and return (resolved_vars, prompted_vars)."""
+def resolve_oc_variables(collection, request, environment, cli_vars, interactive,
+                         optional_queries_requested=False, optional_query_names=None):
+    """Resolve all variables and return (resolved_vars, prompted_vars, disabled indexes)."""
     variables = {}
     variables.update(get_collection_variables(collection["manifest"]))
     variables.update(get_request_variables(request["data"]))
     if environment:
         variables.update(variables_list_to_dict(environment.get("variables")))
     variables.update(cli_vars)
-    missing = collect_missing_variables(request["data"], variables)
-    prompted = {}
+    variables, optional_prompted, disabled_indexes = resolve_optional_queries(
+        request["data"], cli_vars, variables, optional_queries_requested,
+        optional_query_names or set(), interactive,
+    )
+    missing = collect_missing_variables(request["data"], variables, disabled_indexes)
+    prompted = dict(optional_prompted)
     if missing:
         if interactive:
             prompted = prompt_missing_variables(missing)
             variables.update(prompted)
         else:
             die("missing variables: " + ", ".join(sorted(missing)))
-    return variables, prompted
+    return variables, prompted, disabled_indexes
 
 
 def get_oc_auth(collection_manifest, request_doc):
@@ -855,8 +903,9 @@ def add_path_params_to_variables(request_doc, variables):
     return out
 
 
-def build_basic_oc_args(args, request_doc, variables):
+def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=None):
     request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    disabled_query_indexes = disabled_query_indexes or set()
     variables = add_path_params_to_variables(request_doc, variables)
     method = str(request.get("method") or "GET")
     url = apply_template(str(request.get("url") or ""), variables)
@@ -872,7 +921,9 @@ def build_basic_oc_args(args, request_doc, variables):
             continue
         headers.append(f"{apply_template(str(name), variables)}: {apply_template(str(value), variables)}")
     queries = []
-    for param in request.get("params") or []:
+    for index, param in enumerate(request.get("params") or []):
+        if index in disabled_query_indexes:
+            continue
         if not isinstance(param, dict) or param.get("disabled") is True:
             continue
         if param.get("type") == "path":
@@ -934,10 +985,15 @@ def main_oc(args):
         collection = select_collection(collections, args.collection, interactive)
         requests = discover_requests(collection)
         request = select_request(requests, args.request_name, interactive)
+        optional_requested, optional_names = parse_optional_query_selection(args.disable_queries_when_not_provided)
+        validate_optional_query_selection(request["data"], optional_requested, optional_names)
         environments = get_environments(collection["manifest"])
         environment = select_environment(environments, args.environment, interactive)
         cli_vars = parse_oc_vars(args.vars)
-        variables, prompted = resolve_oc_variables(collection, request, environment, cli_vars, interactive)
+        variables, prompted, disabled_query_indexes = resolve_oc_variables(
+            collection, request, environment, cli_vars, interactive,
+            optional_requested, optional_names,
+        )
         effective_vars = dict(cli_vars)
         effective_vars.update(prompted)
 
@@ -950,7 +1006,9 @@ def main_oc(args):
         validate_supported_oc_auth(auth)
         token = resolve_oauth2_token(collection, environment, auth, variables,
                                       force=args.auth_no_cache)
-        direct_args = build_basic_oc_args(args, request["data"], variables)
+        direct_args = build_basic_oc_args(
+            args, request["data"], variables, disabled_query_indexes,
+        )
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
         if OC_INTERACTIVE_USED:

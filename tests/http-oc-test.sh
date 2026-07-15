@@ -758,7 +758,7 @@ def fake_input(prompt=""):
         return original_input(prompt)
 builtins.input = fake_input
 try:
-    variables, prompted = http.resolve_oc_variables(
+    variables, prompted, disabled_indexes = http.resolve_oc_variables(
         collection={"manifest": collection_manifest},
         request={"data": request_data},
         environment=environment,
@@ -801,6 +801,21 @@ args = http.parse_args([
 assert http.parse_optional_query_selection(args.disable_queries_when_not_provided) == (
     True, {"page", "limit", "filter"},
 )
+
+# ---------- Tests 29-32: optional query resolution ----------
+request_doc = {"request": {"url": "https://example/{{shared}}", "params": [
+    {"name": "filter", "type": "query", "value": "{{status}}/{{owner}}"},
+    {"name": "filter", "type": "query", "value": "mirror={{status}}"},
+    {"name": "format", "type": "query", "value": "json"},
+]}}
+vars_out, prompted, disabled = http.resolve_optional_queries(
+    request_doc, {"status": ""}, {}, True, {"filter"}, False,
+)
+assert disabled == {0, 1}, "empty shared query variables disable duplicate covered queries"
+assert http.optional_query_is_covered(request_doc["request"]["params"][2], True, {"format"})
+assert not http.optional_query_is_covered(request_doc["request"]["params"][2], False, set())
+assert "shared" in http.collect_missing_variables(request_doc, {}, disabled), \
+    "omitted query must not hide shared URL requirements"
 
 request_doc = {"request": {"params": [
     {"name": "page", "type": "query", "value": "{{pageNumber}}"},
