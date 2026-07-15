@@ -778,4 +778,49 @@ assert "apiToken=my-token-123" in cmd, f"equivalent command should include promp
 print("OK")
 PYEOF
 
+# ---------- Test 28: dqwnp parser and validation ----------
+echo "test 28: dqwnp parser and validation"
+python3 <<'PYEOF'
+import importlib.machinery
+
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+
+args = http.parse_args(["oc", "get-users", "--dqwnp"])
+assert args.disable_queries_when_not_provided == [http.OC_ALL_QUERIES_SENTINEL]
+assert args.request_name == "get-users"
+assert http.parse_optional_query_selection(args.disable_queries_when_not_provided) == (True, set())
+
+args = http.parse_args(["oc", "--dqwnp", "get-users"])
+assert args.disable_queries_when_not_provided == [http.OC_ALL_QUERIES_SENTINEL]
+assert args.request_name == "get-users"
+
+args = http.parse_args([
+    "oc", "get-users", "--dqwnp=page,limit",
+    "--disable-query-when-not-provided=filter",
+])
+assert http.parse_optional_query_selection(args.disable_queries_when_not_provided) == (
+    True, {"page", "limit", "filter"},
+)
+
+request_doc = {"request": {"params": [
+    {"name": "page", "type": "query", "value": "{{pageNumber}}"},
+    {"name": "customerId", "type": "path", "value": "{{customerId}}"},
+]}}
+http.validate_optional_query_selection(request_doc, True, {"page"})
+
+try:
+    http.validate_optional_query_selection(request_doc, True, {"pages"})
+except SystemExit as error:
+    assert error.code == 2
+else:
+    raise AssertionError("unknown query should fail")
+
+try:
+    http.validate_optional_query_selection(request_doc, True, {"customerId"})
+except SystemExit as error:
+    assert error.code == 2
+else:
+    raise AssertionError("path parameter should fail")
+PYEOF
+
 echo "OK"

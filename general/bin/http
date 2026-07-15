@@ -21,6 +21,11 @@ except ImportError:  # pragma: no cover - exercised manually in environments wit
 
 _TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
 _PROCESS_ENV_RE = re.compile(r"\{\{process\.env\.(\w+)\}\}")
+OC_ALL_QUERIES_SENTINEL = "__HTTP_OC_ALL_QUERIES__"
+OC_OPTIONAL_QUERY_FLAGS = (
+    "--disable-query-when-not-provided",
+    "--dqwnp",
+)
 
 
 def expand_process_env(text, warn=True):
@@ -129,6 +134,14 @@ def _shared_args():
 SHARED_ARGS = _shared_args()
 
 
+def normalize_oc_optional_query_argv(argv):
+    return [
+        f"{token}={OC_ALL_QUERIES_SENTINEL}"
+        if token in OC_OPTIONAL_QUERY_FLAGS else token
+        for token in argv
+    ]
+
+
 def make_oc_parser():
     p = argparse.ArgumentParser(prog="http oc", description="Run OpenCollection request")
     p.add_argument("request_name", nargs="?", default=None)
@@ -142,6 +155,16 @@ def make_oc_parser():
     p.add_argument("-L", "--follow", dest="follow", action="store_true")
     p.add_argument("-H", "--header", dest="headers", action="append", default=[])
     p.add_argument("-q", "--query", dest="queries", action="append", default=[])
+    p.add_argument(
+        *OC_OPTIONAL_QUERY_FLAGS,
+        dest="disable_queries_when_not_provided",
+        action="append",
+        metavar="QUERY[,QUERY...]",
+        help=(
+            "omit selected query parameters when their variables are not "
+            "explicitly provided; omit QUERY to apply to all queries"
+        ),
+    )
     p.add_argument("--auth-no-cache", dest="auth_no_cache", action="store_true",
                    help="force OAuth token regeneration, ignoring the cache")
     return p
@@ -166,7 +189,7 @@ def parse_oc_vars(raw_values):
 
 def parse_args(argv):
     if argv and argv[0] == "oc":
-        args = make_oc_parser().parse_args(argv[1:])
+        args = make_oc_parser().parse_args(normalize_oc_optional_query_argv(argv[1:]))
         args.method = "oc"
         return args
     parser = argparse.ArgumentParser(prog="http", description=__doc__)
@@ -518,6 +541,51 @@ def find_template_variables(value):
         for child in value:
             found.update(find_template_variables(child))
     return found
+
+
+def parse_optional_query_selection(raw_values):
+    if raw_values is None:
+        return False, set()
+    names = set()
+    for raw in raw_values:
+        if raw == OC_ALL_QUERIES_SENTINEL:
+            return True, set()
+        names.update(name for name in raw.split(",") if name)
+    return True, names
+
+
+def get_request_params(request_doc):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    return [param for param in request.get("params") or [] if isinstance(param, dict)]
+
+
+def get_request_query_params(request_doc):
+    return [
+        param for param in get_request_params(request_doc)
+        if param.get("disabled") is not True
+        and param.get("type", "query") == "query"
+    ]
+
+
+def validate_optional_query_selection(request_doc, requested, names):
+    if not requested or not names:
+        return
+    params = get_request_params(request_doc)
+    query_names = {
+        str(param.get("name")) for param in get_request_query_params(request_doc)
+        if param.get("name") is not None
+    }
+    all_names = {
+        str(param.get("name")) for param in params
+        if param.get("name") is not None
+    }
+    for name in sorted(names):
+        if name in query_names:
+            continue
+        if name in all_names:
+            die("parameter is not a query parameter: " + name)
+        available = ", ".join(sorted(query_names)) or "(none)"
+        die(f"query parameter not found: {name}; available: {available}")
 
 
 def collect_missing_variables(request_doc, variables):
