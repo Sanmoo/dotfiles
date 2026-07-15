@@ -1016,13 +1016,13 @@ def main_oc(args):
         request = select_request(requests, args.request_name, interactive)
         optional_requested, optional_names = parse_optional_query_selection(args.disable_queries_when_not_provided)
         validate_optional_query_selection(request["data"], optional_requested, optional_names)
+        environments = get_environments(collection["manifest"])
+        environment = select_environment(environments, args.environment, interactive)
         query_params = get_request_query_params(request["data"])
         if interactive and query_params and not optional_requested:
             if prompt_enable_optional_queries():
                 optional_requested = True
                 optional_names = set()
-        environments = get_environments(collection["manifest"])
-        environment = select_environment(environments, args.environment, interactive)
         cli_vars = parse_oc_vars(args.vars)
         variables, prompted, disabled_query_indexes = resolve_oc_variables(
             collection, request, environment, cli_vars, interactive,

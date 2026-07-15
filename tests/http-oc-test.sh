@@ -943,6 +943,62 @@ YAML
 run_http_oc --no-interactive -c collectionA -n --dqwnp=filter -v status= filter
 assert_not_contains "$OC_STDOUT" "filter=" "empty value should omit every duplicate named query"
 
+# ---------- Test 32: interactive dqwnp main_oc flow ----------
+echo "test 32: interactive dqwnp main_oc flow"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: development
+      variables:
+        - name: baseUrl
+          value: https://dev.example.com
+    - name: staging
+      variables:
+        - name: baseUrl
+          value: https://staging.example.com
+YAML
+cat >"$OC_ROOT/collectionA/requests/search.yaml" <<'YAML'
+type: http
+name: Search
+request:
+  method: GET
+  url: "{{baseUrl}}/search"
+  params:
+    - name: page
+      type: query
+      value: "{{pageNumber}}"
+YAML
+cat >"$OC_BIN/fzf" <<'STUB'
+#!/usr/bin/env bash
+IFS= read -r first
+printf '%s\n' "$first"
+STUB
+chmod +x "$OC_BIN/fzf"
+if command -v script >/dev/null 2>&1; then
+	set +e
+	{
+		printf 'y\n\n'
+		sleep 1
+	} | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	status=$?
+	set -e
+	[ "$status" -eq 0 ] || {
+		cat "$OC_TMPDIR/script.err" >&2
+		exit 1
+	}
+	assert_contains "$OC_TMPDIR/script.out" "Allow disabling query parameters with an empty value? [y/N]" "activation prompt should be shown"
+	assert_contains "$OC_TMPDIR/script.out" "value for pageNumber (leave empty to disable)" "optional value prompt should be shown"
+	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development --dqwnp search" "equivalent command should thread optional selection"
+	assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/search" "selected environment should be used"
+	assert_not_contains "$OC_TMPDIR/script.out" "page=" "empty optional query should be omitted"
+else
+	echo "skip: script command not available"
+fi
+
 # ---------- Test 33: interactive dqwnp activation and empty omission ----------
 echo "test 33: interactive dqwnp activation"
 python3 <<'PYEOF'
