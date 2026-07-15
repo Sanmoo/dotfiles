@@ -663,6 +663,15 @@ def collect_missing_variables(request_doc, variables, disabled_query_indexes=Non
     return found - set(variables)
 
 
+def prompt_enable_optional_queries():
+    global OC_INTERACTIVE_USED
+    OC_INTERACTIVE_USED = True
+    answer = input(
+        "Allow disabling query parameters with an empty value? [y/N] "
+    ).strip().lower()
+    return answer in ("y", "yes")
+
+
 def prompt_missing_variables(missing):
     global OC_INTERACTIVE_USED
     values = {}
@@ -958,25 +967,38 @@ def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=Non
     return make_direct_args_from_oc(method, url, headers, queries, body_value, args)
 
 
-def build_equivalent_command(collection_name, env_name, request_name, cli_vars=None):
+def build_equivalent_command(
+    collection_name, env_name, request_name, cli_vars=None,
+    optional_queries_requested=False, optional_query_names=None,
+):
     cmd = ["http", "oc", "-c", collection_name]
     if env_name:
         cmd += ["-e", env_name]
     if cli_vars:
         var_pairs = ",".join(f"{k}={v}" for k, v in sorted(cli_vars.items()))
         cmd += ["-v", var_pairs]
+    if optional_queries_requested:
+        if optional_query_names:
+            names = ",".join(sorted(optional_query_names))
+            cmd.append(f"--dqwnp={names}")
+        else:
+            cmd.append("--dqwnp")
     cmd.append(request_name)
     return " ".join(cmd)
 
 
-def print_oc_summary(collection, environment, request, direct_args, cli_vars=None):
+def print_oc_summary(collection, environment, request, direct_args, cli_vars=None,
+                     optional_queries_requested=False, optional_query_names=None):
     env_name = environment.get("name") if environment else ""
     print(f"Collection: {collection['name']}")
     if env_name:
         print(f"Environment: {env_name}")
     print(f"Request: {request['name']}")
     print(f"{direct_args.method.upper()} {direct_args.base_url}")
-    cmd = build_equivalent_command(collection["name"], env_name, request["name"], cli_vars)
+    cmd = build_equivalent_command(
+        collection["name"], env_name, request["name"], cli_vars,
+        optional_queries_requested, optional_query_names,
+    )
     print(f"Comando equivalente: {cmd}")
 
 
@@ -994,6 +1016,11 @@ def main_oc(args):
         request = select_request(requests, args.request_name, interactive)
         optional_requested, optional_names = parse_optional_query_selection(args.disable_queries_when_not_provided)
         validate_optional_query_selection(request["data"], optional_requested, optional_names)
+        query_params = get_request_query_params(request["data"])
+        if interactive and query_params and not optional_requested:
+            if prompt_enable_optional_queries():
+                optional_requested = True
+                optional_names = set()
         environments = get_environments(collection["manifest"])
         environment = select_environment(environments, args.environment, interactive)
         cli_vars = parse_oc_vars(args.vars)
@@ -1001,12 +1028,15 @@ def main_oc(args):
             collection, request, environment, cli_vars, interactive,
             optional_requested, optional_names,
         )
-        effective_vars = dict(cli_vars)
-        effective_vars.update(prompted)
+        effective_vars = {
+            key: value for key, value in {**cli_vars, **prompted}.items()
+            if value != ""
+        }
 
         env_name = environment.get("name") if environment else ""
         equivalent_cmd = build_equivalent_command(
             collection["name"], env_name, request["name"], effective_vars,
+            optional_requested, optional_names,
         )
 
         auth = get_oc_auth(collection["manifest"], request["data"])
@@ -1019,7 +1049,10 @@ def main_oc(args):
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
         if OC_INTERACTIVE_USED:
-            print_oc_summary(collection, environment, request, direct_args, effective_vars)
+            print_oc_summary(
+                collection, environment, request, direct_args, effective_vars,
+                optional_requested, optional_names,
+            )
             summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)
         if args.dry_run:

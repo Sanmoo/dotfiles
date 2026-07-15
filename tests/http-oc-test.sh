@@ -943,4 +943,52 @@ YAML
 run_http_oc --no-interactive -c collectionA -n --dqwnp=filter -v status= filter
 assert_not_contains "$OC_STDOUT" "filter=" "empty value should omit every duplicate named query"
 
+# ---------- Test 33: interactive dqwnp activation and empty omission ----------
+echo "test 33: interactive dqwnp activation"
+python3 <<'PYEOF'
+import builtins
+import importlib.machinery
+
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+responses = iter(["y", ""])
+prompts = []
+def fake_input(prompt=""):
+    prompts.append(prompt)
+    return next(responses)
+
+request_doc = {"request": {
+    "method": "GET",
+    "url": "https://api.example.com/search",
+    "params": [{"name": "page", "type": "query", "value": "{{pageNumber}}"}],
+}}
+original_input = builtins.input
+builtins.input = fake_input
+try:
+    enabled = http.prompt_enable_optional_queries()
+    variables, prompted, disabled = http.resolve_optional_queries(
+        request_doc, {}, {}, enabled, set(), True,
+    )
+finally:
+    builtins.input = original_input
+assert enabled is True
+assert disabled == {0}
+assert prompts == [
+    "Allow disabling query parameters with an empty value? [y/N] ",
+    "value for pageNumber (leave empty to disable): ",
+]
+assert prompted == {"pageNumber": ""}
+cmd = http.build_equivalent_command("collectionA", "development", "search", {}, True, set())
+assert "--dqwnp" in cmd
+responses = iter([""])
+builtins.input = lambda prompt="": next(responses)
+try:
+    assert http.prompt_enable_optional_queries() is False
+finally:
+    builtins.input = original_input
+named_cmd = http.build_equivalent_command(
+    "collectionA", "", "search", {}, True, {"limit", "page"},
+)
+assert "--dqwnp=limit,page" in named_cmd
+PYEOF
+
 echo "OK"
