@@ -28,3 +28,11 @@ The repository test script currently labels the added helper assertions under th
 ## Fix verification
 - `bash tests/http-oc-test.sh` — passed; ends with `OK`.
 - `git diff --check` — passed.
+
+## Remaining review fixes
+- Restored ordinary OC variable resolution: empty `-v name=` values remain resolved when optional-query mode is absent; filtering empty CLI values is now limited to active `--dqwnp` mode.
+- Added end-to-end non-interactive shell integration coverage through `main_oc`, `run_http_oc`, and the curl stub for bare `--dqwnp`, named selection preserving required queries, and duplicate named-query omission from an empty CLI value.
+
+## Review-fix verification
+- `bash tests/http-oc-test.sh` — passed; ends with `OK` (tests 1–31).
+- `git diff --check` — passed.

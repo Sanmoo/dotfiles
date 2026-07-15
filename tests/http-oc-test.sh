@@ -885,4 +885,62 @@ else:
     raise AssertionError("path parameter should fail")
 PYEOF
 
+# ---------- Test 29: dqwnp omits uncovered values non-interactively ----------
+echo "test 29: dqwnp non-interactive omission"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: inheritedPage
+    value: "99"
+YAML
+cat >"$OC_ROOT/collectionA/requests/search.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/search
+  params:
+    - name: page
+      type: query
+      value: "{{inheritedPage}}"
+    - name: limit
+      type: query
+      value: "{{limit}}"
+    - name: format
+      type: query
+      value: json
+YAML
+run_http_oc --no-interactive -c collectionA -n --dqwnp -v limit=20 search
+assert_contains "$OC_STDOUT" "?limit=20&format=json" "explicit and literal queries should remain"
+assert_not_contains "$OC_STDOUT" "page=99" "inherited values must not enable optional queries"
+
+# ---------- Test 30: named dqwnp preserves unselected requirements ----------
+echo "test 30: named dqwnp selection"
+run_http_oc_expect_fail --no-interactive -c collectionA -n --dqwnp=page search
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "limit" "unselected query variable should remain required"
+
+# ---------- Test 31: explicit empty and multiple variables disable query ----------
+echo "test 31: empty and multi-variable query omission"
+cat >"$OC_ROOT/collectionA/requests/filter.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/filter
+  params:
+    - name: filter
+      type: query
+      value: "status:{{status}},owner:{{owner}}"
+    - name: filter
+      type: query
+      value: "mirror:{{status}}"
+YAML
+run_http_oc --no-interactive -c collectionA -n --dqwnp=filter -v status= filter
+assert_not_contains "$OC_STDOUT" "filter=" "empty value should omit every duplicate named query"
+
 echo "OK"
