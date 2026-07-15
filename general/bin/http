@@ -601,7 +601,10 @@ def resolve_optional_queries(request_doc, cli_vars, variables, requested, names,
     prompted = {}
     disabled_indexes = set()
     prompt_cache = {}
-    for index, param in enumerate(get_request_params(request_doc)):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    for index, param in enumerate(request.get("params") or []):
+        if not isinstance(param, dict):
+            continue
         if param.get("disabled") is True or param.get("type", "query") != "query":
             continue
         if not optional_query_is_covered(param, requested, names):
@@ -677,7 +680,7 @@ def resolve_oc_variables(collection, request, environment, cli_vars, interactive
     variables.update(get_request_variables(request["data"]))
     if environment:
         variables.update(variables_list_to_dict(environment.get("variables")))
-    variables.update(cli_vars)
+    variables.update({name: value for name, value in cli_vars.items() if value != ""})
     variables, optional_prompted, disabled_indexes = resolve_optional_queries(
         request["data"], cli_vars, variables, optional_queries_requested,
         optional_query_names or set(), interactive,
@@ -686,8 +689,9 @@ def resolve_oc_variables(collection, request, environment, cli_vars, interactive
     prompted = dict(optional_prompted)
     if missing:
         if interactive:
-            prompted = prompt_missing_variables(missing)
-            variables.update(prompted)
+            required_prompted = prompt_missing_variables(missing)
+            prompted.update(required_prompted)
+            variables.update(required_prompted)
         else:
             die("missing variables: " + ", ".join(sorted(missing)))
     return variables, prompted, disabled_indexes

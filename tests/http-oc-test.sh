@@ -782,6 +782,7 @@ PYEOF
 echo "test 28: dqwnp parser and validation"
 python3 <<'PYEOF'
 import importlib.machinery
+import builtins
 
 http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
 
@@ -815,7 +816,53 @@ assert disabled == {0, 1}, "empty shared query variables disable duplicate cover
 assert http.optional_query_is_covered(request_doc["request"]["params"][2], True, {"format"})
 assert not http.optional_query_is_covered(request_doc["request"]["params"][2], False, set())
 assert "shared" in http.collect_missing_variables(request_doc, {}, disabled), \
-    "omitted query must not hide shared URL requirements"
+"omitted query must not hide shared URL requirements"
+
+# Real construction: a non-dict entry must not shift disabled indexes.
+request_doc = {"request": {"url": "https://example.test", "params": [
+"not-a-param", {"name": "page", "type": "query", "value": "{{page}}"},
+{"name": "format", "type": "query", "value": "json"},
+]}}
+variables, _, disabled = http.resolve_oc_variables(
+{"manifest": {"variables": []}}, {"data": request_doc}, None,
+{"page": ""}, False, True, set(),
+)
+args = type("Args", (), {"headers": [], "queries": [], "data": None,
+                          "include": False, "dry_run": True, "insecure": False,
+                          "follow": False})()
+direct = http.build_basic_oc_args(args, request_doc, variables, disabled)
+assert direct.queries == ["format=json"], f"index mapping failed: {direct.queries}"
+
+# An explicit empty CLI value disables the optional query but remains missing when required.
+request_doc = {"request": {"url": "https://example.test/{{shared}}", "params": [
+{"name": "optional", "type": "query", "value": "{{shared}}"},
+]}}
+try:
+    http.resolve_oc_variables(
+        {"manifest": {"variables": []}}, {"data": request_doc}, None,
+        {"shared": ""}, False, True, set(),
+    )
+except SystemExit as error:
+    assert error.code == 2, "shared empty CLI value must remain required"
+else:
+    raise AssertionError("empty shared CLI value incorrectly satisfied URL")
+
+# Optional prompts must be merged with ordinary required prompts.
+request_doc = {"request": {"url": "https://example.test/{{required}}", "params": [
+{"name": "optional", "type": "query", "value": "{{optional}}"},
+]}}
+responses = iter(["optional-value", "required-value"])
+original_input = builtins.input
+builtins.input = lambda prompt="": next(responses)
+try:
+    variables, prompted, disabled = http.resolve_oc_variables(
+        {"manifest": {"variables": []}}, {"data": request_doc}, None,
+        {}, True, True, set(),
+    )
+finally:
+    builtins.input = original_input
+assert prompted == {"optional": "optional-value", "required": "required-value"}, prompted
+assert disabled == set() and variables["optional"] == "optional-value"
 
 request_doc = {"request": {"params": [
     {"name": "page", "type": "query", "value": "{{pageNumber}}"},
