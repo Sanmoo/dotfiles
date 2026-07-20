@@ -1,4 +1,6 @@
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+export HISTSIZE=10000
+export HISTFILESIZE=100000
 
 # Beads Stuff
 export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH

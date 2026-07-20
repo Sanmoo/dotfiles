@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.80.2",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
-  "defaultThinkingLevel": "low",
+  "lastChangelogVersion": "0.80.10",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "gpt-5.4-mini",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -13,7 +13,9 @@
     "npm:pi-web-access",
     "npm:pi-mcp-adapter",
     "npm:pi-intercom",
-    "npm:pi-token-burden"
+    "npm:pi-token-burden",
+    "npm:pi-prompt-template-model",
+    "npm:@firstpick/pi-extension-stats"
   ],
   "enabledModels": [
     "openai-codex/gpt-5.5",
@@ -21,11 +23,13 @@
     "github-copilot/gpt-5.4-mini",
     "github-copilot/claude-sonnet-4.6",
     "github-copilot/gpt-5.4",
-    "github-copilot/gpt-5.4-nano",
     "opencode-go/minimax-m3",
     "opencode-go/deepseek-v4-flash",
     "opencode-go/deepseek-v4-pro",
-    "github-copilot/gpt-5.5"
+    "github-copilot/gpt-5.5",
+    "openai-codex/gpt-5.6-luna",
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-terra"
   ],
   "theme": "dark"
 }
