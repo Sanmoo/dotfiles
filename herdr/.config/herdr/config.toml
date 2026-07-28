@@ -141,7 +141,7 @@ delivery = "system"
 
 [experimental]
 # Preserve pane screen history across full server restarts.
-pane_history = true
+pane_history = false
 
 # Allow launching herdr from inside a herdr-managed pane.
 # allow_nested = false

@@ -1,3 +1,44 @@
 {
-  "$schema": "https://opencode.ai/config.json"
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": true,
+  "plugin": [
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "@franlol/opencode-md-table-formatter@latest",
+    "@mohak34/opencode-notifier@latest"
+  ],
+  "instructions": [],
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": false
+    },
+    "jira": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "mcp-atlassian"
+      ],
+      "enabled": false,
+      "environment": {
+        "JIRA_URL": "{env:JIRA_URL}",
+        "JIRA_USERNAME": "{env:JIRA_USERNAME}",
+        "JIRA_API_TOKEN": "{env:JIRA_API_TOKEN}"
+      }
+    }
+  },
+  "lsp": {
+    "kotlin-lsp": {
+      "command": [
+        "kotlin-lsp"
+      ],
+      "extensions": [
+        ".kt",
+        ".kts"
+      ]
+    }
+  }
 }
