@@ -19,7 +19,13 @@
     "npm:pi-lens",
     "npm:pi-web-access",
     "npm:pi-mcp-adapter",
-    "npm:pi-intercom"
+    "npm:pi-intercom",
+    "npm:pi-token-burden",
+    "npm:pi-prompt-template-model",
+    "npm:@firstpick/pi-extension-stats",
+    "npm:pi-caveman",
+    "npm:pi-rtk-optimizer",
+    "npm:pi-md-export"
   ],
   "defaultModel": "gpt-5.5",
   "defaultProvider": "openai-codex",
