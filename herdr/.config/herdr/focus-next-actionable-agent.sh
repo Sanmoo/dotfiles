@@ -15,7 +15,7 @@ target="$(jq -r '
       empty
     else
       (($candidates | map(select(. > $focused)) | .[0]) // $candidates[0]) as $idx
-      | ($panes[$idx].terminal_id // $panes[$idx].pane_id)
+      | ($panes[$idx].pane_id // $panes[$idx].terminal_id)
     end
 ' <<<"$json")"
 

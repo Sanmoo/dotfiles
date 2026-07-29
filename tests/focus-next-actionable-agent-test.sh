@@ -95,6 +95,12 @@ run_no_focus_case 'excludes-working-and-non-agent' '{"result":{"panes":[
   {"agent_status":"idle","focused":false,"terminal_id":"not-agent"}
 ]}}'
 
+# pane_id must be preferred over terminal_id when both exist
+run_case 'prefers-pane-id' '{"result":{"panes":[
+  {"agent":"pi","agent_status":"working","focused":true,"terminal_id":"working","pane_id":"w:p0"},
+  {"agent":"pi","agent_status":"idle","focused":false,"terminal_id":"idle-term","pane_id":"w:p1"}
+]}}' 'herdr pane list herdr agent focus w:p1'
+
 if [[ "$failures" -gt 0 ]]; then
 	printf 'FAILED (%d case(s)):\n%s' "$failures" "$failure_list" >&2
 	exit 1
