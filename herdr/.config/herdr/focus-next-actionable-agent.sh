@@ -10,7 +10,7 @@ target="$(jq -r '
   | ([range(0; ($panes | length)) | select($panes[.].focused == true)][0] // -1) as $focused
   | ([range(0; ($panes | length))
       | select(($panes[.].agent // null) != null)
-      | select(($panes[.].agent_status // "") as $s | $s == "blocked" or $s == "done")]) as $candidates
+      | select(($panes[.].agent_status // "") as $s | $s == "idle" or $s == "blocked" or $s == "done")]) as $candidates
   | if ($candidates | length) == 0 then
       empty
     else
