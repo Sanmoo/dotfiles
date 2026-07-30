@@ -34,6 +34,14 @@ case "${MOCK_CASE:-}|${1:-}|${2:-}" in
   multiple\|ecs\|describe-task-definition)
     printf '%s\n' '/ecs/a' '/ecs/b'
     ;;
+  duplicate\|ecs\|describe-services)
+    printf '%s\n' 'arn:task-definition/1'
+    ;;
+  duplicate\|ecs\|describe-task-definition)
+    printf '%s\n' '/ecs/app' '/ecs/app'
+    ;;
+  duplicate\|logs\|tail)
+    ;;
   *)
     printf 'unexpected mock call\n' >&2
     exit 99
@@ -92,5 +100,8 @@ fi
 assert_contains /tmp/ecs-logs-test.out '/ecs/a'
 assert_contains /tmp/ecs-logs-test.out '/ecs/b'
 assert_contains /tmp/ecs-logs-test.out 'multiple'
+
+run_case duplicate cluster-a service-a
+assert_contains "$AWS_CALLS" 'logs tail /ecs/app --follow'
 
 printf 'PASS\n'
