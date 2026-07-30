@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# < 2 )); then
+  printf 'Usage: ecs-logs <cluster> <service> [aws logs tail arguments...]\n' >&2
+  exit 2
+fi
+
+if ! command -v aws >/dev/null 2>&1; then
+  printf 'Error: aws CLI not found\n' >&2
+  exit 127
+fi
+
+cluster=$1
+service=$2
+shift 2
+
+task_definition=$(aws ecs describe-services \
+  --cluster "$cluster" \
+  --services "$service" \
+  --query 'services[0].taskDefinition' \
+  --output text)
+
+if [[ -z "$task_definition" || "$task_definition" == "None" ]]; then
+  printf 'Error: service not found or has no task definition: %s\n' "$service" >&2
+  exit 1
+fi
+
+groups_output=$(aws ecs describe-task-definition \
+  --task-definition "$task_definition" \
+  --query 'taskDefinition.containerDefinitions[].logConfiguration[?logDriver==`awslogs`].options."awslogs-group"' \
+  --output text)
+
+groups=()
+while IFS= read -r group; do
+  [[ -z "$group" || "$group" == "None" ]] && continue
+
+  duplicate=false
+  for existing_group in "${groups[@]}"; do
+    if [[ "$existing_group" == "$group" ]]; then
+      duplicate=true
+      break
+    fi
+  done
+
+  [[ "$duplicate" == true ]] || groups+=("$group")
+done < <(printf '%s\n' "$groups_output" | tr '\t' '\n')
+
+if (( ${#groups[@]} == 0 )); then
+  printf 'Error: no awslogs group configured for service: %s\n' "$service" >&2
+  exit 1
+fi
+
+if (( ${#groups[@]} > 1 )); then
+  printf 'Error: multiple awslogs groups found:\n' >&2
+  printf '  %s\n' "${groups[@]}" >&2
+  exit 1
+fi
+
+exec aws logs tail "${groups[0]}" --follow "$@"
