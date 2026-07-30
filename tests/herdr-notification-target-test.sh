@@ -9,6 +9,11 @@ if ! grep -Eq '^open_notification_target = "prefix\+o"' "$CONFIG"; then
 	exit 1
 fi
 
+if ! grep -Eq '^delivery = "herdr"' "$CONFIG"; then
+	printf 'Expected in-app Herdr delivery so notification target remains available\n' >&2
+	exit 1
+fi
+
 if awk '
 	/^\[\[keys\.command\]\]$/ { in_command = 1; block = $0 ORS; next }
 	in_command && /^\[\[/ { if (block ~ /key = "prefix\+o"/) found = 1; in_command = 0 }
