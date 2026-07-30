@@ -46,8 +46,8 @@ last_pane = "" # disabled; prefix+a is used for last focused tab
 # previous_workspace = "" # optional, unset by default
 # next_workspace = ""     # optional, unset by default
 # previous_agent = ""     # optional, unset by default
-next_agent = "prefix+p"       # optional, unset by default
-open_notification_target = "" # disabled; prefix+o is used by custom actionable-agent shortcut
+next_agent = "prefix+p"               # optional, unset by default
+open_notification_target = "prefix+o" # jump to next pending notification target
 # detach = ""             # optional explicit detach shortcut in server/client mode
 # new_tab = "c"
 rename_tab = "prefix+,"  # optional, unset by default
@@ -69,12 +69,6 @@ zoom = "prefix+z" # legacy alias: fullscreen
 # Custom prefix-mode commands. Press prefix, then the configured key.
 # type = "shell" runs detached in the background.
 # type = "pane" opens a temporary pane and closes it when the command exits.
-[[keys.command]]
-key = "prefix+o"
-type = "shell"
-command = "~/.config/herdr/focus-next-actionable-agent.sh"
-description = "focus next blocked/done agent"
-
 [[keys.command]]
 key = "prefix+a"
 type = "shell"
