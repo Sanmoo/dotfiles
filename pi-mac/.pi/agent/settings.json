@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.82.1",
-  "defaultProvider": "github-copilot",
-  "defaultModel": "gpt-5.4",
+  "lastChangelogVersion": "0.83.0",
+  "defaultProvider": "bifrost",
+  "defaultModel": "bedrock/moonshotai.kimi-k2.5",
   "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "extensions": [],
@@ -21,18 +21,10 @@
     "npm:pi-md-export"
   ],
   "enabledModels": [
-    "openai-codex/gpt-5.5",
-    "github-copilot/gpt-5-mini",
-    "github-copilot/gpt-5.4-mini",
-    "github-copilot/claude-sonnet-4.6",
-    "github-copilot/gpt-5.4",
-    "opencode-go/minimax-m3",
-    "opencode-go/deepseek-v4-flash",
-    "opencode-go/deepseek-v4-pro",
-    "github-copilot/gpt-5.5",
-    "openai-codex/gpt-5.6-luna",
-    "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-terra"
+    "bifrost/bedrock/openai.gpt-5.5",
+    "bifrost/bedrock/openai.gpt-5.4",
+    "bifrost/bedrock/moonshotai.kimi-k2.5",
+    "bifrost/bedrock/minimax.minimax-m2.5"
   ],
   "theme": "dark"
 }
