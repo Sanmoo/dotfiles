@@ -28,7 +28,7 @@ fi
 
 groups_output=$(aws ecs describe-task-definition \
   --task-definition "$task_definition" \
-  --query 'taskDefinition.containerDefinitions[].logConfiguration[?logDriver==`awslogs`].options."awslogs-group"' \
+  --query 'taskDefinition.containerDefinitions[?logConfiguration.logDriver==`awslogs`].logConfiguration.options."awslogs-group"' \
   --output text)
 
 groups=()
