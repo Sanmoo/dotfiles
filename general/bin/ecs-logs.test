@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+mkdir "$tmp_dir/bin"
+
+cat > "$tmp_dir/bin/aws" <<'MOCK'
+#!/usr/bin/env bash
+printf '%q ' "$@" >> "$AWS_CALLS"
+printf '\n' >> "$AWS_CALLS"
+
+case "${MOCK_CASE:-}|${1:-}|${2:-}" in
+  success\|ecs\|describe-services)
+    printf '%s\n' 'arn:task-definition/1'
+    ;;
+  success\|ecs\|describe-task-definition)
+    printf '%s\n' '/ecs/app'
+    ;;
+  success\|logs\|tail)
+    ;;
+  not-found\|ecs\|describe-services)
+    printf '%s\n' 'None'
+    ;;
+  no-group\|ecs\|describe-services)
+    printf '%s\n' 'arn:task-definition/1'
+    ;;
+  no-group\|ecs\|describe-task-definition)
+    ;;
+  multiple\|ecs\|describe-services)
+    printf '%s\n' 'arn:task-definition/1'
+    ;;
+  multiple\|ecs\|describe-task-definition)
+    printf '%s\n' '/ecs/a' '/ecs/b'
+    ;;
+  duplicate\|ecs\|describe-services)
+    printf '%s\n' 'arn:task-definition/1'
+    ;;
+  duplicate\|ecs\|describe-task-definition)
+    printf '%s\n' '/ecs/app' '/ecs/app'
+    ;;
+  duplicate\|logs\|tail)
+    ;;
+  *)
+    printf 'unexpected mock call\n' >&2
+    exit 99
+    ;;
+esac
+MOCK
+chmod +x "$tmp_dir/bin/aws"
+
+export AWS_CALLS="$tmp_dir/aws.calls"
+export PATH="$tmp_dir/bin:$PATH"
+
+assert_contains() {
+  grep -F -- "$2" "$1" >/dev/null || {
+    printf 'missing %s in %s\n' "$2" "$1" >&2
+    return 1
+  }
+}
+
+run_case() {
+  local mock_case=$1
+  shift
+  : > "$AWS_CALLS"
+  MOCK_CASE=$mock_case "$script_dir/ecs-logs" "$@"
+}
+
+run_case success cluster-a service-a --since 10m --format short
+assert_contains "$AWS_CALLS" 'ecs describe-services'
+assert_contains "$AWS_CALLS" 'cluster-a'
+assert_contains "$AWS_CALLS" 'service-a'
+assert_contains "$AWS_CALLS" 'ecs describe-task-definition'
+assert_contains "$AWS_CALLS" 'arn:task-definition/1'
+assert_contains "$AWS_CALLS" 'logs tail /ecs/app --follow --since 10m --format short'
+
+if run_case missing cluster-a >/tmp/ecs-logs-test.out 2>&1; then
+  printf 'missing argument case unexpectedly succeeded\n' >&2
+  exit 1
+fi
+assert_contains /tmp/ecs-logs-test.out 'Usage:'
+
+if run_case not-found cluster-a service-a >/tmp/ecs-logs-test.out 2>&1; then
+  printf 'not-found case unexpectedly succeeded\n' >&2
+  exit 1
+fi
+assert_contains /tmp/ecs-logs-test.out 'service not found'
+
+if run_case no-group cluster-a service-a >/tmp/ecs-logs-test.out 2>&1; then
+  printf 'no-group case unexpectedly succeeded\n' >&2
+  exit 1
+fi
+assert_contains /tmp/ecs-logs-test.out 'no awslogs group'
+
+if run_case multiple cluster-a service-a >/tmp/ecs-logs-test.out 2>&1; then
+  printf 'multiple-group case unexpectedly succeeded\n' >&2
+  exit 1
+fi
+assert_contains /tmp/ecs-logs-test.out '/ecs/a'
+assert_contains /tmp/ecs-logs-test.out '/ecs/b'
+assert_contains /tmp/ecs-logs-test.out 'multiple'
+
+run_case duplicate cluster-a service-a
+assert_contains "$AWS_CALLS" 'logs tail /ecs/app --follow'
+
+printf 'PASS\n'
