@@ -6,6 +6,17 @@ import type {
 
 const NAME_LENGTH_CAP = 160;
 
+export function formatInvalidModelMessage(
+	provider: string,
+	id: string,
+	configPath: string,
+): string {
+	return (
+		`pi-auto-rename: modelo inválido: ${provider}/${id}.\n` +
+		`Corrija: ${configPath}`
+	);
+}
+
 // ─── Content extraction ───────────────────────────────────────────────────────
 
 function isLlmMessage(

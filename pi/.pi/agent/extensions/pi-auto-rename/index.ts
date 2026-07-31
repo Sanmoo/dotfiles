@@ -20,6 +20,7 @@ import {
 	Text,
 } from "@earendil-works/pi-tui";
 import {
+	formatInvalidModelMessage,
 	getConversationTranscript,
 	getFirstUserMessageText,
 	sanitizeSessionName,
@@ -27,8 +28,8 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_PROVIDER = "anthropic";
-const DEFAULT_MODEL = "claude-haiku-4-5";
+const DEFAULT_PROVIDER = "bifrost";
+const DEFAULT_MODEL = "bedrock/openai.gpt-5.6-terra";
 const RENAME_TIMEOUT_MS = 15_000;
 const CUSTOM_ENTRY_TYPE = "pi-auto-rename-model";
 const CONFIG_PATH = join(
@@ -38,6 +39,7 @@ const CONFIG_PATH = join(
 	"extensions",
 	"pi-auto-rename.json",
 );
+const CONFIG_DISPLAY_PATH = CONFIG_PATH.replace(homedir(), "~");
 
 const SYSTEM_PROMPT =
 	"You create a descriptive one-line session title for chat sessions with AI. " +
@@ -343,6 +345,7 @@ async function generateName(
 export default function piAutoRename(pi: ExtensionAPI) {
 	let modelRef: ModelRef = readConfigFile() ?? defaultRef();
 	let namingAttempted = false;
+	let invalidModelNotified = false;
 	let namingInProgress = false;
 	let cachedModels: ModelRef[] = [];
 
@@ -367,10 +370,33 @@ export default function piAutoRename(pi: ExtensionAPI) {
 	function resetNaming(): void {
 		namingAttempted = false;
 		namingInProgress = false;
+		invalidModelNotified = false;
+	}
+
+	function validateConfiguredModel(
+		ctx: ExtensionContext,
+		ref: ModelRef,
+	): boolean {
+		if (ctx.modelRegistry.find(ref.provider, ref.id)) {
+			invalidModelNotified = false;
+			return true;
+		}
+
+		if (!invalidModelNotified) {
+			const message = formatInvalidModelMessage(
+				ref.provider,
+				ref.id,
+				CONFIG_DISPLAY_PATH,
+			);
+			notify(ctx, message, "error");
+			invalidModelNotified = true;
+		}
+		return false;
 	}
 
 	async function autoName(ctx: ExtensionContext): Promise<void> {
 		if (namingAttempted || namingInProgress || pi.getSessionName()) return;
+		if (!validateConfiguredModel(ctx, modelRef)) return;
 
 		const firstMsg = getFirstUserMessageText(ctx.sessionManager.getBranch());
 		if (!firstMsg) return;
@@ -512,6 +538,7 @@ export default function piAutoRename(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (event, ctx) => {
 		onSessionEvent(event, ctx);
+		validateConfiguredModel(ctx, modelRef);
 		await autoName(ctx);
 	});
 

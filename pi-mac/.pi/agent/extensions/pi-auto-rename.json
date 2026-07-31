@@ -1,4 +1,4 @@
 {
-  "provider": "github-copilot",
-  "id": "gpt-4.1"
+  "provider": "bifrost",
+  "id": "bedrock/openai.gpt-5.6-terra"
 }

@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.83.0",
   "defaultProvider": "bifrost",
-  "defaultModel": "bedrock/moonshotai.kimi-k2.5",
-  "defaultThinkingLevel": "low",
+  "defaultModel": "bedrock/openai.gpt-5.6-luna",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -20,11 +20,10 @@
     "npm:pi-rtk-optimizer",
     "npm:pi-md-export"
   ],
+  "theme": "dark",
   "enabledModels": [
-    "bifrost/bedrock/openai.gpt-5.5",
-    "bifrost/bedrock/openai.gpt-5.4",
-    "bifrost/bedrock/moonshotai.kimi-k2.5",
-    "bifrost/bedrock/minimax.minimax-m2.5"
-  ],
-  "theme": "dark"
+    "bifrost/bedrock/openai.gpt-5.6-luna",
+    "bifrost/bedrock/openai.gpt-5.6-terra",
+    "bifrost/bedrock/moonshotai.kimi-k2.5"
+  ]
 }
