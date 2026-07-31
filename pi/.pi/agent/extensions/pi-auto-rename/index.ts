@@ -29,7 +29,7 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_PROVIDER = "bifrost";
-const DEFAULT_MODEL = "bedrock/openai.gpt-5.6-terra";
+const DEFAULT_MODEL = "bedrock/openai.gpt-5.6-luna";
 const RENAME_TIMEOUT_MS = 15_000;
 const CUSTOM_ENTRY_TYPE = "pi-auto-rename-model";
 const CONFIG_PATH = join(
