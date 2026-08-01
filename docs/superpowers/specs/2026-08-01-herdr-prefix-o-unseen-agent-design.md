@@ -18,6 +18,7 @@ The native `open_notification_target` jumps to a **transient notification queue*
 
 - `prefix+o` selects the next agent that is actionable (`idle`, `blocked`, `done`) **and whose `state_change_seq` differs from the last viewed sequence for that pane**.
 - An agent with no recorded entry counts as not viewed.
+- A `null`/missing `state_change_seq` is treated as `0`; recording it as viewed is still valid (`null` stored → no longer a candidate).
 - Selection is circular: first candidate after the currently focused agent in `herdr agent list` order, wrapping to the first candidate when none follows.
 - Focusing an agent via `prefix+o` records its current `state_change_seq` as viewed.
 - An agent whose `state_change_seq` changes again (new green dot) becomes a candidate again.
