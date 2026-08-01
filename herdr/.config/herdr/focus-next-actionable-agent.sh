@@ -18,7 +18,7 @@ read_state() {
 		printf '{}'
 		return 0
 	fi
-	jq -c '.' "$file"
+	jq -c '.' "$file" 2>/dev/null || printf '{}'
 }
 
 write_state() {
@@ -61,11 +61,12 @@ main() {
 	"$HERDR_BIN" agent focus "$pane_id" >/dev/null
 
 	new_state="$(jq -n -c \
+		--argjson agents "$agents_json" \
 		--argjson state "$state" \
 		--arg pane "$pane_id" \
 		--argjson seq "$seq" \
 		'
-			($state.seen // {}) as $seen
+			(($state.seen // {}) | with_entries(select(.key as $k | ($agents.result.agents | map(.pane_id)) | index($k)))) as $seen
 			| $seen | .[$pane] = $seq
 			| {seen: .}
 		')"
