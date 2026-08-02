@@ -146,8 +146,9 @@ type Param struct {
 }
 
 type Auth struct {
-    Type   string           // v1: oauth2 | basic | bearer | none
+    Type   string           // v1: oauth2 | bearer
     OAuth2 *OAuth2Config    // grantType, tokenUrl, authUrl, clientId, scope, pkce
+    Token  string           // bearer: template-expanded token
 }
 
 type Environment struct {
@@ -161,8 +162,10 @@ type Environment struct {
 - `auth`: request `http.auth` → request top-level `auth` → collection `request.auth` → none
 - `variables` precedence: CLI `-v` > environment > request > collection
 - `path` params become template variables before URL resolution (`{{id}}` in URL)
-- only oauth2 grant types `client_credentials` and `authorization_code` in v1
-  (matches Python's `validate_supported_oc_auth`); unsupported auth types → clear error
+- auth types in v1: `oauth2` (grant types `client_credentials` and `authorization_code`)
+  and `bearer` (`token` field, template-expanded → `Authorization: Bearer` header).
+  **Amended 2026-08-02 (user ruling):** bearer added because the real
+  seguros-unimed collection uses it; anything else → clear error.
 
 ## 6. Ports (`internal/core/ports.go`)
 
@@ -257,8 +260,7 @@ silent, never destructive).
 ## 10. Error Handling and Exit Codes
 
 - `0` — request completed (any HTTP status; curl semantics — no fail on 4xx/5xx)
-- `1` — fatal errors (missing config, collection/request not found, invalid YAML)
-- `2` — usage errors (bad flag, `-v` without `=`, `--no-interactive` without request)
+- `2` — ALL errors, fatal and usage (Python `die()` parity: missing config, collection/request not found, invalid YAML, bad flags). **Amended 2026-08-02 (user ruling):** full parity won — exit `1` is reserved and unused in v1.
 - `130` — SIGINT
 - Messages: `error: ...` to stderr, `warning: ...` to stderr (parity with Python)
 

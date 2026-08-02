@@ -17,7 +17,7 @@ Every task implicitly includes all of these:
 - **Coverage gate**: `go test -coverprofile=cover.out ./...` + `go-test-coverage --config=coverage.yaml`; thresholds file/package/total = 100. Exclusions allowed ONLY via `coverage.yaml` (initially `^cmd/httpoc/main\.go$` path and `^main$` function); any addition needs a justification comment and user approval.
 - **Mutation gate**: `gremlins unleash` on `internal/core` + `internal/app`: score ≥85%. Full repo: ≥80% (`make mutate-full`).
 - **Lint gates** (all `issues: error`): gocyclo ≤10, gocognit ≤15, funlen ≤60, dupl ≤100 tokens, govet/staticcheck/errcheck/errorlint/bodyclose 0 findings, gosec 0, gofmt/goimports/revive/misspell/unconvert/wastedassign 0.
-- **Exit codes**: 0 = request completed (any HTTP status); 1 = fatal (config/collection/request missing, invalid YAML); 2 = usage errors; 130 = SIGINT. Messages `error: ...` / `warning: ...` on stderr.
+- **Exit codes**: 0 = request completed (any HTTP status); 2 = ALL errors (fatal + usage — Python `die()` parity; exit 1 reserved/unused); 130 = SIGINT. Messages `error: ...` / `warning: ...` on stderr.
 - **Format**: OpenCollection 1.0.0 spec keys ONLY (`info.type: http` + `http:` block, `accessTokenUrl`, `flow:`, `credentials.clientId`, `settings.followRedirects`...). No legacy `request:` blocks, no `.bru`.
 - **No external runtime deps**: no curl, fzf, bru, or Python at runtime.
 - **TDD**: every code step writes the failing test first, verifies it fails, implements minimally, verifies it passes.
@@ -367,13 +367,13 @@ git commit -m "test: add legacy+spec fixtures and golden baseline for parity"
   - `type HTTPDetails struct { Method, URL string; Headers, Params []Param; Body *Body; Auth *Auth }`
   - `type Param struct { Name, Value, Type string; Disabled bool }`
   - `type Body struct { Type string; Data string; Fields []Param }` (raw: Type+Data; form-urlencoded: Type+Fields)
-  - `type Auth struct { Type string; Flow string; AccessTokenURL, AuthorizationURL, CallbackURL string; ClientID, ClientSecret, Scope string; PKCE PKCE; State string }`
+  - `type Auth struct { Type string; Flow string; AccessTokenURL, AuthorizationURL, CallbackURL string; ClientID, ClientSecret, Scope string; PKCE PKCE; State string; Token string }` (Token = bearer token, template-expanded)
   - `type PKCE struct { Disabled bool; Method string }`
   - `type Environment struct { Name string; Variables []Variable }`
   - `type Variable struct { Name, Value string; Disabled bool }`
   - `type RequestSettings struct { EncodeURL bool; Timeout int; FollowRedirects bool; MaxRedirects int }`
   - `func ResolveAuth(r *Request, m *Manifest) *Auth` — http.auth → top-level auth → manifest request.auth → nil
-  - `func ValidateAuth(a *Auth) error` — nil ok; Type != "oauth2" → error; Flow not in {client_credentials, authorization_code} → error
+  - `func ValidateAuth(a *Auth) error` — nil ok; Type == "bearer" ok; Type != "oauth2" → error; oauth2 Flow not in {client_credentials, authorization_code} → error (user ruling 2026-08-02: bearer added to v1)
   - Ports (in `ports.go`, with `context.Context` in method signatures):
     - `type RunOptions struct { Timeout time.Duration; FollowRedirects bool; MaxRedirects int; Insecure bool; Include bool; Token string }`
     - `type CachedToken struct { AccessToken, TokenType string; ExpiresAt float64 }`
@@ -427,6 +427,7 @@ func TestValidateAuth(t *testing.T) {
   {"nil is valid", nil, false},
   {"oauth2 client_credentials", &Auth{Type: "oauth2", Flow: "client_credentials"}, false},
   {"oauth2 authorization_code", &Auth{Type: "oauth2", Flow: "authorization_code"}, false},
+  {"bearer", &Auth{Type: "bearer"}, false},
   {"unsupported type", &Auth{Type: "basic"}, true},
   {"unsupported flow", &Auth{Type: "oauth2", Flow: "implicit"}, true},
  }
@@ -824,7 +825,7 @@ func TestMaskBearerToken(t *testing.T) {
     - `Set(key, tok) error` — JSON `{access_token, token_type, expires_at}` written 0600, atomic (temp file + rename)
   - `type CachedToken struct { AccessToken, TokenType string; ExpiresAt float64 }`
   - `type Provider struct { Cache core.TokenCache; OpenBrowser func(url string) error; Listen func(network, addr string) (net.Listener, error); Stdout, Stderr io.Writer }` implementing `core.AuthProvider` (see `Token` signature above):
-    - `Token` behavior — template-expand auth string fields first (parity, via Task 4 `ExpandTemplate`); cache hit unless force (cache key via `CacheKey(spec.CollectionPath, spec.EnvironmentName, spec.Auth)`); CC → POST `accessTokenUrl` with form `grant_type=client_credentials&client_id=...&client_secret=...&scope=...` (scope only when set), Content-Type `application/x-www-form-urlencoded`; AC → PKCE flow (below); save + return `access_token`.
+    - `Token` behavior — Type == "bearer": return template-expanded `spec.Auth.Token` (no cache, no network). Otherwise: template-expand auth string fields first (parity, via Task 4 `ExpandTemplate`); cache hit unless force (cache key via `CacheKey(spec.CollectionPath, spec.EnvironmentName, spec.Auth)`); CC → POST `accessTokenUrl` with form `grant_type=client_credentials&client_id=...&client_secret=...&scope=...` (scope only when set), Content-Type `application/x-www-form-urlencoded`; AC → PKCE flow (below); save + return `access_token`.
   - AC flow (port of `general/bin/auth-code-token`): PKCE S256 (verifier: 43-128 char random, challenge: base64url-no-pad of sha256(verifier)); state: random hex; loopback server `127.0.0.1:8765/callback` (or `callbackUrl` override) capturing ONE GET with `?code=&state=`; open browser to `authorizationUrl?response_type=code&client_id=...&redirect_uri=...&state=...&code_challenge=...&code_challenge_method=S256&scope=...` (+ `prompt=login` when forceRefresh); exchange: POST `accessTokenUrl` form `grant_type=authorization_code&code=...&redirect_uri=...&client_id=...&code_verifier=...`; PKCE disabled when `pkce.disabled`.
 
 - [ ] **Step 1: Write failing tests**:
@@ -1081,13 +1082,13 @@ tail -n 1
 
 **Run() flow (parity with Python `main_oc`):**
 
-1. `config.Load(deps.Home)` — error → stderr `error: ...` + return 1 (missing config) / 2 (bad shape) — Python uses 2 for `die()`; keep parity: config errors → 2.
+1. `config.Load(deps.Home)` — error → stderr `error: ...` + return 2 (parity: Python `die()` exits 2 for every error class; exit 1 is reserved and unused — user ruling 2026-08-02).
 2. `Catalog.DiscoverCollections`; select via `-c` name match (exact; ambiguous → error listing matches; missing → error listing available) or `Selector` when interactive.
 3. `Catalog.Requests`; select by name or stem (ambiguous handling parity), error `request name is required in --no-interactive mode` → 2.
 4. `Catalog.Environments`; `-e` match (ambiguous/missing → die), none → nil, one → it, multiple + interactive → Selector, multiple + non-interactive → `environment is required when multiple environments exist; pass -e/--environment` → 2.
 5. Resolve vars (Task 4): CLI `-v` (comma-separated `K=V`, error → 2), env, request, collection; `{{process.env.X}}` via `os.LookupEnv`; path params → vars; optional queries: `--dqwnp` parse + validate names against request params (unknown name → error listing valid, parity test 9/11), interactive prompt `enable optional queries?` when params exist and no selection (parity `prompt_enable_optional_queries`).
 6. Missing variables: interactive → prompt each (stderr prompt + stdin read, parity `prompt_missing_variables`), non-interactive → error listing them → 2.
-7. Auth: `core.ResolveAuth` + `core.ValidateAuth` (unsupported → 2, parity test 17); `AuthProvider.Token` with template-expanded auth fields; token → `Authorization: Bearer` header.
+7. Auth: `core.ResolveAuth` + `core.ValidateAuth` (unsupported → 2, parity test 17); `AuthProvider.Token` with template-expanded auth fields; oauth2/bearer token → `Authorization: Bearer` header.
 8. `runner.BuildRequest` + `runner.Run` — but dry-run: build the equivalent curl via Task 7 and print masked line to Stdout, return 0 (parity: `-n` never executes).
 9. Interactive-used summary: if any Selector/prompt was used, print `Summary` including `Comando equivalente:` (masked) — including after Ctrl-C (parity `finally` clause), return 130 on SIGINT (context cancel → 130).
 10. Errors from Runner (transport) → stderr `error: ...` + return 1.
@@ -1175,7 +1176,7 @@ go build -o dist/httpoc ./cmd/httpoc
 HOME=/tmp/smoke-home ./dist/httpoc list
 HOME=/tmp/smoke-home ./dist/httpoc show -c football-data areas
 HOME=/tmp/smoke-home ./dist/httpoc -c football-data areas -n          # dry-run, no network
-HOME=/tmp/smoke-home ./dist/httpoc -c seguros-unimed reembolsos -n    # dry-run
+HOME=/tmp/smoke-home ./dist/httpoc -c seguros-unimed reembolsos -n -v api_key=dummy   # dry-run; api_key is a required variable
 HOME=/tmp/smoke-home ./dist/httpoc -c java_learning-opencollection <req> -n
 ```
 
