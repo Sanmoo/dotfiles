@@ -16,7 +16,6 @@
     "npm:pi-token-burden",
     "npm:pi-prompt-template-model",
     "npm:@firstpick/pi-extension-stats",
-    "npm:pi-caveman",
     "npm:pi-rtk-optimizer",
     "npm:pi-md-export"
   ],
