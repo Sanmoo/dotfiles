@@ -17,6 +17,8 @@ Verbatim from `docs/superpowers/specs/2026-08-03-httpoc-public-readme-design.md`
 - **capture-goldens.sh (amended):** the `DOTFILES=~/dev/github.com/Sanmoo/dotfiles` assignment becomes env-overridable `DOTFILES="${DOTFILES:-$HOME/dev/github.com/Sanmoo/dotfiles}"` with a maintainer-only comment.
 - **Single source of truth:** petstore lives at `examples/petstore` (moved, never copied). `testdata/collections/spec/` is deleted (empty after the move).
 - **Gate:** `make check` ALL GREEN before every commit (from the httpoc repo root). Coverage stays 100% (1408/1408) — comment-only edits and fixture moves cannot change it; the helper path updates are exercised by existing e2e/catalog tests.
+- **Dry-run never fetches tokens (user ruling C, 2026-08-03):** `-n` performs ZERO network I/O — no token-endpoint request, no authorization-code callback. Auth is resolved + validated (unsupported types still exit 2 — parity test 24 preserved) and templated auth fields are still pre-expanded (Task 8 contract). Token in dry-run: bearer → the expanded token field (static, no I/O); oauth2 → cached valid token if present (respecting expiry), else the masked placeholder `***`; `--auth-no-cache` in dry-run → always placeholder. The masked curl line renders `Authorization: Bearer ***` whenever auth is configured (identical after masking, cached or placeholder). Real runs unchanged (fetch as today). This SUPERSEDES parity scenario 25's hitCount pins (and any other dry-run+auth pins) — pins updated, divergence recorded in the ledger.
+- **show** does NOT accept `-e` and prints the URL as defined (raw `{{...}}` templates — parity-pinned by TestE2EShow). README quick start uses `httpoc show -c petstore get-pet`; expected output shows the raw template URL.
 - **Badge URL** assumes `github.com/sanmoo/httpoc` (matches the module path); the badge renders only once the repo is public — accepted.
 - **No other behavior changes.** No new dependencies. No workflow file changes.
 - Commit messages: conventional (`refactor(test): …`, `chore: …`, `docs: …`). Commit EARLY and often — wall-clock is the recurring killer.
@@ -227,7 +229,160 @@ git commit -m "chore: normalize provenance comments and equivalent-command outpu
 
 ---
 
-### Task 3: Rewrite the README and update the quality-gate doc
+### Task 3: Dry-run never fetches tokens (cache-or-mask)
+
+**Files:**
+
+- Modify: `internal/core/ports.go` — add `TokenFromCache(ctx context.Context, spec AuthSpec) (string, bool)` to the `AuthProvider` port
+- Modify: `internal/adapters/auth/oauth.go` — implement `TokenFromCache` (cache lookup only, no network, bearer → ok=false)
+- Modify: `internal/app/run.go` — split `doAuth` (lines ~627-645) into resolve+validate+expand (no I/O) and acquisition; `complete()` (line ~150) uses the dry-run token path when `args.DryRun`
+- Modify: `internal/app/app_test.go` — fakeAuth gains `TokenFromCache`; dry-run+auth unit tests updated per the new contract
+- Modify: `internal/app/parity_test.go` — scenarios 21/22/25 pins superseded (see contract)
+- Modify: `internal/adapters/auth/auth_test.go` — new `TokenFromCache` tests
+- Modify: `cmd/httpoc/root.go` — `--auth-no-cache` help text gains "(no effect with -n)"
+- Verify: `internal/app/e2e_test.go` — must stay GREEN UNCHANGED (seeded cache → TokenFromCache reads it → identical masked lines)
+
+**Interfaces:**
+
+- Consumes: existing `CacheKey(collectionPath, envName, a)` (internal/adapters/auth/cache.go:60), `p.cached(key, forceRefresh)` (cache lookup with expiry), `core.Auth.Type`/`Flow`.
+- Produces: `AuthProvider.TokenFromCache(ctx, spec) (string, bool)` — ok=true only for a valid, non-expired cached oauth2 token; ok=false for bearer, no cache, or expired. `f.resolveAuth(...)` and `f.acquireToken(...)` replace `doAuth`.
+
+- [ ] **Step 1: Write the failing tests (contract first)**
+
+In `internal/adapters/auth/auth_test.go`, add `TestTokenFromCache` (table): (a) client_credentials with a saved token → (token, true); (b) no cache → ("", false); (c) expired cache → ("", false); (d) bearer spec → ("", false).
+
+In `internal/app/app_test.go`, update/add: (e) dry-run + oauth2 + NO cache → exit 0, output contains `Authorization: Bearer ***`, and the fake auth's Token was NOT called (fake records calls); (f) dry-run + oauth2 + `--auth-no-cache` → same, TokenFromCache not called; (g) dry-run + bearer → masked line with the expanded token value masked; (h) dry-run + unsupported auth type → still exit 2 (parity 24 preserved).
+
+- [ ] **Step 2: Run them — verify they fail**
+
+`go test ./internal/app ./internal/adapters/auth -run 'TestRun|TestTokenFromCache'` — expect compile errors (missing port method) then failures.
+
+- [ ] **Step 3: Implement the port + adapter**
+
+In `internal/core/ports.go`, add to the `AuthProvider` interface:
+
+```go
+ // TokenFromCache returns the cached access token for an oauth2 spec
+ // without any network I/O (dry-run path, user ruling 2026-08-03):
+ // ok=false for bearer auth, a missing cache entry, or an expired
+ // token.
+ TokenFromCache(ctx context.Context, spec AuthSpec) (string, bool)
+```
+
+In `internal/adapters/auth/oauth.go`, implement:
+
+```go
+func (p *Provider) TokenFromCache(ctx context.Context, spec core.AuthSpec) (string, bool) {
+ a := spec.Auth
+ if a == nil || a.Type != "oauth2" {
+  return "", false
+ }
+ cached, err := p.cached(CacheKey(spec.CollectionPath, spec.EnvironmentName, a), false)
+ if err != nil || cached == nil {
+  return "", false
+ }
+ return cached.AccessToken, true
+}
+```
+
+- [ ] **Step 4: Split doAuth in the app layer**
+
+In `internal/app/run.go`, replace `doAuth` (currently resolves + validates + expands + calls Token) with two functions:
+
+```go
+// resolveAuth resolves the request auth (three-level inheritance),
+// validates it, and pre-expands every templated field (no I/O; nil auth
+// yields nil — Python get_oc_auth + validate_supported_oc_auth parity).
+func (f *flow) resolveAuth(request core.Request, collection core.Collection, envName string, variables map[string]string) (*core.Auth, error) {
+ auth := core.ResolveAuth(&request, collection.Manifest)
+ if auth == nil {
+  return nil, nil
+ }
+ if err := core.ValidateAuth(auth); err != nil {
+  return nil, err
+ }
+ return expandAuth(auth, variables, f.deps.Stderr), nil
+}
+
+// acquireToken obtains the token (Python resolve_oauth2_token parity —
+// network + cache). Only called for real runs; dry-run uses dryRunToken.
+func (f *flow) acquireToken(ctx context.Context, collection core.Collection, envName string, auth *core.Auth) (string, error) {
+ return f.deps.Auth.Token(ctx, core.AuthSpec{
+  CollectionPath:  collection.Path,
+  EnvironmentName: envName,
+  Auth:            auth,
+ }, f.args.AuthNoCache)
+}
+
+// dryRunToken returns the token for a dry-run: bearer auth yields its
+// static expanded token; oauth2 yields the cached token when present and
+// not expired, otherwise the masked placeholder (user ruling C: dry-run
+// never fetches).
+func (f *flow) dryRunToken(ctx context.Context, collection core.Collection, envName string, auth *core.Auth) string {
+ if auth.Type != "oauth2" {
+  return auth.Token
+ }
+ if f.args.AuthNoCache {
+  return "***"
+ }
+ tok, ok := f.deps.Auth.TokenFromCache(ctx, core.AuthSpec{
+  CollectionPath:  collection.Path,
+  EnvironmentName: envName,
+  Auth:            auth,
+ })
+ if !ok {
+  return "***"
+ }
+ return tok
+}
+```
+
+In `complete()` (line ~150), replace the `doAuth` call with:
+
+```go
+ auth, err := f.resolveAuth(request, sel.collection, sel.envName, variables)
+ if err != nil {
+  return f.fail(ctx, err)
+ }
+ token := ""
+ if auth != nil {
+  if f.args.DryRun {
+   token = f.dryRunToken(ctx, sel.collection, sel.envName, auth)
+  } else {
+   token, err = f.acquireToken(ctx, sel.collection, sel.envName, auth)
+   if err != nil {
+    return f.fail(ctx, err)
+   }
+  }
+ }
+```
+
+- [ ] **Step 5: Update the superseded parity pins**
+
+Read scenarios 21, 22, 25 in `internal/app/parity_test.go` in full. Under ruling C: dry-run performs zero network I/O. Update every pin that asserts a token-endpoint hit, callback-server activity, or a dry-run failure caused by an unreachable token endpoint — hitCount assertions become 0 (with a comment `// user ruling 2026-08-03: dry-run never fetches tokens`), masked-line assertions stay, and any callback-server assertions become "server not started/not hit" assertions. Also update any app unit test that expected dry-run to fail on token-fetch errors (now exit 0 with the masked line). Run `go test ./... -count=1` and let the failures enumerate any pin you missed; fix them all.
+
+- [ ] **Step 6: e2e must stay unchanged and green**
+
+`go test -count=1 -run 'TestE2E' ./internal/app` — expect ALL GREEN with NO changes to `internal/app/e2e_test.go` (seeded cache → TokenFromCache reads it → identical masked want lines). If any e2e test fails, stop and report — that signals the cache key mismatch (FIX-1 class bug), not a pin to update.
+
+- [ ] **Step 7: Run the full gate**
+
+```bash
+make check
+```
+
+Expected: ALL GREEN — coverage 100% incl. the new branches (TokenFromCache hit/miss/expired/bearer; dryRunToken oauth2 cached/miss/noCache; bearer dry-run), parity 33/33 with superseded pins, lint numeric gates. Paste coverage + gate lines as evidence.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat(run): dry-run never fetches tokens (cache-or-mask, user ruling C)"
+```
+
+---
+
+### Task 4: Rewrite the README and update the quality-gate doc
 
 **Files:**
 
@@ -331,14 +486,16 @@ manifest. A leading `~/` expands against `$HOME`.
 ```sh
 httpoc list                          # all discovered collections
 httpoc list -c petstore              # all requests in one collection
-httpoc show -c petstore -e development get-pet
+httpoc show -c petstore get-pet      # method and URL as defined
 httpoc -c petstore -e development get-pet -n   # dry-run (no network)
 httpoc -c petstore -e development create-pet -v petName=rex -n
 ```
 
 The `-n` dry-run prints the equivalent `curl` command without touching the
-network, so it works with no API at all. To execute for real, point the
-`baseUrl` variable in `examples/petstore/opencollection.yaml` at your own API.
+network — OAuth2 collections show a masked `Authorization: Bearer ***`
+header and never request a token — so it works with no API at all. To
+execute for real, point the `baseUrl` variable in
+`examples/petstore/opencollection.yaml` at your own API.
 
 With no `-c` or request name, `httpoc` prompts interactively: a fuzzy picker
 when `fzf` is on `PATH`, a numbered menu otherwise.
@@ -503,7 +660,7 @@ Deferred to later phases:
 MIT — see [LICENSE](LICENSE).
 ````
 
-Notes on the draft (do not deviate): the Configuration snippet shows the REAL config schema (`collections` + optional `cache_dir`, per `internal/adapters/config/config.go`); environments live in the collection manifest, never in config.yaml; the migration clause is the approved generic wording; the badge URL is the approved one.
+Notes on the draft (do not deviate): the `show` line takes no `-e` and prints the URL as defined (raw `{{...}}` templates — parity-pinned); the Configuration snippet shows the REAL config schema (`collections` + optional `cache_dir`, per `internal/adapters/config/config.go`); environments live in the collection manifest, never in config.yaml; the migration clause is the approved generic wording; the badge URL is the approved one.
 
 - [ ] **Step 2: Update the quality-gate doc**
 
@@ -531,17 +688,20 @@ mkdir -p /tmp/httpoc-home/.config/httpoc
 printf 'collections:\n  - %s\n' "$(pwd)/examples" > /tmp/httpoc-home/.config/httpoc/config.yaml
 HOME=/tmp/httpoc-home /tmp/httpoc list
 HOME=/tmp/httpoc-home /tmp/httpoc list -c petstore
-HOME=/tmp/httpoc-home /tmp/httpoc show -c petstore -e development get-pet
+HOME=/tmp/httpoc-home /tmp/httpoc show -c petstore get-pet
 HOME=/tmp/httpoc-home /tmp/httpoc -c petstore -e development get-pet -n
 HOME=/tmp/httpoc-home /tmp/httpoc -c petstore -e development create-pet -v petName=rex -n
 ```
 
 Expected: `list` shows the petstore collection; `list -c petstore` shows
-get-pet/list-pets/create-pet/delete-pet; `show` prints the resolved URL
-(`https://dev.example.com/pets/env-pet`); both dry-runs print a masked
-equivalent curl line and exit 0. (Use an absolute root here — `~` expansion
-is HOME-based; the README's `./examples` relative form works for readers at
-the repo root.) Clean up `/tmp/httpoc` and `/tmp/httpoc-home` afterwards.
+get-pet/list-pets/create-pet/delete-pet; `show` prints the method and the
+URL as defined — raw `{{baseUrl}}/pets/{{petId}}` templates, parity-pinned
+(Task 3's ruling does not change show); BOTH dry-runs print a masked
+`Authorization: Bearer ***` curl line and exit 0 — offline, no token
+endpoint reachable (Task 3's ruling makes this true). Use an absolute root
+here (`~` expansion is HOME-based); the README's `./examples` relative form
+works for readers at the repo root. Clean up `/tmp/httpoc` and
+`/tmp/httpoc-home` afterwards.
 
 - [ ] **Step 4: Run the gate**
 
