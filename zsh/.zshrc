@@ -189,6 +189,7 @@ alias "inprogress-bjd"="bd list --status=in_progress --label area/bjd --exclude-
 alias "inprogress-studies"="bd list --status=in_progress --label area/studies"
 alias "inprogress-dom"="bd list --status=in_progress --label area/dom"
 alias "next-bjd"="bd-next --area bjd"
+alias "next-dom"="bd-next --area dom"
 alias "next-studies"="bd-next --area studies"
 alias "waiting-bjd"="bd list --label status/waiting,area/bjd"
 alias "waiting-dom"="bd list --label status/waiting,area/dom"
