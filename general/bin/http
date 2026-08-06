@@ -657,8 +657,16 @@ def collect_missing_variables(request_doc, variables, disabled_query_indexes=Non
         found.update(find_template_variables(header.get("name", "")))
         found.update(find_template_variables(header.get("value", "")))
     body = request.get("body")
-    if isinstance(body, dict) and str(body.get("type") or "") in ("json", "xml", "text", "sparql"):
-        found.update(find_template_variables(body.get("data", "")))
+    if isinstance(body, dict):
+        body_type = str(body.get("type") or "")
+        if body_type in ("json", "xml", "text", "sparql"):
+            found.update(find_template_variables(body.get("data", "")))
+        elif body_type == "form-urlencoded":
+            for field in body.get("data") or []:
+                if not isinstance(field, dict) or field.get("disabled") is True:
+                    continue
+                found.update(find_template_variables(field.get("name", "")))
+                found.update(find_template_variables(field.get("value", "")))
     found.difference_update(path_param_names)
     return found - set(variables)
 
@@ -901,7 +909,23 @@ def content_type_for_oc_body(body_type):
         "xml": "application/xml",
         "text": "text/plain",
         "sparql": "application/sparql-query",
+        "form-urlencoded": "application/x-www-form-urlencoded",
     }.get(body_type)
+
+
+def encode_oc_form_urlencoded(data, variables):
+    if not isinstance(data, list):
+        die("unsupported form-urlencoded body data; expected a list of fields")
+    fields = []
+    for field in data:
+        if not isinstance(field, dict) or "name" not in field or "value" not in field:
+            die("unsupported form-urlencoded body data; each field requires name and value")
+        if field.get("disabled") is True:
+            continue
+        name = apply_template(str(field["name"]), variables)
+        value = apply_template(str(field["value"]), variables)
+        fields.append((name, value))
+    return urlencode(fields)
 
 
 def add_path_params_to_variables(request_doc, variables):
@@ -957,9 +981,12 @@ def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=Non
         if not isinstance(body, dict):
             die("unsupported request.body shape; expected object with type and data")
         body_type = str(body.get("type") or "")
-        if body_type not in ("json", "xml", "text", "sparql"):
+        if body_type not in ("json", "xml", "text", "sparql", "form-urlencoded"):
             die("unsupported request.body type for MVP: " + body_type)
-        body_value = apply_template(str(body.get("data", "")), variables)
+        if body_type == "form-urlencoded":
+            body_value = encode_oc_form_urlencoded(body.get("data"), variables)
+        else:
+            body_value = apply_template(str(body.get("data", "")), variables)
         default_ct = content_type_for_oc_body(body_type)
         combined_headers = headers + list(args.headers or [])
         if default_ct and not has_header(combined_headers, "Content-Type"):
