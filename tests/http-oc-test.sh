@@ -539,7 +539,11 @@ cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
 	echo "FAIL: expected cache file" >&2
 	exit 1
 }
-cache_mode="$(stat -f %Lp "$cache_file")"
+if stat -c '%a' "$cache_file" >/dev/null 2>&1; then
+	cache_mode="$(stat -c '%a' "$cache_file")"
+else
+	cache_mode="$(stat -f %Lp "$cache_file")"
+fi
 [ "$cache_mode" = "600" ] || {
 	echo "FAIL: expected cache mode 600, got $cache_mode" >&2
 	exit 1
@@ -611,7 +615,11 @@ STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
 	set +e
-	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -e development -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	else
+		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	fi
 	status=$?
 	set -e
 	[ "$status" -eq 0 ] || {
@@ -658,7 +666,11 @@ STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
 	set +e
-	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -qec "$SCRIPT oc -e development -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	else
+		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	fi
 	status=$?
 	set -e
 	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development ping" "equivalent command should appear even when auth fails"
@@ -720,7 +732,11 @@ STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
 	set +e
-	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n -v "customerId=cli-override" >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -e development -n -v customerId=cli-override" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	else
+		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n -v "customerId=cli-override" >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	fi
 	status=$?
 	set -e
 	[ "$status" -eq 0 ] || {
@@ -980,10 +996,17 @@ STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
 	set +e
-	{
-		printf 'y\n\n'
-		sleep 1
-	} | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+		{
+			printf 'y\n\n'
+			sleep 1
+		} | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	else
+		{
+			printf 'y\n\n'
+			sleep 1
+		} | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+	fi
 	status=$?
 	set -e
 	[ "$status" -eq 0 ] || {
