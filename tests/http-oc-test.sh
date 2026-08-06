@@ -1047,4 +1047,89 @@ named_cmd = http.build_equivalent_command(
 assert "--dqwnp=limit,page" in named_cmd
 PYEOF
 
+# ---------- Test 34: form-urlencoded body follows OpenCollection schema ----------
+echo "test 34: form-urlencoded body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: username
+    value: alice
+  - name: password
+    value: "p@ss word&more"
+YAML
+cat >"$OC_ROOT/collectionA/requests/login.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/login
+  body:
+    type: form-urlencoded
+    data:
+      - name: username
+        value: "{{username}}"
+      - name: password
+        value: "{{password}}"
+      - name: remember
+        value: "true"
+        disabled: true
+YAML
+run_http_oc --no-interactive -c collectionA -n login
+assert_contains "$OC_STDOUT" "Content-Type: application/x-www-form-urlencoded" "form body content type"
+assert_contains "$OC_STDOUT" "--data 'username=alice&password=p%40ss+word%26more'" "form fields should be URL-encoded"
+assert_not_contains "$OC_STDOUT" "remember=true" "disabled form field ignored"
+
+# ---------- Test 35: malformed form-urlencoded data is rejected ----------
+echo "test 35: malformed form-urlencoded body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/invalid-form.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/login
+  body:
+    type: form-urlencoded
+    data:
+      - name: username
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n invalid-form
+[ "$OC_EXIT" -eq 2 ] || {
+	echo "FAIL: expected exit 2" >&2
+	exit 1
+}
+assert_contains "$OC_STDERR" "form-urlencoded body data" "malformed form body error"
+
+# ---------- Test 36: explicit form Content-Type wins ----------
+echo "test 36: explicit form content type wins"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/explicit-form.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/login
+  headers:
+    - name: Content-Type
+      value: application/custom-form
+  body:
+    type: form-urlencoded
+    data:
+      - name: key
+        value: value
+YAML
+run_http_oc --no-interactive -c collectionA -n explicit-form
+assert_contains "$OC_STDOUT" "Content-Type: application/custom-form" "explicit content type present"
+assert_not_contains "$OC_STDOUT" "Content-Type: application/x-www-form-urlencoded" "default content type suppressed"
+
 echo "OK"
