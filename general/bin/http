@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
+import hashlib
+import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - exercised manually in environments without PyYAML
+    yaml = None
 
 
 _TEMPLATE_RE = re.compile(r"\{\{([^{}]+)\}\}")
 _PROCESS_ENV_RE = re.compile(r"\{\{process\.env\.(\w+)\}\}")
+OC_ALL_QUERIES_SENTINEL = "__HTTP_OC_ALL_QUERIES__"
+OC_OPTIONAL_QUERY_FLAGS = (
+    "--disable-query-when-not-provided",
+    "--dqwnp",
+)
 
 
 def expand_process_env(text, warn=True):
@@ -120,7 +134,64 @@ def _shared_args():
 SHARED_ARGS = _shared_args()
 
 
+def normalize_oc_optional_query_argv(argv):
+    return [
+        f"{token}={OC_ALL_QUERIES_SENTINEL}"
+        if token in OC_OPTIONAL_QUERY_FLAGS else token
+        for token in argv
+    ]
+
+
+def make_oc_parser():
+    p = argparse.ArgumentParser(prog="http oc", description="Run OpenCollection request")
+    p.add_argument("request_name", nargs="?", default=None)
+    p.add_argument("-c", "--collection", dest="collection", default=None)
+    p.add_argument("-e", "--environment", dest="environment", default=None)
+    p.add_argument("-v", "--var", dest="vars", action="append", default=[])
+    p.add_argument("--no-interactive", dest="no_interactive", action="store_true")
+    p.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
+    p.add_argument("-i", "--include", dest="include", action="store_true")
+    p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
+    p.add_argument("-L", "--follow", dest="follow", action="store_true")
+    p.add_argument("-H", "--header", dest="headers", action="append", default=[])
+    p.add_argument("-q", "--query", dest="queries", action="append", default=[])
+    p.add_argument(
+        *OC_OPTIONAL_QUERY_FLAGS,
+        dest="disable_queries_when_not_provided",
+        action="append",
+        metavar="QUERY[,QUERY...]",
+        help=(
+            "omit selected query parameters when their variables are not "
+            "explicitly provided; omit QUERY to apply to all queries"
+        ),
+    )
+    p.add_argument("--auth-no-cache", dest="auth_no_cache", action="store_true",
+                   help="force OAuth token regeneration, ignoring the cache")
+    return p
+
+
+def parse_oc_vars(raw_values):
+    out = {}
+    for raw in raw_values or []:
+        for item in raw.split(","):
+            if not item:
+                continue
+            if "=" not in item:
+                print(f"error: --var expects KEY=VALUE, got: {item!r}", file=sys.stderr)
+                sys.exit(2)
+            key, value = item.split("=", 1)
+            if not key:
+                print("error: --var key cannot be empty", file=sys.stderr)
+                sys.exit(2)
+            out[key] = value
+    return out
+
+
 def parse_args(argv):
+    if argv and argv[0] == "oc":
+        args = make_oc_parser().parse_args(normalize_oc_optional_query_argv(argv[1:]))
+        args.method = "oc"
+        return args
     parser = argparse.ArgumentParser(prog="http", description=__doc__)
     sub = parser.add_subparsers(dest="method", required=True)
     for m in ("get", "post", "put", "patch", "delete"):
@@ -216,8 +287,791 @@ def format_curl_command(curl_args):
     return "curl " + " ".join(shlex.quote(a) for a in curl_args)
 
 
+def mask_bearer_token(line):
+    return re.sub(
+        r"(Authorization: Bearer )\S+?(?=\s|')",
+        r"\1***",
+        line,
+    )
+
+
+OC_MANIFEST_NAMES = (
+    "opencollection.yaml",
+    "opencollection.yml",
+    "collection.yaml",
+    "collection.yml",
+)
+OC_INTERACTIVE_USED = False
+
+
+def die(message):
+    print(f"error: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def load_yaml_file(path):
+    if yaml is None:
+        die("PyYAML is required for http oc")
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except FileNotFoundError:
+        die(f"YAML file not found: {path}")
+    except Exception as e:
+        die(f"invalid YAML in {path}: {e}")
+    return data or {}
+
+
+def expand_config_path(value):
+    return Path(os.path.expandvars(os.path.expanduser(str(value))))
+
+
+def load_httprc(home):
+    path = home / ".config" / ".httprc"
+    if not path.is_file():
+        die("~/.config/.httprc not found; expected YAML with a collections: list")
+    data = load_yaml_file(path)
+    if not isinstance(data, dict):
+        die("~/.config/.httprc must be a YAML mapping containing collections: as a list")
+    roots = data.get("collections")
+    if not isinstance(roots, list):
+        die("~/.config/.httprc must contain collections: as a list")
+    return {"path": path, "roots": [expand_config_path(p) for p in roots]}
+
+
+def find_collection_manifest(directory):
+    for name in OC_MANIFEST_NAMES:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def discover_collections(roots):
+    found = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for current, dirs, _files in os.walk(root):
+            current_path = Path(current)
+            manifest = find_collection_manifest(current_path)
+            if not manifest:
+                continue
+            data = load_yaml_file(manifest)
+            if not isinstance(data, dict):
+                die(f"collection manifest must be a YAML mapping: {manifest}")
+            info = data.get("info") if isinstance(data.get("info"), dict) else {}
+            name = info.get("name") or current_path.name
+            found.append({
+                "name": str(name),
+                "path": current_path,
+                "manifest_path": manifest,
+                "manifest": data,
+            })
+            dirs[:] = []
+    return found
+
+
+def run_fzf(lines):
+    if shutil.which("fzf") is None:
+        return None
+    proc = subprocess.run(["fzf"], input="\n".join(lines) + "\n", text=True, capture_output=True)
+    if proc.returncode == -2 or proc.returncode == 130:
+        raise KeyboardInterrupt()
+    if proc.returncode != 0:
+        return None
+    selected = proc.stdout.rstrip("\n")
+    if selected in lines:
+        return lines.index(selected)
+    return None
+
+
+def choose_with_fzf_or_prompt(items, label, format_item):
+    global OC_INTERACTIVE_USED
+    if not items:
+        die(f"no {label} choices available")
+    lines = [format_item(item) for item in items]
+    idx = run_fzf(lines)
+    if idx is not None:
+        OC_INTERACTIVE_USED = True
+        return items[idx]
+    print(f"Choose {label}:", file=sys.stderr)
+    for i, line in enumerate(lines, start=1):
+        print(f"  {i}) {line}", file=sys.stderr)
+    raw = input(f"{label} number: ").strip()
+    try:
+        chosen = int(raw)
+    except ValueError:
+        die(f"invalid {label} selection: {raw}")
+    if chosen < 1 or chosen > len(items):
+        die(f"invalid {label} selection: {raw}")
+    OC_INTERACTIVE_USED = True
+    return items[chosen - 1]
+
+
+def select_collection(collections, name, interactive):
+    if not collections:
+        die("no collections discovered from ~/.config/.httprc roots")
+    if name:
+        matches = [c for c in collections if c["name"] == name or c["path"].name == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            if interactive:
+                return choose_with_fzf_or_prompt(matches, "collection", lambda c: f"{c['name']}\t{c['path']}")
+            die("collection name is ambiguous: " + ", ".join(str(c["path"]) for c in matches))
+        die("collection not found: " + name + "; available: " + ", ".join(c["name"] for c in collections))
+    if interactive:
+        return choose_with_fzf_or_prompt(collections, "collection", lambda c: f"{c['name']}\t{c['path']}")
+    die("collection is required; pass -c/--collection")
+
+
+def is_collection_manifest(path):
+    return path.name in OC_MANIFEST_NAMES
+
+
+def is_http_request_doc(data):
+    if not isinstance(data, dict):
+        return False
+    if data.get("type") == "http":
+        return True
+    request = data.get("request")
+    return isinstance(request, dict) and ("method" in request or "url" in request)
+
+
+def discover_requests(collection):
+    found = []
+    base = collection["path"]
+    for current, _dirs, files in os.walk(base):
+        for filename in files:
+            path = Path(current) / filename
+            if path.suffix.lower() not in (".yaml", ".yml"):
+                continue
+            if is_collection_manifest(path):
+                continue
+            data = load_yaml_file(path)
+            if not is_http_request_doc(data):
+                continue
+            found.append({
+                "name": path.stem,
+                "path": path,
+                "data": data,
+                "display": data.get("name") or path.stem,
+            })
+    return sorted(found, key=lambda r: r["name"])
+
+
+def select_request(requests, name, interactive):
+    if not requests:
+        die("no HTTP request YAML files discovered in collection")
+    if name:
+        matches = [r for r in requests if r["name"] == name or r["display"] == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            if interactive:
+                return choose_with_fzf_or_prompt(matches, "request", lambda r: f"{r['name']}\t{r['path']}")
+            die("request name is ambiguous: " + ", ".join(str(r["path"]) for r in matches))
+        die("request not found: " + name + "; available: " + ", ".join(r["name"] for r in requests))
+    if interactive:
+        return choose_with_fzf_or_prompt(requests, "request", lambda r: f"{r['name']}\t{r['path']}")
+    die("request name is required in --no-interactive mode")
+
+
+def variables_list_to_dict(values):
+    out = {}
+    if not isinstance(values, list):
+        return out
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if name is None:
+            continue
+        out[str(name)] = str(item.get("value", ""))
+    return out
+
+
+def get_collection_variables(collection_manifest):
+    return variables_list_to_dict(collection_manifest.get("variables"))
+
+
+def get_request_variables(request_doc):
+    out = variables_list_to_dict(request_doc.get("variables"))
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    out.update(variables_list_to_dict(request.get("variables")))
+    return out
+
+
+def get_environments(collection_manifest):
+    config = collection_manifest.get("config") if isinstance(collection_manifest.get("config"), dict) else {}
+    envs = config.get("environments") or []
+    return [e for e in envs if isinstance(e, dict) and e.get("name")]
+
+
+def select_environment(environments, name, interactive):
+    if name:
+        matches = [e for e in environments if e.get("name") == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            die("environment name is ambiguous: " + name)
+        die("environment not found: " + name + "; available: " + ", ".join(str(e.get("name")) for e in environments))
+    if not environments:
+        return None
+    if len(environments) == 1:
+        return environments[0]
+    if interactive:
+        return choose_with_fzf_or_prompt(environments, "environment", lambda e: str(e.get("name")))
+    die("environment is required when multiple environments exist; pass -e/--environment")
+
+
+def find_template_variables(value):
+    found = set()
+    if isinstance(value, str):
+        found.update(
+            m.group(1)
+            for m in _TEMPLATE_RE.finditer(value)
+            if not m.group(1).startswith("process.env.")
+        )
+    elif isinstance(value, dict):
+        for child in value.values():
+            found.update(find_template_variables(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.update(find_template_variables(child))
+    return found
+
+
+def parse_optional_query_selection(raw_values):
+    if raw_values is None:
+        return False, set()
+    names = set()
+    for raw in raw_values:
+        if raw == OC_ALL_QUERIES_SENTINEL:
+            return True, set()
+        names.update(name for name in raw.split(",") if name)
+    return True, names
+
+
+def get_request_params(request_doc):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    return [param for param in request.get("params") or [] if isinstance(param, dict)]
+
+
+def get_request_query_params(request_doc):
+    return [
+        param for param in get_request_params(request_doc)
+        if param.get("disabled") is not True
+        and param.get("type", "query") == "query"
+    ]
+
+
+def validate_optional_query_selection(request_doc, requested, names):
+    if not requested or not names:
+        return
+    params = get_request_params(request_doc)
+    query_names = {
+        str(param.get("name")) for param in get_request_query_params(request_doc)
+        if param.get("name") is not None
+    }
+    all_names = {
+        str(param.get("name")) for param in params
+        if param.get("name") is not None
+    }
+    for name in sorted(names):
+        if name in query_names:
+            continue
+        if name in all_names:
+            die("parameter is not a query parameter: " + name)
+        available = ", ".join(sorted(query_names)) or "(none)"
+        die(f"query parameter not found: {name}; available: {available}")
+
+
+def optional_query_is_covered(param, requested, names):
+    if not requested:
+        return False
+    if not names:
+        return True
+    name = param.get("name")
+    return name is not None and str(name) in names
+
+
+def resolve_optional_queries(request_doc, cli_vars, variables, requested, names, interactive):
+    prompted = {}
+    disabled_indexes = set()
+    prompt_cache = {}
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    for index, param in enumerate(request.get("params") or []):
+        if not isinstance(param, dict):
+            continue
+        if param.get("disabled") is True or param.get("type", "query") != "query":
+            continue
+        if not optional_query_is_covered(param, requested, names):
+            continue
+        needed = find_template_variables(param.get("name", ""))
+        needed.update(find_template_variables(param.get("value", "")))
+        disable = False
+        for variable_name in sorted(needed):
+            if variable_name in cli_vars:
+                value = cli_vars[variable_name]
+            elif interactive:
+                if variable_name not in prompt_cache:
+                    prompt_cache[variable_name] = input(f"value for {variable_name} (leave empty to disable): ")
+                value = prompt_cache[variable_name]
+                prompted[variable_name] = value
+            else:
+                value = ""
+            if value == "":
+                disable = True
+            else:
+                variables[variable_name] = value
+        if disable:
+            disabled_indexes.add(index)
+    return variables, prompted, disabled_indexes
+
+
+def collect_missing_variables(request_doc, variables, disabled_query_indexes=None):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    found = set()
+    path_param_names = set()
+    disabled_query_indexes = disabled_query_indexes or set()
+    for index, param in enumerate(request.get("params") or []):
+        if index in disabled_query_indexes:
+            continue
+        if not isinstance(param, dict) or param.get("disabled") is True:
+            continue
+        if param.get("type") == "path":
+            name = param.get("name")
+            if name is not None:
+                path_param_names.add(str(name))
+            found.update(find_template_variables(param.get("value", "")))
+            continue
+        found.update(find_template_variables(param.get("name", "")))
+        found.update(find_template_variables(param.get("value", "")))
+    if request.get("url") is not None:
+        found.update(find_template_variables(request.get("url")))
+    for header in request.get("headers") or []:
+        if not isinstance(header, dict) or header.get("disabled") is True:
+            continue
+        found.update(find_template_variables(header.get("name", "")))
+        found.update(find_template_variables(header.get("value", "")))
+    body = request.get("body")
+    if isinstance(body, dict) and str(body.get("type") or "") in ("json", "xml", "text", "sparql"):
+        found.update(find_template_variables(body.get("data", "")))
+    found.difference_update(path_param_names)
+    return found - set(variables)
+
+
+def prompt_enable_optional_queries():
+    global OC_INTERACTIVE_USED
+    OC_INTERACTIVE_USED = True
+    answer = input(
+        "Allow disabling query parameters with an empty value? [y/N] "
+    ).strip().lower()
+    return answer in ("y", "yes")
+
+
+def prompt_missing_variables(missing):
+    global OC_INTERACTIVE_USED
+    values = {}
+    for name in sorted(missing):
+        OC_INTERACTIVE_USED = True
+        values[name] = input(f"value for {name}: ")
+    return values
+
+
+def resolve_oc_variables(collection, request, environment, cli_vars, interactive,
+                         optional_queries_requested=False, optional_query_names=None):
+    """Resolve all variables and return (resolved_vars, prompted_vars, disabled indexes)."""
+    variables = {}
+    variables.update(get_collection_variables(collection["manifest"]))
+    variables.update(get_request_variables(request["data"]))
+    if environment:
+        variables.update(variables_list_to_dict(environment.get("variables")))
+    if optional_queries_requested:
+        variables.update({name: value for name, value in cli_vars.items() if value != ""})
+    else:
+        variables.update(cli_vars)
+    variables, optional_prompted, disabled_indexes = resolve_optional_queries(
+        request["data"], cli_vars, variables, optional_queries_requested,
+        optional_query_names or set(), interactive,
+    )
+    missing = collect_missing_variables(request["data"], variables, disabled_indexes)
+    prompted = dict(optional_prompted)
+    if missing:
+        if interactive:
+            required_prompted = prompt_missing_variables(missing)
+            prompted.update(required_prompted)
+            variables.update(required_prompted)
+        else:
+            die("missing variables: " + ", ".join(sorted(missing)))
+    return variables, prompted, disabled_indexes
+
+
+def get_oc_auth(collection_manifest, request_doc):
+    if isinstance(request_doc.get("auth"), dict):
+        return request_doc.get("auth")
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    if isinstance(request.get("auth"), dict):
+        return request.get("auth")
+    defaults = collection_manifest.get("request") if isinstance(collection_manifest.get("request"), dict) else {}
+    if isinstance(defaults.get("auth"), dict):
+        return defaults.get("auth")
+    return None
+
+
+def validate_supported_oc_auth(auth):
+    if auth is None:
+        return
+    auth_type = auth.get("type")
+    if auth_type != "oauth2":
+        die("unsupported auth type for MVP: " + str(auth_type))
+    grant_type = auth.get("grantType") or auth.get("grant_type")
+    if grant_type not in ("client_credentials", "authorization_code"):
+        die("unsupported oauth2 grant type for MVP: " + str(grant_type))
+
+
+def cache_key_for_auth(collection, environment, auth):
+    env_name = environment.get("name") if environment else ""
+    parts = [
+        str(collection["path"]),
+        str(env_name),
+        str(auth.get("grantType") or auth.get("grant_type") or ""),
+        str(auth.get("tokenUrl") or ""),
+        str(auth.get("clientId") or ""),
+        str(auth.get("scope") or ""),
+    ]
+    raw = "\0".join(parts).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest() + ".json"
+
+
+def load_cached_token(cache_dir, key, now=None):
+    now = time.time() if now is None else now
+    path = cache_dir / key
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    expires_at = data.get("expires_at")
+    token = data.get("access_token")
+    if not token or not expires_at:
+        return None
+    try:
+        expires_at_value = float(expires_at)
+    except (TypeError, ValueError):
+        return None
+    if expires_at_value <= now + 60:
+        return None
+    return str(token)
+
+
+def save_cached_token(cache_dir, key, token_response, now=None):
+    now = time.time() if now is None else now
+    token = token_response.get("access_token")
+    expires_in = token_response.get("expires_in")
+    if not token or expires_in is None:
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "access_token": token,
+        "token_type": token_response.get("token_type", "Bearer"),
+        "expires_at": now + int(expires_in),
+    }
+    path = cache_dir / key
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    path.chmod(0o600)
+
+
+def run_client_credentials(auth):
+    form = [
+        ("grant_type", "client_credentials"),
+        ("client_id", str(auth.get("clientId"))),
+        ("client_secret", str(auth.get("clientSecret"))),
+    ]
+    if auth.get("scope"):
+        form.append(("scope", str(auth.get("scope"))))
+    cmd = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--fail",
+        "-X",
+        "POST",
+        str(auth.get("tokenUrl")),
+        "-H",
+        "Content-Type: application/x-www-form-urlencoded",
+        "--data",
+        urlencode(form),
+    ]
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr, end="")
+        die("oauth2 client_credentials token request failed")
+    try:
+        data = json.loads(result.stdout)
+    except Exception as e:
+        die(f"oauth2 token response was not JSON: {e}")
+    if not data.get("access_token"):
+        die("access_token not found in oauth2 token response")
+    return data
+
+
+def run_authorization_code(auth, force=False):
+    helper = shutil.which("auth-code-token")
+    if helper is None:
+        local = Path(__file__).resolve().parent / "auth-code-token"
+        helper = str(local) if local.is_file() else None
+    if helper is None:
+        die("auth-code-token helper not found on PATH or next to http")
+    cmd = [
+        helper,
+        str(auth.get("clientId")),
+        str(auth.get("authorizationUrl")),
+        str(auth.get("tokenUrl")),
+        "--json",
+    ]
+    if auth.get("scope"):
+        cmd += ["--scope", str(auth.get("scope"))]
+    if auth.get("redirectUri"):
+        cmd += ["--redirect-uri", str(auth.get("redirectUri"))]
+    if force:
+        cmd.append("--force-login")
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr, end="")
+        die("oauth2 authorization_code token request failed")
+    try:
+        data = json.loads(result.stdout)
+    except Exception as e:
+        die(f"authorization_code token response was not JSON: {e}")
+    if not data.get("access_token"):
+        die("access_token not found in authorization_code token response")
+    return data
+
+
+def resolve_oauth2_token(collection, environment, auth, variables, force=False):
+    if auth is None:
+        return None
+    resolved = {}
+    for key, value in auth.items():
+        resolved[key] = apply_template(str(value), variables) if isinstance(value, str) else value
+    grant_type = resolved.get("grantType") or resolved.get("grant_type")
+    cache_dir = Path.home() / ".cache" / "http-oc"
+    key = cache_key_for_auth(collection, environment, resolved)
+    if not force:
+        cached = load_cached_token(cache_dir, key)
+        if cached:
+            return cached
+    if grant_type == "client_credentials":
+        token_response = run_client_credentials(resolved)
+    elif grant_type == "authorization_code":
+        token_response = run_authorization_code(resolved, force=force)
+    else:
+        die("unsupported oauth2 grant type for MVP: " + str(grant_type))
+    save_cached_token(cache_dir, key, token_response)
+    return str(token_response.get("access_token"))
+
+
+def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_args):
+    ns = argparse.Namespace()
+    ns.method = method.lower()
+    ns.base_url = url
+    ns.path = None
+    ns.token = None
+    ns.headers = headers + list(passthrough_args.headers or [])
+    ns.queries = queries + list(passthrough_args.queries or [])
+    ns.file = None
+    ns.data = body
+    ns.vars = []
+    ns.include = passthrough_args.include
+    ns.dry_run = passthrough_args.dry_run
+    ns.insecure = passthrough_args.insecure
+    ns.follow = passthrough_args.follow
+    return ns
+
+
+def content_type_for_oc_body(body_type):
+    return {
+        "json": "application/json",
+        "xml": "application/xml",
+        "text": "text/plain",
+        "sparql": "application/sparql-query",
+    }.get(body_type)
+
+
+def add_path_params_to_variables(request_doc, variables):
+    out = dict(variables)
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    for param in request.get("params") or []:
+        if not isinstance(param, dict) or param.get("disabled") is True:
+            continue
+        if param.get("type") != "path":
+            continue
+        name = param.get("name")
+        if name is None:
+            continue
+        out[str(name)] = apply_template(str(param.get("value", "")), out)
+    return out
+
+
+def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=None):
+    request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
+    disabled_query_indexes = disabled_query_indexes or set()
+    variables = add_path_params_to_variables(request_doc, variables)
+    method = str(request.get("method") or "GET")
+    url = apply_template(str(request.get("url") or ""), variables)
+    if not url:
+        die("request.url is required")
+    headers = []
+    for header in request.get("headers") or []:
+        if not isinstance(header, dict) or header.get("disabled") is True:
+            continue
+        name = header.get("name")
+        value = header.get("value")
+        if name is None or value is None:
+            continue
+        headers.append(f"{apply_template(str(name), variables)}: {apply_template(str(value), variables)}")
+    queries = []
+    for index, param in enumerate(request.get("params") or []):
+        if index in disabled_query_indexes:
+            continue
+        if not isinstance(param, dict) or param.get("disabled") is True:
+            continue
+        if param.get("type") == "path":
+            continue
+        if param.get("type", "query") != "query":
+            continue
+        name = param.get("name")
+        value = param.get("value", "")
+        if name is None:
+            continue
+        queries.append(f"{apply_template(str(name), variables)}={apply_template(str(value), variables)}")
+    body_value = None
+    body = request.get("body")
+    if body is not None:
+        if not isinstance(body, dict):
+            die("unsupported request.body shape; expected object with type and data")
+        body_type = str(body.get("type") or "")
+        if body_type not in ("json", "xml", "text", "sparql"):
+            die("unsupported request.body type for MVP: " + body_type)
+        body_value = apply_template(str(body.get("data", "")), variables)
+        default_ct = content_type_for_oc_body(body_type)
+        combined_headers = headers + list(args.headers or [])
+        if default_ct and not has_header(combined_headers, "Content-Type"):
+            headers.append(f"Content-Type: {default_ct}")
+    return make_direct_args_from_oc(method, url, headers, queries, body_value, args)
+
+
+def build_equivalent_command(
+    collection_name, env_name, request_name, cli_vars=None,
+    optional_queries_requested=False, optional_query_names=None,
+):
+    cmd = ["http", "oc", "-c", collection_name]
+    if env_name:
+        cmd += ["-e", env_name]
+    if cli_vars:
+        var_pairs = ",".join(f"{k}={v}" for k, v in sorted(cli_vars.items()))
+        cmd += ["-v", var_pairs]
+    if optional_queries_requested:
+        if optional_query_names:
+            names = ",".join(sorted(optional_query_names))
+            cmd.append(f"--dqwnp={names}")
+        else:
+            cmd.append("--dqwnp")
+    cmd.append(request_name)
+    return " ".join(cmd)
+
+
+def print_oc_summary(collection, environment, request, direct_args, cli_vars=None,
+                     optional_queries_requested=False, optional_query_names=None):
+    env_name = environment.get("name") if environment else ""
+    print(f"Collection: {collection['name']}")
+    if env_name:
+        print(f"Environment: {env_name}")
+    print(f"Request: {request['name']}")
+    print(f"{direct_args.method.upper()} {direct_args.base_url}")
+    cmd = build_equivalent_command(
+        collection["name"], env_name, request["name"], cli_vars,
+        optional_queries_requested, optional_query_names,
+    )
+    print(f"Comando equivalente: {cmd}")
+
+
+def main_oc(args):
+    global OC_INTERACTIVE_USED
+    OC_INTERACTIVE_USED = False
+    equivalent_cmd = None
+    summary_printed = False
+    try:
+        interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
+        config = load_httprc(Path.home())
+        collections = discover_collections(config["roots"])
+        collection = select_collection(collections, args.collection, interactive)
+        requests = discover_requests(collection)
+        request = select_request(requests, args.request_name, interactive)
+        optional_requested, optional_names = parse_optional_query_selection(args.disable_queries_when_not_provided)
+        validate_optional_query_selection(request["data"], optional_requested, optional_names)
+        environments = get_environments(collection["manifest"])
+        environment = select_environment(environments, args.environment, interactive)
+        query_params = get_request_query_params(request["data"])
+        if interactive and query_params and not optional_requested:
+            if prompt_enable_optional_queries():
+                optional_requested = True
+                optional_names = set()
+        cli_vars = parse_oc_vars(args.vars)
+        variables, prompted, disabled_query_indexes = resolve_oc_variables(
+            collection, request, environment, cli_vars, interactive,
+            optional_requested, optional_names,
+        )
+        effective_vars = {
+            key: value for key, value in {**cli_vars, **prompted}.items()
+            if value != ""
+        }
+
+        env_name = environment.get("name") if environment else ""
+        equivalent_cmd = build_equivalent_command(
+            collection["name"], env_name, request["name"], effective_vars,
+            optional_requested, optional_names,
+        )
+
+        auth = get_oc_auth(collection["manifest"], request["data"])
+        validate_supported_oc_auth(auth)
+        token = resolve_oauth2_token(collection, environment, auth, variables,
+                                      force=args.auth_no_cache)
+        direct_args = build_basic_oc_args(
+            args, request["data"], variables, disabled_query_indexes,
+        )
+        if token:
+            direct_args.headers.append(f"Authorization: Bearer {token}")
+        if OC_INTERACTIVE_USED:
+            print_oc_summary(
+                collection, environment, request, direct_args, effective_vars,
+                optional_requested, optional_names,
+            )
+            summary_printed = True
+        curl_args = build_curl_args(direct_args, direct_args.base_url)
+        if args.dry_run:
+            print(mask_bearer_token(format_curl_command(curl_args)))
+            return 0
+        result = subprocess.run(["curl", *curl_args])
+        return result.returncode
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+    finally:
+        if OC_INTERACTIVE_USED and equivalent_cmd and not summary_printed:
+            print(f"Comando equivalente: {equivalent_cmd}")
+
+
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.method == "oc":
+        return main_oc(args)
 
     if args.token is not None and not args.token.strip():
         print("error: --token is empty", file=sys.stderr)
