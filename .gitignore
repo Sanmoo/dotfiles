@@ -12,6 +12,7 @@ herdr/.config/herdr/*.log
 .superpowers/
 herdr/.config/herdr/sessions/
 herdr/.config/herdr/release-notes.json
+herdr/.config/herdr/plugins.json
 herdr/.config/herdr/session-history.json
 herdr/.config/herdr/focus-state.json
 # binary

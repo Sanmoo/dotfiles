@@ -87,6 +87,12 @@ type = "shell"
 command = "~/.config/herdr/focus-next-actionable-agent.sh"
 description = "focus next agent with unseen state change"
 
+[[keys.command]]
+key = "ctrl+e"
+type = "plugin_action"
+command = "beyondlex.herdr-recent-navigator.open"
+description = "Open Navigator"
+
 # Optional modifier-only shortcuts expanded over number keys 1-9.
 # Empty means disabled. Examples: "ctrl", "ctrl+shift", "alt".
 [keys.indexed]
