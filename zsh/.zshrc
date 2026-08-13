@@ -6,6 +6,18 @@ export HISTFILESIZE=100000
 export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
 export ND_VAULT=$HOME/dev/github.com/Sanmoo/pkm/.vault
 
+# Use the personal vault from any directory. Pass --vault explicitly to target
+# a different nd vault.
+nd() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --vault|--vault=*) command nd "$@"; return ;;
+    esac
+  done
+  command nd --vault "$ND_VAULT" "$@"
+}
+
 alias remind="nd-overdue"
 remind
 
