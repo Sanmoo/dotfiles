@@ -2,12 +2,11 @@ export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 export HISTSIZE=10000
 export HISTFILESIZE=100000
 
-# Beads Stuff
+# nd task vault
 export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
-export BEADS_DIR=$HOME/dev/github.com/Sanmoo/pkm/.beads/
-# export BD_JSON_ENVELOPE=1
+export ND_VAULT=$HOME/dev/github.com/Sanmoo/pkm/.vault
 
-alias remind="bd-overdue"
+alias remind="nd-overdue"
 remind
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
@@ -185,14 +184,14 @@ eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
 
 ## Tasks
-alias "inprogress-bjd"="bd list --status=in_progress --label area/bjd --exclude-label status/waiting"
-alias "inprogress-studies"="bd list --status=in_progress --label area/studies"
-alias "inprogress-dom"="bd list --status=in_progress --label area/dom"
-alias "next-bjd"="bd-next --area bjd"
-alias "next-dom"="bd-next --area dom"
-alias "next-studies"="bd-next --area studies"
-alias "waiting-bjd"="bd list --label status/waiting,area/bjd"
-alias "waiting-dom"="bd list --label status/waiting,area/dom"
+alias "inprogress-bjd"='nd --vault "$ND_VAULT" list --status in_progress --label area/bjd'
+alias "inprogress-studies"='nd --vault "$ND_VAULT" list --status in_progress --label area/studies'
+alias "inprogress-dom"='nd --vault "$ND_VAULT" list --status in_progress --label area/dom'
+alias "next-bjd"="nd-next --area bjd"
+alias "next-dom"="nd-next --area dom"
+alias "next-studies"="nd-next --area studies"
+alias "waiting-bjd"='nd --vault "$ND_VAULT" list --status waiting --label area/bjd'
+alias "waiting-dom"='nd --vault "$ND_VAULT" list --status waiting --label area/dom'
 alias "get"='http get -t $ACCESS_TOKEN'
 alias "post"='http post -t $ACCESS_TOKEN'
 alias "put"='http put -t $ACCESS_TOKEN'
