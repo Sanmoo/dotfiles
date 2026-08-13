@@ -9,7 +9,7 @@
     "opencode-go/kimi-k3",
     "opencode-go/glm-5.2"
   ],
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
