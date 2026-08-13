@@ -6,16 +6,38 @@ export HISTFILESIZE=100000
 export PATH=$HOME/dev/github.com/Sanmoo/pkm/scripts:$PATH
 export ND_VAULT=$HOME/dev/github.com/Sanmoo/pkm/.vault
 
-# Use the personal vault from any directory. Pass --vault explicitly to target
-# a different nd vault.
+# Use the personal vault from any directory. List and ready are rendered as
+# title-first lines; pass --json for the native machine-readable output.
 nd() {
-  local arg
+  local arg command_name="" has_json=false has_vault=false skip_next=false
   for arg in "$@"; do
+    if $skip_next; then
+      skip_next=false
+      continue
+    fi
     case "$arg" in
-      --vault|--vault=*) command nd "$@"; return ;;
+      --vault) has_vault=true; skip_next=true ;;
+      --vault=*) has_vault=true ;;
+      --json) has_json=true ;;
+      -*) ;;
+      *) [[ -z "$command_name" ]] && command_name="$arg" ;;
     esac
   done
-  command nd --vault "$ND_VAULT" "$@"
+
+  if [[ "$command_name" == "list" || "$command_name" == "ready" ]] && ! $has_json; then
+    if $has_vault; then
+      command nd "$@" --json | nd-format
+    else
+      command nd --vault "$ND_VAULT" "$@" --json | nd-format
+    fi
+    return ${pipestatus[1]}
+  fi
+
+  if $has_vault; then
+    command nd "$@"
+  else
+    command nd --vault "$ND_VAULT" "$@"
+  fi
 }
 
 alias remind="nd-overdue"
