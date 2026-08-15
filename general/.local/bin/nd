@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Transparent nd wrapper: show DeferUntil in human-facing `nd show` / `nd list`.
+
+The real `nd` is a compiled Go binary (installed via mise) with no option for
+custom output fields, so this wrapper shadows it on PATH (`~/.local/bin/nd`,
+stowed from the dotfiles repo `general/.local/bin/nd`) and passes everything
+else through untouched. The only changes:
+
+  * `nd show <id>`  adds a `Defer until:` line to the metadata header
+  * `nd list ...`   appends `[defer YYYY-MM-DD]` to lines of deferred issues
+
+Decoration only happens when ALL of these hold:
+  * the command is `show` or `list`
+  * stdout is a terminal (pipelines, scripts, and `--json` output are untouched)
+  * no --json, --quiet, -h/--help, or (for show) --short is present
+
+Colors are preserved by running the real binary on a pty sized to the current
+terminal; exit codes are propagated. Set ND_NO_DECORATE=1 to disable decoration
+entirely (full passthrough).
+"""
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import pty
+import re
+import shutil
+import subprocess
+import sys
+import termios
+from datetime import datetime
+from pathlib import Path
+
+CYAN = "\x1b[38;2;89;194;255m"      # nd's metadata label color (Owner:, Created:)
+DIM = "\x1b[2m"
+RESET = "\x1b[0m"
+
+HERE = Path(__file__).resolve()
+
+LABELS_RE = re.compile(b"(?m)^(.*Labels:[^\r\n]*\r?)$")
+AUTHOR_RE = re.compile(b"(?m)^(.*Author:[^\r\n]*\r?)$")
+CREATED_RE = re.compile(b"(?m)^(.*Created:[^\r\n]*\r?)$")
+
+
+def real_nd() -> str:
+    """Locate the real nd binary, never this wrapper."""
+    candidates: list[str] = []
+    try:
+        out = subprocess.check_output(
+            ["mise", "which", "nd"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        if out:
+            candidates.append(out)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    found = shutil.which("nd")
+    if found:
+        candidates.append(found)
+    candidates.extend(
+        str(p)
+        for p in sorted(
+            Path.home().glob(".local/share/mise/installs/github-paivot-ai-nd/*/nd"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    )
+    for cand in candidates:
+        if Path(cand).resolve() != HERE and os.access(cand, os.X_OK):
+            return cand
+    sys.stderr.write("nd wrapper: cannot locate the real nd binary\n")
+    sys.exit(1)
+
+
+def passthrough(args: list[str], binary: str) -> None:
+    """Replace this process with the real nd (byte-identical behavior)."""
+    os.execv(binary, [binary, *args])
+
+
+def command_name(args: list[str]) -> str:
+    """First positional argument, skipping flags and --vault's value."""
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--vault":
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return arg
+    return ""
+
+
+def should_decorate(args: list[str]) -> bool:
+    if os.environ.get("ND_NO_DECORATE"):
+        return False
+    if not args or not sys.stdout.isatty():
+        return False
+    cmd = command_name(args)
+    if cmd not in ("show", "list"):
+        return False
+    for arg in args:
+        if arg in ("--json", "--quiet", "-h", "--help"):
+            return False
+        if cmd == "show" and arg == "--short":
+            return False
+    return True
+
+
+def nd_json(binary: str, args: list[str]) -> list[dict] | dict | None:
+    try:
+        out = subprocess.check_output(
+            [binary, *args, "--json"], text=True, stderr=subprocess.DEVNULL
+        )
+        return json.loads(out)
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return None
+
+
+def run_on_pty(binary: str, args: list[str]) -> tuple[bytes, int]:
+    """Run the real nd with a pty stdout so it colorizes; return bytes + code."""
+    master, slave = pty.openpty()
+    proc = None
+    try:
+        if sys.stdout.isatty():
+            try:
+                winsz = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b"\0" * 8)
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, winsz)
+            except OSError:
+                pass
+        proc = subprocess.Popen(
+            [binary, *args], stdout=slave, stderr=sys.stderr, close_fds=True
+        )
+    finally:
+        os.close(slave)
+    chunks: list[bytes] = []
+    while True:
+        try:
+            data = os.read(master, 65536)
+        except OSError:
+            break
+        if not data:
+            break
+        chunks.append(data)
+    os.close(master)
+    assert proc is not None
+    code = proc.wait()
+    return b"".join(chunks).replace(b"\r\n", b"\n"), code if code >= 0 else 128 - code
+
+
+def format_until(value: str) -> str:
+    """2026-08-18T08:00:00Z -> '2026-08-18 08:00' (wall clock, like Created:)."""
+    if "T" in value:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+        except ValueError:
+            pass
+    return value
+
+
+def decorate_show(binary: str, args: list[str]) -> int:
+    data = nd_json(binary, args)
+    until = str(data.get("DeferUntil") or "") if isinstance(data, dict) else ""
+    if not until:
+        passthrough(args, binary)  # not deferred: let the real nd render directly
+    out, code = run_on_pty(binary, args)
+    line = (CYAN + "Defer until:" + RESET + " " + format_until(until)).encode()
+    for regex in (LABELS_RE, AUTHOR_RE, CREATED_RE):
+        new_out, count = regex.subn(b"\\1\n" + line, out, count=1)
+        if count:
+            out = new_out
+            break
+    sys.stdout.buffer.write(out)
+    sys.stdout.buffer.flush()
+    return code
+
+
+def decorate_list(binary: str, args: list[str]) -> int:
+    data = nd_json(binary, args)
+    deferred: dict[str, str] = {}
+    if isinstance(data, list):
+        for item in data:
+            until = str(item.get("DeferUntil") or "")
+            if until:
+                deferred[str(item.get("ID"))] = until
+    if not deferred:
+        passthrough(args, binary)  # nothing deferred: render as-is
+    out, code = run_on_pty(binary, args)
+    rendered = []
+    for line in out.split(b"\n"):
+        parts = line.decode("utf-8", "replace").split(" ", 2)
+        if len(parts) >= 2 and parts[1] in deferred:
+            date_part = deferred[parts[1]].split("T")[0]
+            line += (b" " + (DIM + "[defer " + date_part + "]" + RESET).encode())
+        rendered.append(line)
+    sys.stdout.buffer.write(b"\n".join(rendered))
+    sys.stdout.buffer.flush()
+    return code
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    binary = real_nd()
+    if not should_decorate(args):
+        passthrough(args, binary)
+    if command_name(args) == "show":
+        return decorate_show(binary, args)
+    return decorate_list(binary, args)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        # A wrapper bug must never shadow the real tool: fall back to it.
+        passthrough(sys.argv[1:], real_nd())
