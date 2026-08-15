@@ -19,3 +19,10 @@ alias dev-token='setup-rest && export ACCESS_TOKEN=$(client-credentials-token "$
 alias qual-token='setup-rest && export ACCESS_TOKEN=$(client-credentials-token "$REV_KC_QUAL_CLIENT_ID" "$KC_REV_QUAL_CLIENT_SECRET" "$KEYCLOAK_QUAL_TOKEN_URL") && echo $ACCESS_TOKEN'
 alias atrium-dev-token='export ACCESS_TOKEN=$(auth-code-token "$ATRIUM_AUTH_CLIENT_ID" "$ATRIUM_AUTH_DEV_URL" "$ATRIUM_AUTH_TOKEN_DEV_URL" --redirect-uri "$ATRIUM_AUTH_CB_DEV_URL") && echo $ACCESS_TOKEN'
 alias atrium-qual-token='export ACCESS_TOKEN=$(auth-code-token "$ATRIUM_QUAL_AUTH_CLIENT_ID" "$ATRIUM_AUTH_QUAL_URL" "$ATRIUM_AUTH_TOKEN_QUAL_URL" --redirect-uri "$ATRIUM_AUTH_CB_QUAL_URL" --scope dealerAccount) && echo $ACCESS_TOKEN'
+
+# Android SDK
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export PATH="/opt/homebrew/share/android-commandlinetools/cmdline-tools/latest/bin:$PATH"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+export PATH="$ANDROID_HOME/emulator:$PATH"
