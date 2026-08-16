@@ -1,0 +1,13 @@
+# Template de config do `mt` — machine-specific, NÃO stowado.
+#
+# Em cada máquina, copie este arquivo para ~/.config/mt/config.yaml
+# e ajuste os bookmarks para os caminhos locais:
+#
+#     mkdir -p ~/.config/mt
+#     cp mt.config.example.yaml ~/.config/mt/config.yaml
+#     $EDITOR ~/.config/mt/config.yaml
+#
+bookmarks:
+    bjd: /home/<user>/dev/github.com/<user>/pkm/.vault/bjd
+    dom: /home/<user>/dev/github.com/<user>/pkm/.vault/dom
+    pes: /home/<user>/dev/github.com/<user>/pkm/.vault/pes
