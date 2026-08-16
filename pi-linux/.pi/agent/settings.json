@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.84.1",
+  "lastChangelogVersion": "0.84.2",
   "enabledModels": [
     "opencode-go/deepseek-v4-pro",
     "opencode-go/deepseek-v4-flash",
@@ -9,7 +9,7 @@
     "opencode-go/kimi-k3",
     "opencode-go/glm-5.2"
   ],
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "max",
   "hideThinkingBlock": true,
   "extensions": [],
   "packages": [
@@ -24,7 +24,7 @@
     "npm:@firstpick/pi-extension-stats",
     "npm:pi-rtk-optimizer"
   ],
-  "defaultModel": "deepseek-v4-pro",
+  "defaultModel": "deepseek-v4-flash",
   "defaultProvider": "opencode-go",
   "theme": "dark"
 }

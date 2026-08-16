@@ -1,3 +1,15 @@
+# Terminals launched outside the compositor session (systemd units,
+# xdg-terminal-exec without env import, SSH) miss WAYLAND_DISPLAY, and
+# wl-copy then falls back to wayland-0 while the live socket may be
+# wayland-1 (or later). Detect the socket so `pwd | c` keeps working.
+if [[ -z "$WAYLAND_DISPLAY" ]]; then
+  _wl_sock=$(ls -t "$XDG_RUNTIME_DIR"/wayland-[0-9]* 2>/dev/null | head -1)
+  if [[ -n "$_wl_sock" && -S "$_wl_sock" ]]; then
+    export WAYLAND_DISPLAY="${_wl_sock##*/}"
+  fi
+  unset _wl_sock
+fi
+
 alias c="wl-copy"
 alias open="xdg-open"
 
