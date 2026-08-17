@@ -218,9 +218,16 @@ eval "$(mise activate zsh)"
 eval "$(zoxide init zsh)"
 
 ## Tasks
-alias "inprogress-bjd"='nd --vault "$ND_VAULT" list --status in_progress --label area/bjd'
-alias "inprogress-studies"='nd --vault "$ND_VAULT" list --status in_progress --label area/studies'
-alias "inprogress-dom"='nd --vault "$ND_VAULT" list --status in_progress --label area/dom'
+# alias "inprogress-bjd"='nd --vault "$ND_VAULT" list --status in_progress --label area/bjd'
+# alias "inprogress-studies"='nd --vault "$ND_VAULT" list --status in_progress --label area/studies'
+# alias "inprogress-dom"='nd --vault "$ND_VAULT" list --status in_progress --label area/dom'
+# alias "next-bjd"="nd-next --area bjd"
+# alias "next-dom"="nd-next --area dom"
+# alias "next-studies"="nd-next --area studies"
+# alias "waiting-bjd"='nd --vault "$ND_VAULT" list --status waiting --label area/bjd'
+# alias "waiting-dom"='nd --vault "$ND_VAULT" list --status waiting --label area/dom'
+alias "inprogress-bjd"='mt @bjd list --status in_progress'
+alias "inprogress-dom"='mt @dom list --status in_progress'
 alias "next-bjd"="nd-next --area bjd"
 alias "next-dom"="nd-next --area dom"
 alias "next-studies"="nd-next --area studies"
