@@ -155,6 +155,8 @@ def make_oc_parser():
     p.add_argument("-L", "--follow", dest="follow", action="store_true")
     p.add_argument("-H", "--header", dest="headers", action="append", default=[])
     p.add_argument("-q", "--query", dest="queries", action="append", default=[])
+    p.add_argument("-f", "--file", dest="file", default=None)
+    p.add_argument("-d", "--data", dest="data", default=None)
     p.add_argument(
         *OC_OPTIONAL_QUERY_FLAGS,
         dest="disable_queries_when_not_provided",
@@ -631,7 +633,7 @@ def resolve_optional_queries(request_doc, cli_vars, variables, requested, names,
     return variables, prompted, disabled_indexes
 
 
-def collect_missing_variables(request_doc, variables, disabled_query_indexes=None):
+def collect_missing_variables(request_doc, variables, disabled_query_indexes=None, body_override=None):
     request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
     found = set()
     path_param_names = set()
@@ -657,7 +659,9 @@ def collect_missing_variables(request_doc, variables, disabled_query_indexes=Non
         found.update(find_template_variables(header.get("name", "")))
         found.update(find_template_variables(header.get("value", "")))
     body = request.get("body")
-    if isinstance(body, dict):
+    if body_override is not None:
+        found.update(find_template_variables(body_override))
+    elif isinstance(body, dict):
         body_type = str(body.get("type") or "")
         if body_type in ("json", "xml", "text", "sparql"):
             found.update(find_template_variables(body.get("data", "")))
@@ -690,7 +694,8 @@ def prompt_missing_variables(missing):
 
 
 def resolve_oc_variables(collection, request, environment, cli_vars, interactive,
-                         optional_queries_requested=False, optional_query_names=None):
+                         optional_queries_requested=False, optional_query_names=None,
+                         body_override=None):
     """Resolve all variables and return (resolved_vars, prompted_vars, disabled indexes)."""
     variables = {}
     variables.update(get_collection_variables(collection["manifest"]))
@@ -705,7 +710,7 @@ def resolve_oc_variables(collection, request, environment, cli_vars, interactive
         request["data"], cli_vars, variables, optional_queries_requested,
         optional_query_names or set(), interactive,
     )
-    missing = collect_missing_variables(request["data"], variables, disabled_indexes)
+    missing = collect_missing_variables(request["data"], variables, disabled_indexes, body_override)
     prompted = dict(optional_prompted)
     if missing:
         if interactive:
@@ -893,8 +898,9 @@ def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_ar
     ns.token = None
     ns.headers = headers + list(passthrough_args.headers or [])
     ns.queries = queries + list(passthrough_args.queries or [])
-    ns.file = None
+    ns.file = getattr(passthrough_args, "file", None)
     ns.data = body
+    ns.file_body = getattr(passthrough_args, "file_body", None)
     ns.vars = []
     ns.include = passthrough_args.include
     ns.dry_run = passthrough_args.dry_run
@@ -943,6 +949,15 @@ def add_path_params_to_variables(request_doc, variables):
     return out
 
 
+def append_content_type(headers, passthrough_headers, content_type):
+    """Append a Content-Type header unless one is already present (a CLI -H or
+    a manifest-declared header) or no type was given."""
+    if content_type and not has_header(
+        headers + list(passthrough_headers or []), "Content-Type"
+    ):
+        headers.append(f"Content-Type: {content_type}")
+
+
 def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=None):
     request = request_doc.get("request") if isinstance(request_doc.get("request"), dict) else {}
     disabled_query_indexes = disabled_query_indexes or set()
@@ -977,7 +992,23 @@ def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=Non
         queries.append(f"{apply_template(str(name), variables)}={apply_template(str(value), variables)}")
     body_value = None
     body = request.get("body")
-    if body is not None:
+    cli_file = getattr(args, "file", None)
+    cli_data = getattr(args, "data", None)
+    if cli_file is not None or cli_data is not None:
+        # Body override: the CLI body replaces the manifest's request.body.
+        # Content-Type precedence: explicit header > -f extension (handled by
+        # the shared curl builder) > manifest body.type for -d > json default.
+        if cli_data is not None:
+            body_value = getattr(args, "resolved_data", None)
+            if body_value is None:
+                body_value = apply_template(cli_data, variables)
+            default_ct = None
+            if isinstance(body, dict):
+                default_ct = content_type_for_oc_body(str(body.get("type") or ""))
+            if default_ct is None:
+                default_ct = "application/json"
+            append_content_type(headers, args.headers, default_ct)
+    elif body is not None:
         if not isinstance(body, dict):
             die("unsupported request.body shape; expected object with type and data")
         body_type = str(body.get("type") or "")
@@ -988,15 +1019,14 @@ def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=Non
         else:
             body_value = apply_template(str(body.get("data", "")), variables)
         default_ct = content_type_for_oc_body(body_type)
-        combined_headers = headers + list(args.headers or [])
-        if default_ct and not has_header(combined_headers, "Content-Type"):
-            headers.append(f"Content-Type: {default_ct}")
+        append_content_type(headers, args.headers, default_ct)
     return make_direct_args_from_oc(method, url, headers, queries, body_value, args)
 
 
 def build_equivalent_command(
     collection_name, env_name, request_name, cli_vars=None,
     optional_queries_requested=False, optional_query_names=None,
+    data=None, file=None,
 ):
     cmd = ["http", "oc", "-c", collection_name]
     if env_name:
@@ -1010,12 +1040,17 @@ def build_equivalent_command(
             cmd.append(f"--dqwnp={names}")
         else:
             cmd.append("--dqwnp")
+    if data is not None:
+        cmd += ["-d", shlex.quote(data)]
+    elif file is not None:
+        cmd += ["-f", shlex.quote(file)]
     cmd.append(request_name)
     return " ".join(cmd)
 
 
 def print_oc_summary(collection, environment, request, direct_args, cli_vars=None,
-                     optional_queries_requested=False, optional_query_names=None):
+                     optional_queries_requested=False, optional_query_names=None,
+                     data=None, file=None):
     env_name = environment.get("name") if environment else ""
     print(f"Collection: {collection['name']}")
     if env_name:
@@ -1025,6 +1060,7 @@ def print_oc_summary(collection, environment, request, direct_args, cli_vars=Non
     cmd = build_equivalent_command(
         collection["name"], env_name, request["name"], cli_vars,
         optional_queries_requested, optional_query_names,
+        data=data, file=file,
     )
     print(f"Comando equivalente: {cmd}")
 
@@ -1034,6 +1070,19 @@ def main_oc(args):
     OC_INTERACTIVE_USED = False
     equivalent_cmd = None
     summary_printed = False
+    if args.file and args.data is not None:
+        die("--file and --data are mutually exclusive")
+    cli_body_raw = None
+    cli_file_content = None
+    if args.file:
+        if not Path(args.file).is_file():
+            die(f"file not found: {args.file}")
+        cli_file_content = Path(args.file).read_text()
+        if Path(args.file).suffix.lower() == ".jsonc":
+            cli_file_content = strip_jsonc_comments(cli_file_content)
+        cli_body_raw = cli_file_content
+    elif args.data is not None:
+        cli_body_raw = args.data
     try:
         interactive = (not args.no_interactive) and sys.stdin.isatty() and sys.stdout.isatty()
         config = load_httprc(Path.home())
@@ -1054,16 +1103,30 @@ def main_oc(args):
         variables, prompted, disabled_query_indexes = resolve_oc_variables(
             collection, request, environment, cli_vars, interactive,
             optional_requested, optional_names,
+            body_override=cli_body_raw,
         )
         effective_vars = {
             key: value for key, value in {**cli_vars, **prompted}.items()
             if value != ""
         }
 
+        # Template the CLI body with the same variable context the curl
+        # builder uses (path params included), so the equivalent command and
+        # the executed request agree on placeholders.
+        oc_variables = add_path_params_to_variables(request["data"], variables)
+        if args.file:
+            templated = apply_template(cli_file_content, oc_variables)
+            if Path(args.file).suffix.lower() == ".jsonc" or templated != cli_file_content:
+                args.file_body = templated
+        templated_data = apply_template(args.data, oc_variables) if args.data is not None else None
+        if args.data is not None:
+            args.resolved_data = templated_data
+
         env_name = environment.get("name") if environment else ""
         equivalent_cmd = build_equivalent_command(
             collection["name"], env_name, request["name"], effective_vars,
             optional_requested, optional_names,
+            data=templated_data, file=args.file,
         )
 
         auth = get_oc_auth(collection["manifest"], request["data"])
@@ -1071,7 +1134,7 @@ def main_oc(args):
         token = resolve_oauth2_token(collection, environment, auth, variables,
                                       force=args.auth_no_cache)
         direct_args = build_basic_oc_args(
-            args, request["data"], variables, disabled_query_indexes,
+            args, request["data"], oc_variables, disabled_query_indexes,
         )
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
@@ -1079,6 +1142,7 @@ def main_oc(args):
             print_oc_summary(
                 collection, environment, request, direct_args, effective_vars,
                 optional_requested, optional_names,
+                data=templated_data, file=args.file,
             )
             summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)

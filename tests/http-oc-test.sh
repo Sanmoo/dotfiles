@@ -4,75 +4,75 @@ set -euo pipefail
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/general/bin/http"
 
 assert_contains() {
-	local haystack="$1" needle="$2" message="$3"
-	if ! grep -Fq -- "$needle" "$haystack"; then
-		echo "FAIL: $message" >&2
-		echo "  expected to find: $needle" >&2
-		echo "  in:" >&2
-		sed 's/^/    /' "$haystack" >&2
-		exit 1
-	fi
+  local haystack="$1" needle="$2" message="$3"
+  if ! grep -Fq -- "$needle" "$haystack"; then
+    echo "FAIL: $message" >&2
+    echo "  expected to find: $needle" >&2
+    echo "  in:" >&2
+    sed 's/^/    /' "$haystack" >&2
+    exit 1
+  fi
 }
 
 assert_not_contains() {
-	local haystack="$1" needle="$2" message="$3"
-	if grep -Fq -- "$needle" "$haystack"; then
-		echo "FAIL: $message" >&2
-		echo "  expected not to find: $needle" >&2
-		echo "  in:" >&2
-		sed 's/^/    /' "$haystack" >&2
-		exit 1
-	fi
+  local haystack="$1" needle="$2" message="$3"
+  if grep -Fq -- "$needle" "$haystack"; then
+    echo "FAIL: $message" >&2
+    echo "  expected not to find: $needle" >&2
+    echo "  in:" >&2
+    sed 's/^/    /' "$haystack" >&2
+    exit 1
+  fi
 }
 
 setup_oc_tmp() {
-	OC_TMPDIR="$(mktemp -d)"
-	OC_HOME="$OC_TMPDIR/home"
-	OC_BIN="$OC_TMPDIR/bin"
-	OC_ROOT="$OC_TMPDIR/collections"
-	mkdir -p "$OC_HOME/.config" "$OC_BIN" "$OC_ROOT"
-	cat >"$OC_BIN/curl" <<'STUB'
+  OC_TMPDIR="$(mktemp -d)"
+  OC_HOME="$OC_TMPDIR/home"
+  OC_BIN="$OC_TMPDIR/bin"
+  OC_ROOT="$OC_TMPDIR/collections"
+  mkdir -p "$OC_HOME/.config" "$OC_BIN" "$OC_ROOT"
+  cat >"$OC_BIN/curl" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CURL_ARGS_FILE"
 printf '{"access_token":"stub-token","token_type":"Bearer","expires_in":3600}\n'
 STUB
-	chmod +x "$OC_BIN/curl"
-	cat >"$OC_HOME/.config/.httprc" <<EOF_RC
+  chmod +x "$OC_BIN/curl"
+  cat >"$OC_HOME/.config/.httprc" <<EOF_RC
 collections:
   - $OC_ROOT
 EOF_RC
 }
 
 run_http_oc() {
-	local tmp_stdout tmp_stderr tmp_curl
-	tmp_stdout="$OC_TMPDIR/stdout"
-	tmp_stderr="$OC_TMPDIR/stderr"
-	tmp_curl="$OC_TMPDIR/curl.args"
-	: >"$tmp_curl"
-	OC_STDOUT="$tmp_stdout"
-	OC_STDERR="$tmp_stderr"
-	OC_CURL_ARGS="$tmp_curl"
-	export CURL_ARGS_FILE="$tmp_curl"
-	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" "$SCRIPT" oc "$@" >"$tmp_stdout" 2>"$tmp_stderr"
+  local tmp_stdout tmp_stderr tmp_curl
+  tmp_stdout="$OC_TMPDIR/stdout"
+  tmp_stderr="$OC_TMPDIR/stderr"
+  tmp_curl="$OC_TMPDIR/curl.args"
+  : >"$tmp_curl"
+  OC_STDOUT="$tmp_stdout"
+  OC_STDERR="$tmp_stderr"
+  OC_CURL_ARGS="$tmp_curl"
+  export CURL_ARGS_FILE="$tmp_curl"
+  HOME="$OC_HOME" PATH="$OC_BIN:$PATH" "$SCRIPT" oc "$@" >"$tmp_stdout" 2>"$tmp_stderr"
 }
 
 run_http_oc_expect_fail() {
-	local tmp_stdout tmp_stderr tmp_curl
-	tmp_stdout="$OC_TMPDIR/stdout"
-	tmp_stderr="$OC_TMPDIR/stderr"
-	tmp_curl="$OC_TMPDIR/curl.args"
-	: >"$tmp_curl"
-	OC_STDOUT="$tmp_stdout"
-	OC_STDERR="$tmp_stderr"
-	OC_CURL_ARGS="$tmp_curl"
-	export CURL_ARGS_FILE="$tmp_curl"
-	OC_EXIT=0
-	HOME="$OC_HOME" PATH="$OC_BIN:$PATH" "$SCRIPT" oc "$@" >"$tmp_stdout" 2>"$tmp_stderr" || OC_EXIT=$?
+  local tmp_stdout tmp_stderr tmp_curl
+  tmp_stdout="$OC_TMPDIR/stdout"
+  tmp_stderr="$OC_TMPDIR/stderr"
+  tmp_curl="$OC_TMPDIR/curl.args"
+  : >"$tmp_curl"
+  OC_STDOUT="$tmp_stdout"
+  OC_STDERR="$tmp_stderr"
+  OC_CURL_ARGS="$tmp_curl"
+  export CURL_ARGS_FILE="$tmp_curl"
+  OC_EXIT=0
+  HOME="$OC_HOME" PATH="$OC_BIN:$PATH" "$SCRIPT" oc "$@" >"$tmp_stdout" 2>"$tmp_stderr" || OC_EXIT=$?
 }
 
 write_basic_collection() {
-	mkdir -p "$OC_ROOT/collectionA/requests"
-	cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+  mkdir -p "$OC_ROOT/collectionA/requests"
+  cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
 info:
   name: collectionA
 config:
@@ -87,7 +87,7 @@ variables:
   - name: defaultHeader
     value: from-collection
 YAML
-	cat >"$OC_ROOT/collectionA/requests/get-smart-conditions.yaml" <<'YAML'
+  cat >"$OC_ROOT/collectionA/requests/get-smart-conditions.yaml" <<'YAML'
 type: http
 name: Get Smart Conditions
 request:
@@ -118,8 +118,8 @@ setup_oc_tmp
 rm -f "$OC_HOME/.config/.httprc"
 run_http_oc_expect_fail --no-interactive -c collectionA -n get-smart-conditions
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "~/.config/.httprc" "missing rc should mention expected path"
 assert_not_contains "$OC_STDERR" "Traceback" "missing rc should not traceback"
@@ -132,8 +132,8 @@ cat >"$OC_HOME/.config/.httprc" <<'YAML'
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n get-smart-conditions
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "must be a YAML mapping" "invalid rc shape should be rejected clearly"
 assert_not_contains "$OC_STDERR" "Traceback" "invalid rc shape should not traceback"
@@ -147,8 +147,8 @@ cat >"$OC_ROOT/badCollection/opencollection.yaml" <<'YAML'
 YAML
 run_http_oc_expect_fail --no-interactive -c badCollection -n request-name
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "must be a YAML mapping" "invalid collection manifest shape should be rejected clearly"
 assert_contains "$OC_STDERR" "opencollection.yaml" "invalid collection manifest should mention the manifest path"
@@ -189,8 +189,8 @@ setup_oc_tmp
 write_basic_collection
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "request name is required" "missing request should be clear"
 
@@ -200,8 +200,8 @@ setup_oc_tmp
 write_basic_collection
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n nope
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "request not found: nope" "unknown request error"
 assert_contains "$OC_STDERR" "get-smart-conditions" "available request listed"
@@ -219,8 +219,8 @@ request:
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -e development -n get-smart-conditions
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "request name is ambiguous:" "ambiguous request should be clear"
 assert_contains "$OC_STDERR" "requests/get-smart-conditions.yaml" "first ambiguous request path listed"
@@ -242,8 +242,8 @@ request:
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n needs-var
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "missing variables" "missing variable error"
 assert_contains "$OC_STDERR" "missingValue" "missing variable name"
@@ -384,8 +384,8 @@ request:
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n missing-body-path
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "missing variables" "missing path/body variables should fail during preflight"
 assert_contains "$OC_STDERR" "missingPathValue" "missing path variable should be reported"
@@ -442,8 +442,8 @@ request:
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n upload
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "unsupported request.body type" "unsupported body error"
 
@@ -466,8 +466,8 @@ request:
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n ping
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "unsupported auth type for MVP: basic" "unsupported auth error"
 
@@ -536,17 +536,17 @@ assert_contains "$OC_CURL_ARGS" "client_secret=my+secret%26secret" "client secre
 assert_contains "$OC_CURL_ARGS" "scope=scope+one%2Ftwo" "scope should be form-encoded"
 cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
 [ -n "$cache_file" ] || {
-	echo "FAIL: expected cache file" >&2
-	exit 1
+  echo "FAIL: expected cache file" >&2
+  exit 1
 }
 if stat -c '%a' "$cache_file" >/dev/null 2>&1; then
-	cache_mode="$(stat -c '%a' "$cache_file")"
+  cache_mode="$(stat -c '%a' "$cache_file")"
 else
-	cache_mode="$(stat -f %Lp "$cache_file")"
+  cache_mode="$(stat -f %Lp "$cache_file")"
 fi
 [ "$cache_mode" = "600" ] || {
-	echo "FAIL: expected cache mode 600, got $cache_mode" >&2
-	exit 1
+  echo "FAIL: expected cache mode 600, got $cache_mode" >&2
+  exit 1
 }
 
 # ---------- Test 20: oauth2 token cache is reused ----------
@@ -614,25 +614,25 @@ printf '%s\n' "$first"
 STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
-	set +e
-	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
-		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -e development -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	else
-		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	fi
-	status=$?
-	set -e
-	[ "$status" -eq 0 ] || {
-		echo "FAIL: interactive fzf command failed" >&2
-		cat "$OC_TMPDIR/script.err" >&2
-		exit 1
-	}
-	assert_contains "$OC_TMPDIR/script.out" "Collection: collectionA" "summary should show collection"
-	assert_contains "$OC_TMPDIR/script.out" "Request: get-smart-conditions" "summary should show request"
-	assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/smart-conditions/env-customer" "dry run URL"
-	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development get-smart-conditions" "summary should show equivalent command"
+  set +e
+  if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+    HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -e development -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  else
+    HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  fi
+  status=$?
+  set -e
+  [ "$status" -eq 0 ] || {
+    echo "FAIL: interactive fzf command failed" >&2
+    cat "$OC_TMPDIR/script.err" >&2
+    exit 1
+  }
+  assert_contains "$OC_TMPDIR/script.out" "Collection: collectionA" "summary should show collection"
+  assert_contains "$OC_TMPDIR/script.out" "Request: get-smart-conditions" "summary should show request"
+  assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/smart-conditions/env-customer" "dry run URL"
+  assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development get-smart-conditions" "summary should show equivalent command"
 else
-	echo "skip: script command not available"
+  echo "skip: script command not available"
 fi
 
 # ---------- Test 24: equivalent command is printed even on failure ----------
@@ -665,21 +665,21 @@ printf '%s\n' "$first"
 STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
-	set +e
-	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
-		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -qec "$SCRIPT oc -e development -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	else
-		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	fi
-	status=$?
-	set -e
-	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development ping" "equivalent command should appear even when auth fails"
-	[ "$status" -ne 0 ] || {
-		echo "FAIL: expected non-zero exit" >&2
-		exit 1
-	}
+  set +e
+  if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+    HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -qec "$SCRIPT oc -e development -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  else
+    HOME="$OC_HOME" PATH="$OC_BIN:$PATH" script -q /dev/null "$SCRIPT" oc -e development -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  fi
+  status=$?
+  set -e
+  assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development ping" "equivalent command should appear even when auth fails"
+  [ "$status" -ne 0 ] || {
+    echo "FAIL: expected non-zero exit" >&2
+    exit 1
+  }
 else
-	echo "skip: script command not available"
+  echo "skip: script command not available"
 fi
 
 # ---------- Test 25: --auth-no-cache forces fresh token ----------
@@ -731,22 +731,22 @@ printf '%s\n' "$first"
 STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
-	set +e
-	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
-		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -e development -n -v customerId=cli-override" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	else
-		HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n -v "customerId=cli-override" >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	fi
-	status=$?
-	set -e
-	[ "$status" -eq 0 ] || {
-		echo "FAIL: interactive fzf command with -v failed" >&2
-		cat "$OC_TMPDIR/script.err" >&2
-		exit 1
-	}
-	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development -v customerId=cli-override get-smart-conditions" "equivalent command should include -v"
+  set +e
+  if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+    HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -e development -n -v customerId=cli-override" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  else
+    HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -e development -n -v "customerId=cli-override" >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  fi
+  status=$?
+  set -e
+  [ "$status" -eq 0 ] || {
+    echo "FAIL: interactive fzf command with -v failed" >&2
+    cat "$OC_TMPDIR/script.err" >&2
+    exit 1
+  }
+  assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development -v customerId=cli-override get-smart-conditions" "equivalent command should include -v"
 else
-	echo "skip: script command not available"
+  echo "skip: script command not available"
 fi
 
 # ---------- Test 27: interactively prompted variable appears in equivalent command ----------
@@ -936,8 +936,8 @@ assert_not_contains "$OC_STDOUT" "page=99" "inherited values must not enable opt
 echo "test 30: named dqwnp selection"
 run_http_oc_expect_fail --no-interactive -c collectionA -n --dqwnp=page search
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "limit" "unselected query variable should remain required"
 
@@ -995,31 +995,31 @@ printf '%s\n' "$first"
 STUB
 chmod +x "$OC_BIN/fzf"
 if command -v script >/dev/null 2>&1; then
-	set +e
-	if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
-		{
-			printf 'y\n\n'
-			sleep 1
-		} | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	else
-		{
-			printf 'y\n\n'
-			sleep 1
-		} | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
-	fi
-	status=$?
-	set -e
-	[ "$status" -eq 0 ] || {
-		cat "$OC_TMPDIR/script.err" >&2
-		exit 1
-	}
-	assert_contains "$OC_TMPDIR/script.out" "Allow disabling query parameters with an empty value? [y/N]" "activation prompt should be shown"
-	assert_contains "$OC_TMPDIR/script.out" "value for pageNumber (leave empty to disable)" "optional value prompt should be shown"
-	assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development --dqwnp search" "equivalent command should thread optional selection"
-	assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/search" "selected environment should be used"
-	assert_not_contains "$OC_TMPDIR/script.out" "page=" "empty optional query should be omitted"
+  set +e
+  if script -qec "exit 0" /dev/null >/dev/null 2>&1; then
+    {
+      printf 'y\n\n'
+      sleep 1
+    } | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -qec "$SCRIPT oc -n" /dev/null >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  else
+    {
+      printf 'y\n\n'
+      sleep 1
+    } | HOME="$OC_HOME" PATH="$OC_BIN:$PATH" CURL_ARGS_FILE="$OC_TMPDIR/curl.args" script -q /dev/null "$SCRIPT" oc -n >"$OC_TMPDIR/script.out" 2>"$OC_TMPDIR/script.err"
+  fi
+  status=$?
+  set -e
+  [ "$status" -eq 0 ] || {
+    cat "$OC_TMPDIR/script.err" >&2
+    exit 1
+  }
+  assert_contains "$OC_TMPDIR/script.out" "Allow disabling query parameters with an empty value? [y/N]" "activation prompt should be shown"
+  assert_contains "$OC_TMPDIR/script.out" "value for pageNumber (leave empty to disable)" "optional value prompt should be shown"
+  assert_contains "$OC_TMPDIR/script.out" "Comando equivalente: http oc -c collectionA -e development --dqwnp search" "equivalent command should thread optional selection"
+  assert_contains "$OC_TMPDIR/script.out" "https://dev.example.com/search" "selected environment should be used"
+  assert_not_contains "$OC_TMPDIR/script.out" "page=" "empty optional query should be omitted"
 else
-	echo "skip: script command not available"
+  echo "skip: script command not available"
 fi
 
 # ---------- Test 33: interactive dqwnp activation and empty omission ----------
@@ -1124,8 +1124,8 @@ request:
 YAML
 run_http_oc_expect_fail --no-interactive -c collectionA -n invalid-form
 [ "$OC_EXIT" -eq 2 ] || {
-	echo "FAIL: expected exit 2" >&2
-	exit 1
+  echo "FAIL: expected exit 2" >&2
+  exit 1
 }
 assert_contains "$OC_STDERR" "form-urlencoded body data" "malformed form body error"
 
@@ -1154,5 +1154,326 @@ YAML
 run_http_oc --no-interactive -c collectionA -n explicit-form
 assert_contains "$OC_STDOUT" "Content-Type: application/custom-form" "explicit content type present"
 assert_not_contains "$OC_STDOUT" "Content-Type: application/x-www-form-urlencoded" "default content type suppressed"
+
+# ---------- Test 37: -d overrides manifest body ----------
+echo "test 37: -d overrides manifest body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: baseUrl
+    value: https://api.example.com
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: "{{baseUrl}}/items"
+  body:
+    type: json
+    data: '{"name":"from-manifest"}'
+YAML
+run_http_oc --no-interactive -c collectionA -n -d '{"name":"from-cli"}' create
+assert_contains "$OC_STDOUT" "--data '{\"name\":\"from-cli\"}'" "cli body should win"
+assert_contains "$OC_STDOUT" "Content-Type: application/json" "json content type inherited"
+assert_not_contains "$OC_STDOUT" "from-manifest" "manifest body should be replaced"
+
+# ---------- Test 38: -f overrides manifest body ----------
+echo "test 38: -f overrides manifest body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/items
+  body:
+    type: json
+    data: '{"name":"from-manifest"}'
+YAML
+PAYLOAD="$OC_TMPDIR/payload.json"
+echo '{"name":"from-file"}' >"$PAYLOAD"
+run_http_oc --no-interactive -c collectionA -n -f "$PAYLOAD" create
+assert_contains "$OC_STDOUT" "--data @$PAYLOAD" "file body should be sent via --data @file"
+assert_contains "$OC_STDOUT" "Content-Type: application/json" "json content type from extension"
+assert_not_contains "$OC_STDOUT" "from-manifest" "manifest body should be replaced"
+
+# ---------- Test 39: -d and -f together is an error ----------
+echo "test 39: -d and -f together is an error"
+setup_oc_tmp
+write_basic_collection
+run_http_oc_expect_fail --no-interactive -c collectionA -n -d x -f "$OC_TMPDIR/nope.json" get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: expected exit 2" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "mutually exclusive" "exclusive error"
+
+# ---------- Test 40: -f with missing file is an error ----------
+echo "test 40: -f with missing file is an error"
+setup_oc_tmp
+write_basic_collection
+run_http_oc_expect_fail --no-interactive -c collectionA -n -f /tmp/does-not-exist-12345.json get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: expected exit 2" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "file not found" "missing file error"
+
+# ---------- Test 41: -d inherits manifest body content type ----------
+echo "test 41: -d inherits manifest body content type"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/xml-body.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/xml
+  body:
+    type: xml
+    data: '<orig/>'
+YAML
+run_http_oc --no-interactive -c collectionA -n -d '<cli/>' xml-body
+assert_contains "$OC_STDOUT" "Content-Type: application/xml" "manifest xml type inherited"
+assert_contains "$OC_STDOUT" "--data '<cli/>'" "cli body sent"
+
+# ---------- Test 42: -f extension wins over manifest body type ----------
+echo "test 42: -f extension wins over manifest body type"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/items
+  body:
+    type: json
+    data: '{}'
+YAML
+PAYLOAD="$OC_TMPDIR/payload.xml"
+echo '<cli/>' >"$PAYLOAD"
+run_http_oc --no-interactive -c collectionA -n -f "$PAYLOAD" create
+assert_contains "$OC_STDOUT" "Content-Type: application/xml" "file extension should win"
+assert_not_contains "$OC_STDOUT" "Content-Type: application/json" "manifest json type should not apply"
+
+# ---------- Test 43: -d defaults to application/json without manifest body ----------
+echo "test 43: -d defaults to application/json without manifest body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/ping.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/ping
+YAML
+run_http_oc --no-interactive -c collectionA -n -d '{"x":1}' ping
+assert_contains "$OC_STDOUT" "Content-Type: application/json" "json default content type"
+assert_contains "$OC_STDOUT" "--data '{\"x\":1}'" "cli body sent"
+
+# ---------- Test 44: explicit -H Content-Type wins over override defaults ----------
+echo "test 44: explicit -H Content-Type wins over override defaults"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/ping.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/ping
+YAML
+run_http_oc --no-interactive -c collectionA -n -d '{"x":1}' -H "Content-Type: application/custom" ping
+assert_contains "$OC_STDOUT" "Content-Type: application/custom" "explicit content type wins"
+assert_not_contains "$OC_STDOUT" "Content-Type: application/json" "json default suppressed"
+
+# ---------- Test 45: -d on form-urlencoded request is sent verbatim ----------
+echo "test 45: -d on form-urlencoded request is sent verbatim"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/login.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/login
+  body:
+    type: form-urlencoded
+    data:
+      - name: username
+        value: alice
+YAML
+run_http_oc --no-interactive -c collectionA -n -d 'a=1&b=x%20y' login
+assert_contains "$OC_STDOUT" "--data 'a=1&b=x%20y'" "cli form body verbatim"
+assert_contains "$OC_STDOUT" "Content-Type: application/x-www-form-urlencoded" "form content type inherited"
+assert_not_contains "$OC_STDOUT" "username=alice" "manifest form fields replaced"
+
+# ---------- Test 46: -f .jsonc comments stripped ----------
+echo "test 46: -f .jsonc comments stripped"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/items
+YAML
+PAYLOAD="$OC_TMPDIR/payload.jsonc"
+cat >"$PAYLOAD" <<'JSONC'
+// comment
+{"name":"alice"}
+JSONC
+run_http_oc --no-interactive -c collectionA -n -f "$PAYLOAD" create
+assert_contains "$OC_STDOUT" '"name":"alice"' "jsonc body content present"
+assert_not_contains "$OC_STDOUT" "comment" "jsonc comment stripped"
+
+# ---------- Test 47: -v substitutes in -d ----------
+echo "test 47: -v substitutes in -d"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/items
+YAML
+run_http_oc --no-interactive -c collectionA -n -v "name=alice" -d '{"name":"{{name}}"}' create
+assert_contains "$OC_STDOUT" '"name":"alice"' "cli body variable resolved"
+
+# ---------- Test 48: undefined variable in -d is an error ----------
+echo "test 48: undefined variable in -d is an error"
+setup_oc_tmp
+write_basic_collection
+run_http_oc_expect_fail --no-interactive -c collectionA -n -d '{"name":"{{NOPE}}"' get-smart-conditions
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: expected exit 2" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "missing variables" "missing variable error"
+assert_contains "$OC_STDERR" "NOPE" "missing variable name"
+
+# ---------- Test 49: manifest body variables exempt when overridden ----------
+echo "test 49: manifest body variables exempt when overridden"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/items
+  body:
+    type: json
+    data: '{"name":"{{missingBodyValue}}"}'
+YAML
+run_http_oc --no-interactive -c collectionA -n -d '{"name":"cli"}' create
+assert_contains "$OC_STDOUT" "--data '{\"name\":\"cli\"}'" "override body sent"
+assert_not_contains "$OC_STDERR" "missing variables" "manifest body vars should not be required"
+
+# ---------- Test 50: -d with empty value sends empty body ----------
+echo "test 50: -d with empty value sends empty body"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/ping.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/ping
+YAML
+run_http_oc --no-interactive -c collectionA -n -d "" ping
+assert_contains "$OC_STDOUT" "--data ''" "empty body should emit --data with empty string"
+
+# ---------- Test 51: -d appears in equivalent command ----------
+echo "test 51: -d in equivalent command"
+python3 <<'PYEOF'
+import importlib.machinery
+
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+cmd = http.build_equivalent_command(
+    "collectionA", "development", "create", {"x": "1"},
+    False, set(), data='{"x":1}',
+)
+assert "-d '{\"x\":1}'" in cmd, cmd
+cmd = http.build_equivalent_command(
+    "collectionA", "development", "create", {}, False, set(), data="hello world",
+)
+assert "-d 'hello world'" in cmd, cmd
+print("OK")
+PYEOF
+
+# ---------- Test 52: -f appears in equivalent command ----------
+echo "test 52: -f in equivalent command"
+python3 <<'PYEOF'
+import importlib.machinery
+
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+cmd = http.build_equivalent_command(
+    "collectionA", "development", "create", {}, False, set(), file="/tmp/payload.json",
+)
+assert "-f /tmp/payload.json" in cmd, cmd
+print("OK")
+PYEOF
+
+# ---------- Test 53: -f contents are templated (incl. path params) ----------
+echo "test 53: -f contents are templated (incl. path params)"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+cat >"$OC_ROOT/collectionA/requests/create.yaml" <<'YAML'
+type: http
+request:
+  method: POST
+  url: https://api.example.com/customers/{{customerId}}/items
+  params:
+    - name: customerId
+      value: path-42
+      type: path
+YAML
+PAYLOAD="$OC_TMPDIR/templated.json"
+echo '{"name":"{{NAME}}","id":"{{customerId}}"}' >"$PAYLOAD"
+run_http_oc --no-interactive -c collectionA -n -v "NAME=alice" -f "$PAYLOAD" create
+assert_contains "$OC_STDOUT" '"name":"alice"' "file body cli variable resolved"
+assert_contains "$OC_STDOUT" '"id":"path-42"' "path param resolved in file body"
+assert_not_contains "$OC_STDOUT" '{{' "template placeholders all resolved"
 
 echo "OK"
