@@ -13,6 +13,10 @@ OS (google-chrome-stable on Linux, the Microsoft Edge app-bundle binary on
 macOS) and can be overridden with AWS_CONSOLE_BROWSER (a name on PATH or a full
 path). A missing or non-Chromium binary warns on stderr and falls back to the
 platform's default browser.
+
+An optional service argument (ecs, ec2, lambda, ...) deep-links the federated
+session straight to that service's console page: regional services carry the
+region configured for the AWS profile, global services never do.
 """
 
 import argparse
@@ -35,6 +39,28 @@ PER_OS_BROWSERS = {
     "darwin": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 }
 
+# Curated service deep-links: base console URLs, verified against the current
+# AWS consoles. Regional services append ?region=<configured region>; the
+# GLOBAL_SERVICES set never receives a region parameter.
+SERVICE_URLS = {
+    "ecs": "https://console.aws.amazon.com/ecs/v2/home",
+    "ec2": "https://console.aws.amazon.com/ec2/v2/home",
+    "lambda": "https://console.aws.amazon.com/lambda/home",
+    "s3": "https://console.aws.amazon.com/s3/home",
+    "cloudwatch": "https://console.aws.amazon.com/cloudwatch/home",
+    "logs": "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
+    "rds": "https://console.aws.amazon.com/rds/home",
+    "dynamodb": "https://console.aws.amazon.com/dynamodb/home",
+    "ecr": "https://console.aws.amazon.com/ecr/repositories",
+    "iam": "https://console.aws.amazon.com/iam/home",
+    "vpc": "https://console.aws.amazon.com/vpc/home",
+    "route53": "https://console.aws.amazon.com/route53/home",
+    "sns": "https://console.aws.amazon.com/sns/v3/home",
+    "sqs": "https://console.aws.amazon.com/sqs/v3/home",
+    "eks": "https://console.aws.amazon.com/eks/home",
+}
+GLOBAL_SERVICES = {"iam", "s3", "route53"}
+
 
 def federation_endpoint():
     return os.environ.get(FEDERATION_ENDPOINT_ENV, DEFAULT_FEDERATION_ENDPOINT)
@@ -42,6 +68,23 @@ def federation_endpoint():
 
 def build_destination(account):
     return f"https://console.aws.amazon.com/?account={account}"
+
+
+def build_service_url(service, region=None):
+    """Map a curated service name to its console URL.
+
+    Regional services append ?region=<region> when one is given; global
+    services never carry a region. Unknown names raise KeyError.
+    """
+    base = SERVICE_URLS.get(service)
+    if base is None:
+        raise KeyError(f"unknown service: {service}")
+    if region and service not in GLOBAL_SERVICES:
+        head, sep, fragment = base.partition("#")
+        base = head + "?region=" + region
+        if sep:
+            base += sep + fragment
+    return base
 
 
 def sanitize_binding(profile_name):
@@ -115,7 +158,7 @@ def open_in_profile(browser, binding, login_url):
     )
 
 
-def open_console(profile_name=None, echo_to_stdout=False):
+def open_console(service=None, profile_name=None, echo_to_stdout=False):
     session = boto3.Session(profile_name=profile_name)
     creds = session.get_credentials()
     if not creds:
@@ -132,7 +175,10 @@ def open_console(profile_name=None, echo_to_stdout=False):
     signin_token = fetch_signin_token(
         build_get_signin_token_url(endpoint, url_credentials)
     )
-    destination = build_destination(account)
+    if service is None:
+        destination = build_destination(account)
+    else:
+        destination = build_service_url(service, session.region_name)
     login_url = build_login_url(endpoint, destination, signin_token)
     isolated = should_isolate(profile_name)
 
@@ -165,6 +211,16 @@ if __name__ == "__main__":
         description="Open the AWS console in your web browser, using your AWS CLI credentials"
     )
     parser.add_argument(
+        "service",
+        nargs="?",
+        default=None,
+        help=(
+            "the AWS service console to deep-link to (ecs, ec2, lambda, s3, "
+            "cloudwatch, logs, rds, dynamodb, ecr, iam, vpc, route53, sns, "
+            "sqs, eks)"
+        ),
+    )
+    parser.add_argument(
         "--profile",
         default=None,
         help=(
@@ -179,4 +235,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    open_console(args.profile, args.stdout)
+    if args.service is not None and args.service not in SERVICE_URLS:
+        parser.error(
+            f"unknown service {args.service!r}; supported services: "
+            + ", ".join(SERVICE_URLS)
+        )
+    open_console(args.service, args.profile, args.stdout)

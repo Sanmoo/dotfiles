@@ -122,6 +122,13 @@ COMMON_ENV=(
   BROWSER_CALLS="$BROWSER_CALLS"
 )
 
+# Same as COMMON_ENV but without the region, so that a profile's configured
+# region (or the absence of one) is the only region source for deep-link tests.
+COMMON_ENV_NO_REGION=()
+for kv in "${COMMON_ENV[@]}"; do
+  [[ $kv == AWS_DEFAULT_REGION=* ]] || COMMON_ENV_NO_REGION+=("$kv")
+done
+
 assert_contains() {
   grep -F -- "$2" "$1" >/dev/null || {
     printf 'missing %s in %s\n' "$2" "$1" >&2
@@ -277,6 +284,109 @@ if grep -Fq -- '--profile-directory=' "$BROWSER_CALLS"; then
   exit 1
 fi
 
+# --- ecs --profile rev-qual: service deep-link in the isolated profile -----
+# The env region is dropped so the profile's configured region (sa-east-1)
+# is the only region source.
+: > "$BROWSER_CALLS"
+: > "$REQUESTS_LOG"
+env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+  "${COMMON_ENV_NO_REGION[@]}" \
+  AWS_CONSOLE_BROWSER="$tmp_dir/fake-chrome" \
+  AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
+  AWS_CONFIG_FILE="$tmp_dir/config" \
+  python3 "$SCRIPT" ecs --profile rev-qual >"$tmp_dir/ecs.out" 2>"$tmp_dir/ecs.err"
+
+assert_contains "$BROWSER_CALLS" \
+  'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fecs%2Fv2%2Fhome%3Fregion%3Dsa-east-1'
+assert_contains "$tmp_dir/ecs.err" 'aws-rev-qual'
+if [[ -s "$tmp_dir/ecs.out" ]]; then
+  printf 'service deep-link case wrote to stdout\n' >&2
+  exit 1
+fi
+
+# --- iam --profile rev-qual: global service never carries a region ---------
+: > "$BROWSER_CALLS"
+env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+  "${COMMON_ENV_NO_REGION[@]}" \
+  AWS_CONSOLE_BROWSER="$tmp_dir/fake-chrome" \
+  AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
+  AWS_CONFIG_FILE="$tmp_dir/config" \
+  python3 "$SCRIPT" iam --profile rev-qual >"$tmp_dir/iam.out" 2>"$tmp_dir/iam.err"
+
+assert_contains "$BROWSER_CALLS" \
+  'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fiam%2Fhome&'
+if grep -Fq 'region' "$BROWSER_CALLS"; then
+  printf 'global service (iam) must not carry a region\n' >&2
+  exit 1
+fi
+
+# A regionless profile cannot be exercised end-to-end here: the harness's
+# AWS_ENDPOINT_URL_STS override makes botocore bypass the STS global-endpoint
+# fallback, so a profile with no configured region fails at request signing
+# before any deep-link logic runs. The no-region path is covered directly by
+# the build_service_url("ecs", None) assertion in the helper block below.
+
+# --- unknown service: exits non-zero listing the supported names -----------
+: > "$BROWSER_CALLS"
+: > "$REQUESTS_LOG"
+if env "${COMMON_ENV[@]}" \
+  AWS_ACCESS_KEY_ID=AKIABARE \
+  AWS_SECRET_ACCESS_KEY=bare-secret \
+  python3 "$SCRIPT" nosuchsvc >"$tmp_dir/unknown.out" 2>"$tmp_dir/unknown.err"; then
+  printf 'unknown service must exit non-zero\n' >&2
+  exit 1
+fi
+assert_contains "$tmp_dir/unknown.err" 'supported services'
+assert_contains "$tmp_dir/unknown.err" 'ecs'
+if [[ -s "$REQUESTS_LOG" ]]; then
+  printf 'unknown service must fail before any AWS call\n' >&2
+  exit 1
+fi
+if [[ -s "$BROWSER_CALLS" ]]; then
+  printf 'unknown service launched a browser\n' >&2
+  exit 1
+fi
+
+# --- ecs without --profile: default browser, still on the service page -----
+: > "$BROWSER_CALLS"
+env "${COMMON_ENV[@]}" \
+  AWS_ACCESS_KEY_ID=AKIABARE \
+  AWS_SECRET_ACCESS_KEY=bare-secret \
+  python3 "$SCRIPT" ecs >"$tmp_dir/ecs-bare.out" 2>"$tmp_dir/ecs-bare.err"
+
+assert_contains "$BROWSER_CALLS" \
+  'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fecs%2Fv2%2Fhome%3Fregion%3Dus-east-1'
+if grep -Fq -- '--profile-directory=' "$BROWSER_CALLS"; then
+  printf 'deep-link without --profile must not isolate\n' >&2
+  exit 1
+fi
+if [[ -s "$tmp_dir/ecs-bare.err" ]]; then
+  printf 'ecs deep-link without --profile wrote to stderr\n' >&2
+  exit 1
+fi
+
+# --- ecs --stdout: service-aimed signin URL only on stdout ------------------
+: > "$BROWSER_CALLS"
+env "${COMMON_ENV[@]}" \
+  AWS_ACCESS_KEY_ID=AKIABARE \
+  AWS_SECRET_ACCESS_KEY=bare-secret \
+  python3 "$SCRIPT" ecs --stdout >"$tmp_dir/ecs-stdout.out" 2>"$tmp_dir/ecs-stdout.err"
+
+if [[ $(wc -l < "$tmp_dir/ecs-stdout.out") -ne 1 ]]; then
+  printf 'ecs --stdout output must be exactly one line\n' >&2
+  exit 1
+fi
+assert_contains "$tmp_dir/ecs-stdout.out" \
+  'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fecs%2Fv2%2Fhome%3Fregion%3Dus-east-1'
+if [[ -s "$tmp_dir/ecs-stdout.err" ]]; then
+  printf 'ecs --stdout case wrote to stderr\n' >&2
+  exit 1
+fi
+if [[ -s "$BROWSER_CALLS" ]]; then
+  printf 'ecs --stdout case launched a browser\n' >&2
+  exit 1
+fi
+
 # --- the script remains a plain executable with the shebang unchanged -------
 if [[ ! -x "$SCRIPT" ]]; then
   printf 'aws-console is not executable\n' >&2
@@ -358,6 +468,57 @@ assert not module.looks_chromium("/usr/bin/fake-browser")
 assert module.should_isolate("rev-qual")
 assert not module.should_isolate(None)
 assert not module.should_isolate("default")
+
+# --- service deep-links: curated table, global-vs-regional, region ---------
+assert module.SERVICE_URLS == {
+    "ecs": "https://console.aws.amazon.com/ecs/v2/home",
+    "ec2": "https://console.aws.amazon.com/ec2/v2/home",
+    "lambda": "https://console.aws.amazon.com/lambda/home",
+    "s3": "https://console.aws.amazon.com/s3/home",
+    "cloudwatch": "https://console.aws.amazon.com/cloudwatch/home",
+    "logs": "https://console.aws.amazon.com/cloudwatch/home#logsV2:log-groups",
+    "rds": "https://console.aws.amazon.com/rds/home",
+    "dynamodb": "https://console.aws.amazon.com/dynamodb/home",
+    "ecr": "https://console.aws.amazon.com/ecr/repositories",
+    "iam": "https://console.aws.amazon.com/iam/home",
+    "vpc": "https://console.aws.amazon.com/vpc/home",
+    "route53": "https://console.aws.amazon.com/route53/home",
+    "sns": "https://console.aws.amazon.com/sns/v3/home",
+    "sqs": "https://console.aws.amazon.com/sqs/v3/home",
+    "eks": "https://console.aws.amazon.com/eks/home",
+}
+assert module.GLOBAL_SERVICES == {"iam", "s3", "route53"}
+
+assert (
+    module.build_service_url("ecs", "sa-east-1")
+    == "https://console.aws.amazon.com/ecs/v2/home?region=sa-east-1"
+)
+assert (
+    module.build_service_url("ecs", None)
+    == "https://console.aws.amazon.com/ecs/v2/home"
+)
+assert (
+    module.build_service_url("logs", "us-east-1")
+    == "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1"
+    "#logsV2:log-groups"
+)
+assert (
+    module.build_service_url("iam", "sa-east-1")
+    == "https://console.aws.amazon.com/iam/home"
+)
+assert (
+    module.build_service_url("s3", "sa-east-1")
+    == "https://console.aws.amazon.com/s3/home"
+)
+assert (
+    module.build_service_url("route53", "sa-east-1")
+    == "https://console.aws.amazon.com/route53/home"
+)
+try:
+    module.build_service_url("nosuchsvc")
+    raise AssertionError("unknown service must raise KeyError")
+except KeyError:
+    pass
 PY
 
 printf 'PASS\n'
