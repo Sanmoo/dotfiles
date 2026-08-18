@@ -10,10 +10,45 @@ Usage:
 
 import argparse
 import json
+import os
 import webbrowser
 from urllib import parse, request
 
 import boto3
+
+DEFAULT_FEDERATION_ENDPOINT = "https://signin.aws.amazon.com/federation"
+FEDERATION_ENDPOINT_ENV = "AWS_CONSOLE_FEDERATION_ENDPOINT"
+
+
+def federation_endpoint():
+    return os.environ.get(FEDERATION_ENDPOINT_ENV, DEFAULT_FEDERATION_ENDPOINT)
+
+
+def build_destination(account):
+    return f"https://console.aws.amazon.com/?account={account}"
+
+
+def build_get_signin_token_url(endpoint, credentials):
+    request_parameters = "?Action=getSigninToken"
+    request_parameters += "&DurationSeconds=43200"
+    request_parameters += "&Session=" + parse.quote_plus(json.dumps(credentials))
+    return endpoint + request_parameters
+
+
+def fetch_signin_token(token_url):
+    with request.urlopen(token_url) as response:
+        if not response.status == 200:
+            raise Exception("Failed to get federation token")
+        signin_token = json.loads(response.read())
+    return signin_token["SigninToken"]
+
+
+def build_login_url(endpoint, destination, signin_token):
+    request_parameters = "?Action=login"
+    request_parameters += "&Destination=" + parse.quote_plus(destination)
+    request_parameters += "&SigninToken=" + signin_token
+    request_parameters += "&Issuer=" + parse.quote_plus("https://example.com")
+    return endpoint + request_parameters
 
 
 def open_console(profile_name=None, echo_to_stdout=False):
@@ -23,33 +58,23 @@ def open_console(profile_name=None, echo_to_stdout=False):
         raise Exception("Cannot locate AWS credentials")
     sts = session.client("sts")
     account = sts.get_caller_identity()["Account"]
+
     url_credentials = dict(
         sessionId=creds.access_key,
         sessionKey=creds.secret_key,
         sessionToken=creds.token,
     )
-
-    request_parameters = "?Action=getSigninToken"
-    request_parameters += "&DurationSeconds=43200"
-    request_parameters += "&Session=" + parse.quote_plus(json.dumps(url_credentials))
-    request_url = "https://signin.aws.amazon.com/federation" + request_parameters
-    with request.urlopen(request_url) as response:
-        if not response.status == 200:
-            raise Exception("Failed to get federation token")
-        signin_token = json.loads(response.read())
-
-    request_parameters = "?Action=login"
-    request_parameters += "&Destination=" + parse.quote_plus(
-        f"https://console.aws.amazon.com/?account={account}"
+    endpoint = federation_endpoint()
+    signin_token = fetch_signin_token(
+        build_get_signin_token_url(endpoint, url_credentials)
     )
-    request_parameters += "&SigninToken=" + signin_token["SigninToken"]
-    request_parameters += "&Issuer=" + parse.quote_plus("https://example.com")
-    request_url = "https://signin.aws.amazon.com/federation" + request_parameters
+    destination = build_destination(account)
+    login_url = build_login_url(endpoint, destination, signin_token)
 
     if echo_to_stdout:
-        print(request_url)
+        print(login_url)
     else:
-        webbrowser.open(request_url)
+        webbrowser.open(login_url)
 
 
 if __name__ == "__main__":

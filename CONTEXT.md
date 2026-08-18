@@ -31,3 +31,21 @@ _Avoid_: equivalent command (in user-facing prose)
 **Body override**:
 `-d`/`-f` supplying the request body from the command line, replacing the manifest's `request.body`.
 _Avoid_: inline body, CLI body (when meaning the override mechanism)
+
+## aws-console
+
+**AWS profile**:
+A named credential set in the AWS config, passed to `aws-console` via `--profile`.
+_Avoid_: profile (when meaning the browser-side profile)
+
+**Browser profile**:
+An isolated browser storage (Chrome/Edge `--profile-directory`) with its own cookies, sessions, and logins.
+_Avoid_: profile (when meaning the AWS-side profile)
+
+**Binding**:
+The deterministic mapping from an AWS profile name to a browser profile directory (`aws-<sanitized-profile>`).
+_Avoid_: mapping, link (when meaning this relationship)
+
+**Service deep-link**:
+The positional service argument (`ecs`, `lambda`, …) that lands the federated console session directly on that service's console page.
+_Avoid_: service URL (when meaning the argument), destination

@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# Tests for general/bin/aws-console. Runs the real script as a subprocess with
+# AWS, federation, and the browser stubbed at the process boundary via
+# environment: STS through AWS_ENDPOINT_URL_STS against a local HTTP stub,
+# federation through AWS_CONSOLE_FEDERATION_ENDPOINT against the same stub,
+# and the browser through the BROWSER env var pointing at a fake script that
+# records its argv. Zero network, zero real credentials.
+set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+
+SCRIPT="$script_dir/aws-console"
+PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+REQUESTS_LOG="$tmp_dir/requests.log"
+BROWSER_CALLS="$tmp_dir/browser.calls"
+ENDPOINT="http://127.0.0.1:$PORT"
+
+cat > "$tmp_dir/stub.py" <<'PY'
+import json
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+LOG_FILE = sys.argv[1]
+PORT = int(sys.argv[2])
+
+CALLER_IDENTITY_XML = b"""<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <GetCallerIdentityResult>
+    <Arn>arn:aws:iam::123456789012:user/test-user</Arn>
+    <UserId>AIDACKCEVSQ6C2EXAMPLE</UserId>
+    <Account>123456789012</Account>
+  </GetCallerIdentityResult>
+  <ResponseMetadata>
+    <RequestId>01234567-89ab-cdef-0123-456789abcdef</RequestId>
+  </ResponseMetadata>
+</GetCallerIdentityResponse>
+"""
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def _handle(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        body = self.rfile.read(length).decode("utf-8", "replace") if length else ""
+        with open(LOG_FILE, "a") as f:
+            f.write(f"{self.command} {self.path} {body}\n")
+            f.write(f"Authorization: {self.headers.get('Authorization', '')}\n")
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        action = ""
+        for part in (query + "&" + body).split("&"):
+            if part.startswith("Action="):
+                action = part
+        if action == "Action=getSigninToken":
+            payload = json.dumps({"SigninToken": "FAKESIGNINTOKEN"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        elif action == "Action=GetCallerIdentity":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/xml")
+            self.send_header("Content-Length", str(len(CALLER_IDENTITY_XML)))
+            self.end_headers()
+            self.wfile.write(CALLER_IDENTITY_XML)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    do_GET = _handle
+    do_POST = _handle
+
+HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+PY
+
+cat > "$tmp_dir/fake-browser" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$BROWSER_CALLS"
+MOCK
+chmod +x "$tmp_dir/fake-browser"
+
+python3 "$tmp_dir/stub.py" "$REQUESTS_LOG" "$PORT" &
+stub_pid=$!
+trap 'rm -rf "$tmp_dir"; kill "$stub_pid" 2>/dev/null || true' EXIT
+
+python3 - "$PORT" <<'PY'
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+for _ in range(50):
+    try:
+        s = socket.create_connection(("127.0.0.1", port), timeout=0.2)
+        s.close()
+        sys.exit(0)
+    except OSError:
+        time.sleep(0.05)
+sys.exit(1)
+PY
+
+# The script is executed via python3 because the #!python shebang resolves on
+# macOS but not on Linux; the file-level properties are asserted separately.
+COMMON_ENV=(
+  AWS_ENDPOINT_URL_STS="$ENDPOINT"
+  AWS_DEFAULT_REGION=us-east-1
+  AWS_EC2_METADATA_DISABLED=true
+  AWS_CONSOLE_FEDERATION_ENDPOINT="$ENDPOINT"
+  BROWSER="$tmp_dir/fake-browser %s"
+  BROWSER_CALLS="$BROWSER_CALLS"
+)
+
+assert_contains() {
+  grep -F -- "$2" "$1" >/dev/null || {
+    printf 'missing %s in %s\n' "$2" "$1" >&2
+    return 1
+  }
+}
+
+# --- bare aws-console: default-browser path, env credentials ----------------
+: > "$BROWSER_CALLS"
+: > "$REQUESTS_LOG"
+env "${COMMON_ENV[@]}" \
+  AWS_ACCESS_KEY_ID=AKIABARE \
+  AWS_SECRET_ACCESS_KEY=bare-secret \
+  python3 "$SCRIPT" >"$tmp_dir/bare.out" 2>"$tmp_dir/bare.err"
+
+assert_contains "$REQUESTS_LOG" 'Action=GetCallerIdentity&Version=2011-06-15'
+assert_contains "$REQUESTS_LOG" 'Credential=AKIABARE/'
+assert_contains "$REQUESTS_LOG" 'Action=getSigninToken&DurationSeconds=43200&Session='
+assert_contains "$BROWSER_CALLS" "$ENDPOINT?Action=login&"
+assert_contains "$BROWSER_CALLS" 'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2F%3Faccount%3D123456789012'
+assert_contains "$BROWSER_CALLS" 'SigninToken=FAKESIGNINTOKEN'
+if [[ -s "$tmp_dir/bare.err" ]]; then
+  printf 'bare case wrote to stderr\n' >&2
+  exit 1
+fi
+
+# --- --profile passes the name through to credential resolution -------------
+cat > "$tmp_dir/credentials" <<'CRED'
+[rev-qual]
+aws_access_key_id = AKIAPROFILE
+aws_secret_access_key = profile-secret
+CRED
+cat > "$tmp_dir/config" <<'CFG'
+[profile rev-qual]
+region = sa-east-1
+CFG
+
+: > "$BROWSER_CALLS"
+: > "$REQUESTS_LOG"
+env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+  "${COMMON_ENV[@]}" \
+  AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
+  AWS_CONFIG_FILE="$tmp_dir/config" \
+  python3 "$SCRIPT" --profile rev-qual >"$tmp_dir/profile.out" 2>"$tmp_dir/profile.err"
+
+assert_contains "$REQUESTS_LOG" 'Credential=AKIAPROFILE/'
+assert_contains "$BROWSER_CALLS" 'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2F%3Faccount%3D123456789012'
+if [[ -s "$tmp_dir/profile.err" ]]; then
+  printf 'profile case wrote to stderr\n' >&2
+  exit 1
+fi
+
+# --- --stdout prints only the signin URL on stdout --------------------------
+: > "$BROWSER_CALLS"
+env "${COMMON_ENV[@]}" \
+  AWS_ACCESS_KEY_ID=AKIABARE \
+  AWS_SECRET_ACCESS_KEY=bare-secret \
+  python3 "$SCRIPT" --stdout >"$tmp_dir/stdout.out" 2>"$tmp_dir/stdout.err"
+
+if [[ $(wc -l < "$tmp_dir/stdout.out") -ne 1 ]]; then
+  printf '--stdout output must be exactly one line\n' >&2
+  exit 1
+fi
+assert_contains "$tmp_dir/stdout.out" \
+  "$ENDPOINT?Action=login&Destination=https%3A%2F%2Fconsole.aws.amazon.com%2F%3Faccount%3D123456789012&SigninToken=FAKESIGNINTOKEN&Issuer="
+if [[ -s "$tmp_dir/stdout.err" ]]; then
+  printf '--stdout case wrote to stderr\n' >&2
+  exit 1
+fi
+if [[ -s "$BROWSER_CALLS" ]]; then
+  printf '--stdout case launched a browser\n' >&2
+  exit 1
+fi
+
+# --- the script remains a plain executable with the shebang unchanged -------
+if [[ ! -x "$SCRIPT" ]]; then
+  printf 'aws-console is not executable\n' >&2
+  exit 1
+fi
+if ! head -n 1 "$SCRIPT" | grep -Fxq '#!python'; then
+  printf 'aws-console shebang changed\n' >&2
+  exit 1
+fi
+
+# --- pure helpers are importable and behave as specified --------------------
+python3 - "$SCRIPT" <<'PY'
+import importlib.machinery
+import importlib.util
+import os
+import sys
+
+path = sys.argv[1]
+loader = importlib.machinery.SourceFileLoader("aws_console", path)
+spec = importlib.util.spec_from_loader("aws_console", loader)
+module = importlib.util.module_from_spec(spec)
+loader.exec_module(module)
+
+os.environ.pop("AWS_CONSOLE_FEDERATION_ENDPOINT", None)
+assert module.federation_endpoint() == "https://signin.aws.amazon.com/federation"
+os.environ["AWS_CONSOLE_FEDERATION_ENDPOINT"] = "http://stub:9999"
+assert module.federation_endpoint() == "http://stub:9999"
+
+assert module.build_destination("123456789012") == "https://console.aws.amazon.com/?account=123456789012"
+
+token_url = module.build_get_signin_token_url(
+    "http://stub:9999",
+    {"sessionId": "A", "sessionKey": "B", "sessionToken": None},
+)
+assert token_url.startswith(
+    "http://stub:9999?Action=getSigninToken&DurationSeconds=43200&Session="
+)
+
+login_url = module.build_login_url(
+    "http://stub:9999",
+    "https://console.aws.amazon.com/?account=123456789012",
+    "TOKEN",
+)
+assert login_url.startswith(
+    "http://stub:9999?Action=login&"
+    "Destination=https%3A%2F%2Fconsole.aws.amazon.com%2F%3Faccount%3D123456789012"
+    "&SigninToken=TOKEN&Issuer="
+)
+PY
+
+printf 'PASS\n'
