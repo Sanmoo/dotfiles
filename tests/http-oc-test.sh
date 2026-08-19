@@ -2180,4 +2180,178 @@ run_http_oc_expect_fail --no-interactive -c collectionA -e production get
 assert_contains "$OC_STDERR" "not supported" "a malformed environment entry is validated even when the collection covers the domain"
 assert_contains "$OC_STDERR" "pkcs12" "error names the environment entry's unsupported type"
 
+# ---------- Test 73: CLI --cert/--key override the manifest cert ----------
+echo "test 73: CLI --cert/--key override the manifest cert (executed + dry-run)"
+setup_oc_tmp
+write_mtls_collection
+printf 'manifest-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'manifest-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+printf 'cli-cert\n' >"$OC_TMPDIR/cli.pem"
+printf 'cli-key\n' >"$OC_TMPDIR/cli.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+      passphrase: secret
+YAML
+run_http_oc --no-interactive -c collectionA --cert "$OC_TMPDIR/cli.pem" --key "$OC_TMPDIR/cli.key" get
+assert_contains "$OC_CURL_ARGS" "--cert" "executed curl receives --cert"
+assert_contains "$OC_CURL_ARGS" "$OC_TMPDIR/cli.pem" "CLI certificate overrides the manifest match"
+assert_contains "$OC_CURL_ARGS" "$OC_TMPDIR/cli.key" "CLI key overrides the manifest match"
+assert_not_contains "$OC_CURL_ARGS" "certs/client.pem" "manifest certificate must not appear when overridden"
+assert_not_contains "$OC_CURL_ARGS" "--pass" "CLI override drops the manifest passphrase"
+run_http_oc --no-interactive -c collectionA -n --cert "$OC_TMPDIR/cli.pem" --key "$OC_TMPDIR/cli.key" get
+assert_contains "$OC_STDOUT" "$OC_TMPDIR/cli.pem" "dry-run shows the CLI certificate"
+assert_contains "$OC_STDOUT" "$OC_TMPDIR/cli.key" "dry-run shows the CLI key"
+assert_not_contains "$OC_STDOUT" "certs/client.pem" "dry-run must not show the manifest certificate"
+assert_not_contains "$OC_STDOUT" "--pass" "dry-run CLI override must not show the manifest passphrase"
+
+# ---------- Test 74: --cert without --key (and vice versa) exits 2 ----------
+echo "test 74: --cert without --key (and vice versa) exits 2"
+setup_oc_tmp
+write_mtls_collection
+printf 'cli-cert\n' >"$OC_TMPDIR/cli.pem"
+printf 'cli-key\n' >"$OC_TMPDIR/cli.key"
+run_http_oc_expect_fail --no-interactive -c collectionA --cert "$OC_TMPDIR/cli.pem" get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: --cert alone should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "--cert and --key must be provided together" "pairing error names both flags"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "no curl should run on a pairing error"
+run_http_oc_expect_fail --no-interactive -c collectionA --key "$OC_TMPDIR/cli.key" get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: --key alone should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "--cert and --key must be provided together" "key-alone pairing error names both flags"
+assert_not_contains "$OC_CURL_ARGS" "--key" "no curl should run on a key-alone pairing error"
+
+# ---------- Test 75: --cacert adds the CA bundle to the main request ----------
+echo "test 75: --cacert adds the CA bundle (executed + dry-run)"
+setup_oc_tmp
+write_mtls_collection
+printf 'ca\n' >"$OC_TMPDIR/ca.pem"
+printf 'manifest-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'manifest-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+run_http_oc --no-interactive -c collectionA --cacert "$OC_TMPDIR/ca.pem" get
+assert_contains "$OC_CURL_ARGS" "--cacert" "executed curl receives --cacert"
+assert_contains "$OC_CURL_ARGS" "$OC_TMPDIR/ca.pem" "executed curl CA bundle path"
+assert_contains "$OC_CURL_ARGS" "certs/client.pem" "--cacert co-exists with the manifest client cert"
+run_http_oc --no-interactive -c collectionA -n --cacert "$OC_TMPDIR/ca.pem" get
+assert_contains "$OC_STDOUT" "--cacert" "dry-run shows --cacert"
+assert_contains "$OC_STDOUT" "$OC_TMPDIR/ca.pem" "dry-run shows the CA bundle path"
+
+# ---------- Test 76: -k together with --cacert exits 2 ----------
+echo "test 76: -k with --cacert exits 2 (mutually exclusive)"
+setup_oc_tmp
+write_mtls_collection
+printf 'ca\n' >"$OC_TMPDIR/ca.pem"
+run_http_oc_expect_fail --no-interactive -c collectionA -k --cacert "$OC_TMPDIR/ca.pem" get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: -k with --cacert should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "mutually exclusive" "k/cacert contradiction is a clear error"
+assert_not_contains "$OC_CURL_ARGS" "--cacert" "no curl should run on a k/cacert contradiction"
+run_http_oc_expect_fail --no-interactive -c collectionA --insecure --cacert "$OC_TMPDIR/ca.pem" get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: --insecure with --cacert should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "mutually exclusive" "--insecure spelling also rejected"
+
+# ---------- Test 77: -k together with --cert/--key works ----------
+echo "test 77: -k with --cert/--key works (cert+key only, no --cacert)"
+setup_oc_tmp
+write_mtls_collection
+printf 'cli-cert\n' >"$OC_TMPDIR/cli.pem"
+printf 'cli-key\n' >"$OC_TMPDIR/cli.key"
+run_http_oc --no-interactive -c collectionA -k --cert "$OC_TMPDIR/cli.pem" --key "$OC_TMPDIR/cli.key" get
+assert_contains "$OC_CURL_ARGS" "-k" "-k reaches curl"
+assert_contains "$OC_CURL_ARGS" "--cert" "client cert still presented with -k"
+assert_contains "$OC_CURL_ARGS" "$OC_TMPDIR/cli.pem" "CLI certificate present with -k"
+assert_contains "$OC_CURL_ARGS" "$OC_TMPDIR/cli.key" "CLI key present with -k"
+assert_not_contains "$OC_CURL_ARGS" "--cacert" "-k with cert/key must not add --cacert"
+run_http_oc --no-interactive -c collectionA -n -k --cert "$OC_TMPDIR/cli.pem" --key "$OC_TMPDIR/cli.key" get
+assert_contains "$OC_STDOUT" "-k" "dry-run shows -k"
+assert_contains "$OC_STDOUT" "--cert" "dry-run shows the CLI certificate"
+assert_not_contains "$OC_STDOUT" "--cacert" "dry-run with -k + cert/key must not show --cacert"
+
+# ---------- Test 78: CLI cert flags do not appear on OAuth2 token requests ----------
+echo "test 78: CLI cert flags do not appear on OAuth2 token requests"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: https://auth.example.com/token
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+printf 'cli-cert\n' >"$OC_TMPDIR/cli.pem"
+printf 'cli-key\n' >"$OC_TMPDIR/cli.key"
+printf 'ca\n' >"$OC_TMPDIR/ca.pem"
+run_http_oc --no-interactive -c collectionA -n --cert "$OC_TMPDIR/cli.pem" --key "$OC_TMPDIR/cli.key" --cacert "$OC_TMPDIR/ca.pem" secure
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "the captured invocation is the token request"
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "token request really ran"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "CLI --cert must not reach the token request"
+assert_not_contains "$OC_CURL_ARGS" "--key" "CLI --key must not reach the token request"
+assert_not_contains "$OC_CURL_ARGS" "--cacert" "CLI --cacert must not reach the token request"
+assert_not_contains "$OC_CURL_ARGS" "cli.pem" "CLI cert path must not appear in the token request"
+assert_not_contains "$OC_CURL_ARGS" "cli.key" "CLI key path must not appear in the token request"
+assert_contains "$OC_STDOUT" "--cert" "main-request dry-run still shows the CLI certificate"
+assert_contains "$OC_STDOUT" "--cacert" "main-request dry-run still shows --cacert"
+
+# ---------- Test 79: equivalent command includes cert/key/cacert when used ----------
+echo "test 79: equivalent command includes --cert/--key/--cacert"
+python3 <<'PYEOF'
+import importlib.machinery
+
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+cmd = http.build_equivalent_command(
+    "collectionA", "development", "get",
+    cert="/certs/cli.pem", key="/certs/cli.key", cacert="/certs/ca.pem",
+)
+assert "--cert /certs/cli.pem" in cmd, cmd
+assert "--key /certs/cli.key" in cmd, cmd
+assert "--cacert /certs/ca.pem" in cmd, cmd
+# absent flags stay absent
+cmd = http.build_equivalent_command("collectionA", "development", "get")
+assert "--cert" not in cmd, cmd
+assert "--key" not in cmd, cmd
+assert "--cacert" not in cmd, cmd
+# a manifest-matched certificate needs no CLI flags in the equivalent command
+cmd = http.build_equivalent_command(
+    "collectionA", "development", "get", cert="/certs/cli.pem",
+)
+assert "--key" not in cmd and "--cacert" not in cmd, cmd
+print("OK")
+PYEOF
+
 echo "OK"

@@ -169,6 +169,12 @@ def make_oc_parser():
     )
     p.add_argument("--auth-no-cache", dest="auth_no_cache", action="store_true",
                    help="force OAuth token regeneration, ignoring the cache")
+    p.add_argument("--cert", dest="cert", default=None, metavar="FILE",
+                   help="client certificate for the main request, overriding the manifest match; requires --key")
+    p.add_argument("--key", dest="key", default=None, metavar="FILE",
+                   help="client private key for the main request; requires --cert")
+    p.add_argument("--cacert", dest="cacert", default=None, metavar="FILE",
+                   help="CA bundle to verify the main request's server; mutually exclusive with -k/--insecure")
     return p
 
 
@@ -239,6 +245,8 @@ def build_curl_args(args, base_url, variables=None):
         out.append("-i")
     if args.insecure:
         out.append("-k")
+    if getattr(args, "cacert", None):
+        out += ["--cacert", args.cacert]
     if args.follow:
         out.append("-L")
     if getattr(args, "cert", None):
@@ -1107,6 +1115,7 @@ def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_ar
     ns.cert = None
     ns.key = None
     ns.passphrase = None
+    ns.cacert = getattr(passthrough_args, "cacert", None)
     return ns
 
 
@@ -1227,7 +1236,7 @@ def build_basic_oc_args(args, request_doc, variables, disabled_query_indexes=Non
 def build_equivalent_command(
     collection_name, env_name, request_name, cli_vars=None,
     optional_queries_requested=False, optional_query_names=None,
-    data=None, file=None,
+    data=None, file=None, cert=None, key=None, cacert=None,
 ):
     cmd = ["http", "oc", "-c", collection_name]
     if env_name:
@@ -1241,6 +1250,12 @@ def build_equivalent_command(
             cmd.append(f"--dqwnp={names}")
         else:
             cmd.append("--dqwnp")
+    if cert is not None:
+        cmd += ["--cert", shlex.quote(cert)]
+    if key is not None:
+        cmd += ["--key", shlex.quote(key)]
+    if cacert is not None:
+        cmd += ["--cacert", shlex.quote(cacert)]
     if data is not None:
         cmd += ["-d", shlex.quote(data)]
     elif file is not None:
@@ -1251,7 +1266,7 @@ def build_equivalent_command(
 
 def print_oc_summary(collection, environment, request, direct_args, cli_vars=None,
                      optional_queries_requested=False, optional_query_names=None,
-                     data=None, file=None):
+                     data=None, file=None, cert=None, key=None, cacert=None):
     env_name = environment.get("name") if environment else ""
     print(f"Collection: {collection['name']}")
     if env_name:
@@ -1261,7 +1276,7 @@ def print_oc_summary(collection, environment, request, direct_args, cli_vars=Non
     cmd = build_equivalent_command(
         collection["name"], env_name, request["name"], cli_vars,
         optional_queries_requested, optional_query_names,
-        data=data, file=file,
+        data=data, file=file, cert=cert, key=key, cacert=cacert,
     )
     print(f"Comando equivalente: {cmd}")
 
@@ -1273,6 +1288,10 @@ def main_oc(args):
     summary_printed = False
     if args.file and args.data is not None:
         die("--file and --data are mutually exclusive")
+    if (args.cert is None) != (args.key is None):
+        die("--cert and --key must be provided together")
+    if args.cacert is not None and args.insecure:
+        die("--cacert is mutually exclusive with -k/--insecure")
     cli_body_raw = None
     cli_file_content = None
     if args.file:
@@ -1328,6 +1347,7 @@ def main_oc(args):
             collection["name"], env_name, request["name"], effective_vars,
             optional_requested, optional_names,
             data=templated_data, file=args.file,
+            cert=args.cert, key=args.key, cacert=args.cacert,
         )
 
         auth = get_oc_auth(collection["manifest"], request["data"])
@@ -1347,7 +1367,13 @@ def main_oc(args):
             collection["path"],
             oc_variables,
         )
-        if matched_cert is not None:
+        if args.cert is not None:
+            # CLI --cert/--key replace the manifest-matched certificate for
+            # this run; no --pass flag exists, so any passphrase is dropped.
+            direct_args.cert = args.cert
+            direct_args.key = args.key
+            direct_args.passphrase = None
+        elif matched_cert is not None:
             direct_args.cert = str(matched_cert["certificate"])
             direct_args.key = str(matched_cert["key"])
             direct_args.passphrase = matched_cert.get("passphrase")
@@ -1360,6 +1386,7 @@ def main_oc(args):
                 collection, environment, request, direct_args, effective_vars,
                 optional_requested, optional_names,
                 data=templated_data, file=args.file,
+                cert=args.cert, key=args.key, cacert=args.cacert,
             )
             summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)
