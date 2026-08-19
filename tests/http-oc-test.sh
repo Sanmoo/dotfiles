@@ -1476,4 +1476,418 @@ assert_contains "$OC_STDOUT" '"name":"alice"' "file body cli variable resolved"
 assert_contains "$OC_STDOUT" '"id":"path-42"' "path param resolved in file body"
 assert_not_contains "$OC_STDOUT" '{{' "template placeholders all resolved"
 
+# ---------- Test 54: manifest pem entry -> --cert/--key/--pass ----------
+write_mtls_collection() {
+  mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+  cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+  cat >"$OC_ROOT/collectionA/requests/get.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+}
+
+echo "test 54: manifest pem entry -> --cert/--key/--pass (executed + dry-run)"
+setup_oc_tmp
+write_mtls_collection
+printf 'fake-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<YAML
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+      passphrase: secret
+YAML
+run_http_oc --no-interactive -c collectionA get
+assert_contains "$OC_CURL_ARGS" "--cert" "executed curl receives --cert"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/client.pem" "executed curl certificate path"
+assert_contains "$OC_CURL_ARGS" "--key" "executed curl receives --key"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/client.key" "executed curl key path"
+assert_contains "$OC_CURL_ARGS" "--pass" "executed curl receives --pass"
+assert_contains "$OC_CURL_ARGS" "secret" "executed curl passphrase"
+run_http_oc --no-interactive -c collectionA -n get
+assert_contains "$OC_STDOUT" "--cert" "dry-run curl receives --cert"
+assert_contains "$OC_STDOUT" "--key" "dry-run curl receives --key"
+assert_contains "$OC_STDOUT" "--pass" "dry-run curl receives --pass"
+assert_contains "$OC_STDOUT" "certs/client.pem" "dry-run shows certificate path"
+assert_contains "$OC_STDOUT" "certs/client.key" "dry-run shows key path"
+
+# ---------- Test 55: exact match only, prefix-sharing host excluded ----------
+echo "test 55: exact domain match; prefix-sharing host excluded"
+setup_oc_tmp
+write_mtls_collection
+printf 'fake-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+cat >"$OC_ROOT/collectionA/requests/evil.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com.evil.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA get
+assert_contains "$OC_CURL_ARGS" "--cert" "exact-matching host gets the certificate"
+run_http_oc --no-interactive -c collectionA -n evil
+assert_not_contains "$OC_STDOUT" "--cert" "prefix-sharing host must not receive the certificate"
+
+# ---------- Test 56: wildcard matches subdomains, not apex; http never matches ----------
+echo "test 56: *.example.com subdomains only; http never matches"
+setup_oc_tmp
+write_mtls_collection
+printf 'fake-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: "*.example.com"
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+cat >"$OC_ROOT/collectionA/requests/sub.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://deep.api.example.com/secure
+YAML
+cat >"$OC_ROOT/collectionA/requests/apex.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.com/secure
+YAML
+cat >"$OC_ROOT/collectionA/requests/plain.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: http://api.example.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n sub
+assert_contains "$OC_STDOUT" "--cert" "wildcard matches a subdomain"
+run_http_oc --no-interactive -c collectionA -n apex
+assert_not_contains "$OC_STDOUT" "--cert" "wildcard must not match the apex domain"
+run_http_oc --no-interactive -c collectionA -n plain
+assert_not_contains "$OC_STDOUT" "--cert" "non-https URL must never match"
+
+# ---------- Test 57: first match wins; disabled entries skipped ----------
+echo "test 57: first match wins; disabled entries skipped"
+setup_oc_tmp
+write_mtls_collection
+printf 'first-cert\n' >"$OC_ROOT/collectionA/certs/first.pem"
+printf 'first-key\n' >"$OC_ROOT/collectionA/certs/first.key"
+printf 'wild-cert\n' >"$OC_ROOT/collectionA/certs/wild.pem"
+printf 'wild-key\n' >"$OC_ROOT/collectionA/certs/wild.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/first.pem
+      privateKeyFilePath: certs/first.key
+    - domain: "*.example.com"
+      type: pem
+      certificateFilePath: certs/wild.pem
+      privateKeyFilePath: certs/wild.key
+YAML
+run_http_oc --no-interactive -c collectionA -n get
+assert_contains "$OC_STDOUT" "certs/first.pem" "first matching entry should win"
+assert_not_contains "$OC_STDOUT" "certs/wild.pem" "later matching entry must not be used"
+# disabled entry referencing a missing file must be skipped, not an error
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/disabled.pem
+      privateKeyFilePath: certs/disabled.key
+      disabled: true
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/first.pem
+      privateKeyFilePath: certs/first.key
+YAML
+run_http_oc --no-interactive -c collectionA get
+assert_contains "$OC_CURL_ARGS" "certs/first.pem" "disabled entry skipped; enabled entry used"
+assert_not_contains "$OC_CURL_ARGS" "certs/disabled.pem" "disabled entry file never referenced"
+
+# ---------- Test 58: templating, ~/$VAR expansion, relative resolution ----------
+echo "test 58: cert fields templated and paths resolved against collection root"
+setup_oc_tmp
+write_mtls_collection
+printf 'fake-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: certDomain
+    value: api.example.com
+  - name: certFileName
+    value: client.pem
+config:
+  clientCertificates:
+    - domain: "{{certDomain}}"
+      type: pem
+      certificateFilePath: "certs/{{certFileName}}"
+      privateKeyFilePath: "certs/client.key"
+YAML
+run_http_oc --no-interactive -c collectionA -n get
+assert_contains "$OC_STDOUT" "certs/client.pem" "templated relative path resolves against collection root"
+assert_contains "$OC_STDOUT" "certs/client.key" "relative key path resolves"
+# {{process.env.X}} and ~ expansion in paths
+mkdir -p "$OC_HOME/.mtls" "$OC_TMPDIR/certs"
+printf 'env-cert\n' >"$OC_HOME/.mtls/client.pem"
+printf 'env-key\n' >"$OC_TMPDIR/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<YAML
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: "~/.mtls/client.pem"
+      privateKeyFilePath: "{{process.env.MTLS_KEY_PATH}}"
+YAML
+MTLS_KEY_PATH="$OC_TMPDIR/certs/client.key" run_http_oc --no-interactive -c collectionA -n get
+assert_contains "$OC_STDOUT" "client.pem" "tilde-expanded path resolves (process env branch)"
+assert_contains "$OC_STDOUT" "$OC_TMPDIR/certs/client.key" "{{process.env.X}} path resolves"
+
+# ---------- Test 59: missing required field exits 2 naming the field ----------
+echo "test 59: missing required certificate field exits 2 naming the field"
+for missing in type domain certificateFilePath privateKeyFilePath; do
+  setup_oc_tmp
+  write_mtls_collection
+  {
+    echo "info:"
+    echo "  name: collectionA"
+    echo "config:"
+    echo "  clientCertificates:"
+    if [ "$missing" = "domain" ]; then
+      printf '    - type: pem\n'
+    else
+      printf '    - domain: api.example.com\n'
+      if [ "$missing" != "type" ]; then
+        printf '      type: pem\n'
+      fi
+    fi
+    if [ "$missing" != "certificateFilePath" ]; then
+      printf '      certificateFilePath: certs/client.pem\n'
+    fi
+    if [ "$missing" != "privateKeyFilePath" ]; then
+      printf '      privateKeyFilePath: certs/client.key\n'
+    fi
+  } >"$OC_ROOT/collectionA/opencollection.yaml"
+  run_http_oc_expect_fail --no-interactive -c collectionA get
+  [ "$OC_EXIT" -eq 2 ] || {
+    echo "FAIL: missing $missing should exit 2, got $OC_EXIT" >&2
+    exit 1
+  }
+  assert_contains "$OC_STDERR" "missing required field: $missing" "error names the missing field ($missing)"
+  assert_not_contains "$OC_CURL_ARGS" "--cert" "no curl should run on a malformed entry"
+done
+
+# ---------- Test 60: pkcs12 entry exits 2 with not-supported message ----------
+echo "test 60: pkcs12 entry exits 2 with not-supported message"
+setup_oc_tmp
+write_mtls_collection
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pkcs12
+      certificateFilePath: certs/client.p12
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: pkcs12 should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "not supported" "pkcs12 message clearly says not supported"
+assert_contains "$OC_STDERR" "pkcs12" "pkcs12 message names the type"
+
+# ---------- Test 61: missing certificate/key file exits 2 before any request ----------
+echo "test 61: missing certificate or key file exits 2 before any request"
+setup_oc_tmp
+write_mtls_collection
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/missing.pem
+      privateKeyFilePath: certs/client.key
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: missing certificate file should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "file not found" "missing certificate file error"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "no curl should run when a certificate file is missing"
+printf 'fake-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/missing.key
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: missing key file should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "file not found" "missing key file error"
+
+# ---------- Test 62: host matching no entry behaves exactly as today ----------
+echo "test 62: host matching no entry gets no certificate flags"
+setup_oc_tmp
+write_mtls_collection
+printf 'fake-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+cat >"$OC_ROOT/collectionA/requests/other.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://other.example.org/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n other
+assert_not_contains "$OC_STDOUT" "--cert" "unmatched host must not receive certificate flags"
+assert_not_contains "$OC_STDOUT" "--key" "unmatched host must not receive key flags"
+# a collection with no clientCertificates configured behaves as before
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+YAML
+run_http_oc --no-interactive -c collectionA -n other
+assert_not_contains "$OC_STDOUT" "--cert" "no certificates configured means no flags"
+
+# ---------- Test 63: module-boundary unit tests for the pure matching rules ----------
+echo "test 63: domain_matches_host pure matching rules"
+python3 <<'PYEOF'
+import importlib.machinery
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+m = http.domain_matches_host
+# exact
+assert m("api.example.com", "api.example.com") is True
+# exact never matches a longer host that merely shares a prefix
+assert m("api.example.com", "api.example.com.evil.com") is False
+# exact never matches a shorter host
+assert m("api.example.com", "example.com") is False
+# exact never matches a subdomain
+assert m("api.example.com", "sub.api.example.com") is False
+# wildcard matches subdomains
+assert m("*.example.com", "api.example.com") is True
+assert m("*.example.com", "a.b.example.com") is True
+# wildcard does not match the apex
+assert m("*.example.com", "example.com") is False
+# wildcard is anchored at the host end
+assert m("*.example.com", "notexample.com") is False
+# a dot-less wildcard never crosses a label boundary, so no cert leaks to a sharing host
+assert m("*example.com", "notexample.com") is False
+assert m("*example.com", "example.com") is False
+# bare wildcard matches any host
+assert m("*", "anything.example.com") is True
+# case-insensitive
+assert m("API.Example.COM", "api.example.com") is True
+# empty inputs never match
+assert m("", "example.com") is False
+assert m("api.example.com", "") is False
+print("OK")
+PYEOF
+
+# ---------- Test 64: https-only selection helper ----------
+echo "test 64: request_url_https_host https-only"
+python3 <<'PYEOF'
+import importlib.machinery
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+h = http.request_url_https_host
+assert h("https://api.example.com/path") == "api.example.com"
+assert h("https://Api.Example.com:8443/x") == "api.example.com"
+assert h("http://api.example.com/x") is None
+assert h("ftp://api.example.com/x") is None
+assert h("api.example.com/x") is None
+print("OK")
+PYEOF
+
+# ---------- Test 65: malformed entry fails even for non-https / unmatched hosts ----------
+echo "test 65: malformed entry fails even for non-https and unmatched hosts"
+setup_oc_tmp
+write_mtls_collection
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pkcs12
+      certificateFilePath: certs/client.p12
+YAML
+cat >"$OC_ROOT/collectionA/requests/plain.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: http://api.example.com/secure
+YAML
+cat >"$OC_ROOT/collectionA/requests/other.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://other.example.org/secure
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA plain
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: malformed entry on non-https request should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "not supported" "malformed entry fails on a non-https request too"
+run_http_oc_expect_fail --no-interactive -c collectionA other
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: malformed entry on unmatched host should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "not supported" "malformed entry fails even when the host matches nothing"
+
 echo "OK"

@@ -9,7 +9,7 @@ A directory containing a manifest plus one or more request documents; identified
 _Avoid_: collection folder, project, collection dir
 
 **Manifest**:
-The collection's top-level YAML file (`opencollection.yaml`, `opencollection.yml`, `collection.yaml`, or `collection.yml`) holding `info`, `variables`, `config.environments`, and request defaults.
+The collection's top-level YAML file (`opencollection.yaml`, `opencollection.yml`, `collection.yaml`, or `collection.yml`) holding `info`, `variables`, `config.environments`, client certificates (`config.clientCertificates`), and request defaults.
 _Avoid_: collection config, opencollection file
 
 **Request document**:
@@ -21,8 +21,12 @@ The runnable HTTP call resolved from a request document (method, URL, headers, p
 _Avoid_: call, endpoint (when meaning the resolved call rather than the document)
 
 **Environment**:
-A named variable set under `config.environments`, selectable with `-e`.
+A named config under `config.environments`, selectable with `-e`, holding variables and optionally client certificates.
 _Avoid_: env, variable set
+
+**Client certificate**:
+An entry in `config.clientCertificates` (collection) or `config.environments[].clientCertificates` (environment) — `domain`, `type: pem`, `certificateFilePath`, `privateKeyFilePath`, optional `passphrase`/`disabled` — applied to requests whose URL host matches the `domain` (wildcard `*` allowed).
+_Avoid_: mtls config, tls block
 
 **Comando equivalente**:
 The `http oc ...` command printed in interactive mode that reproduces a run (the code names it `equivalent command`).

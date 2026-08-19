@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import quote_plus, urlencode, urlparse
 
 try:
     import yaml
@@ -241,6 +241,12 @@ def build_curl_args(args, base_url, variables=None):
         out.append("-k")
     if args.follow:
         out.append("-L")
+    if getattr(args, "cert", None):
+        out += ["--cert", args.cert]
+    if getattr(args, "key", None):
+        out += ["--key", args.key]
+    if getattr(args, "passphrase", None):
+        out += ["--pass", args.passphrase]
     for h in args.headers or []:
         out += ["-H", h]
     if args.token:
@@ -509,6 +515,121 @@ def get_environments(collection_manifest):
     config = collection_manifest.get("config") if isinstance(collection_manifest.get("config"), dict) else {}
     envs = config.get("environments") or []
     return [e for e in envs if isinstance(e, dict) and e.get("name")]
+
+
+def get_manifest_client_certificates(manifest):
+    """Return the config.clientCertificates list from a collection manifest."""
+    config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+    entries = config.get("clientCertificates")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        die("config.clientCertificates must be a list")
+    return entries
+
+
+def domain_matches_host(domain, host):
+    """Pure domain-vs-host matching rule.
+
+    Exact match, or — when the domain is a ``*.`` wildcard — the rest matches
+    as a host suffix anchored at the host end: ``*.example.com`` matches
+    ``api.example.com`` but not ``example.com``. Only ``*.`` wildcards match
+    across label boundaries; ``*`` alone matches any host; an exact domain
+    never matches a longer host that merely shares a prefix. Case-insensitive.
+    """
+    if not domain or not host:
+        return False
+    domain = domain.lower()
+    host = host.lower()
+    if domain.startswith("*"):
+        if domain == "*":
+            return True
+        if not domain.startswith("*."):
+            return False
+        return host.endswith(domain[1:])
+    return host == domain
+
+
+def resolve_certificate_path(value, collection_path, variables):
+    """Template a certificate path, expand ~/$VAR, resolve relative to the collection root."""
+    text = apply_template(str(value), variables)
+    path = expand_config_path(text)
+    if not path.is_absolute():
+        path = collection_path / path
+    return path
+
+
+def resolve_client_cert_entry(entry, collection_path, variables, host):
+    """Validate, template, and match a single certificate entry.
+
+    Returns the resolved dict (domain/certificate/key/passphrase) when the
+    entry matches ``host``, else None. Exits 2 on malformed entries,
+    unsupported types, or a matched entry whose certificate or key file is
+    missing.
+    """
+    if not isinstance(entry, dict):
+        die("clientCertificate entry must be a mapping")
+    if entry.get("disabled") is True:
+        return None
+    cert_type = entry.get("type")
+    if cert_type is None:
+        die("clientCertificate entry is missing required field: type")
+    if str(cert_type).lower() != "pem":
+        die(f"clientCertificate type not supported: {cert_type} (only pem is supported)")
+    if entry.get("domain") is None:
+        die("clientCertificate entry is missing required field: domain")
+    if entry.get("certificateFilePath") is None:
+        die("clientCertificate entry is missing required field: certificateFilePath")
+    if entry.get("privateKeyFilePath") is None:
+        die("clientCertificate entry is missing required field: privateKeyFilePath")
+    domain = apply_template(str(entry["domain"]), variables)
+    if not domain_matches_host(domain, host):
+        return None
+    certificate = resolve_certificate_path(entry["certificateFilePath"], collection_path, variables)
+    key = resolve_certificate_path(entry["privateKeyFilePath"], collection_path, variables)
+    if not certificate.is_file():
+        die(f"file not found: {certificate}")
+    if not key.is_file():
+        die(f"file not found: {key}")
+    passphrase = None
+    if entry.get("passphrase") is not None:
+        passphrase = apply_template(str(entry["passphrase"]), variables)
+    return {
+        "domain": domain,
+        "certificate": certificate,
+        "key": key,
+        "passphrase": passphrase,
+    }
+
+
+def request_url_https_host(url):
+    """Return the lowercase https host of url, else None (non-https or unparsable)."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if parsed.scheme.lower() != "https":
+        return None
+    host = (parsed.hostname or "").lower()
+    return host or None
+
+
+def select_oc_client_cert(url, cert_entries, collection_path, variables):
+    """Pick the first certificate entry whose domain matches url's https host.
+
+    Returns the resolved entry dict, or None when nothing matches (requests
+    whose host matches no entry behave exactly as today, with no certificate
+    flags). Every non-disabled entry is validated — missing required field or
+    unsupported type fail with exit 2 before anything is sent — even when the
+    request is not https or no host matches; only a matched https entry gets
+    its certificate/key files checked.
+    """
+    host = request_url_https_host(url)
+    for entry in cert_entries:
+        resolved = resolve_client_cert_entry(entry, collection_path, variables, host)
+        if resolved is not None:
+            return resolved
+    return None
 
 
 def select_environment(environments, name, interactive):
@@ -906,6 +1027,9 @@ def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_ar
     ns.dry_run = passthrough_args.dry_run
     ns.insecure = passthrough_args.insecure
     ns.follow = passthrough_args.follow
+    ns.cert = None
+    ns.key = None
+    ns.passphrase = None
     return ns
 
 
@@ -1131,11 +1255,21 @@ def main_oc(args):
 
         auth = get_oc_auth(collection["manifest"], request["data"])
         validate_supported_oc_auth(auth)
-        token = resolve_oauth2_token(collection, environment, auth, variables,
-                                      force=args.auth_no_cache)
         direct_args = build_basic_oc_args(
             args, request["data"], oc_variables, disabled_query_indexes,
         )
+        matched_cert = select_oc_client_cert(
+            direct_args.base_url,
+            get_manifest_client_certificates(collection["manifest"]),
+            collection["path"],
+            oc_variables,
+        )
+        if matched_cert is not None:
+            direct_args.cert = str(matched_cert["certificate"])
+            direct_args.key = str(matched_cert["key"])
+            direct_args.passphrase = matched_cert.get("passphrase")
+        token = resolve_oauth2_token(collection, environment, auth, variables,
+                                      force=args.auth_no_cache)
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
         if OC_INTERACTIVE_USED:
