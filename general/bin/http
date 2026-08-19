@@ -517,15 +517,105 @@ def get_environments(collection_manifest):
     return [e for e in envs if isinstance(e, dict) and e.get("name")]
 
 
-def get_manifest_client_certificates(manifest):
-    """Return the config.clientCertificates list from a collection manifest."""
-    config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
-    entries = config.get("clientCertificates")
+def _client_cert_entries(config, label):
+    """Return the clientCertificates list from a config container, or [] when absent."""
+    entries = config.get("clientCertificates") if isinstance(config, dict) else None
     if entries is None:
         return []
     if not isinstance(entries, list):
-        die("config.clientCertificates must be a list")
+        die(f"{label} must be a list")
     return entries
+
+
+def get_manifest_client_certificates(manifest):
+    """Return the config.clientCertificates list from a collection manifest."""
+    config = manifest.get("config") if isinstance(manifest.get("config"), dict) else {}
+    return _client_cert_entries(config, "config.clientCertificates")
+
+
+def get_environment_client_certificates(environment):
+    """Return the config.environments[].clientCertificates list of an environment."""
+    if environment is None:
+        return []
+    env_name = environment.get("name") if isinstance(environment, dict) else ""
+    return _client_cert_entries(environment, f"config.environments[{env_name!r}].clientCertificates")
+
+
+def templated_cert_domain(entry, variables):
+    """Template an entry's ``domain`` field with the resolved variable context.
+
+    Returns None for non-dict entries so callers can leave them for selection
+    validation, which rejects them with a clean exit-2 message instead of a
+    traceback.
+    """
+    if not isinstance(entry, dict):
+        return None
+    return apply_template(str(entry.get("domain")), variables)
+
+
+def validate_client_cert_entry(entry):
+    """Validate one certificate entry independent of any request host.
+
+    Dies with exit 2 on malformed entries and unsupported types; returns False
+    for ``disabled`` entries (callers skip them) and True otherwise. Every
+    non-disabled entry in both the collection and the selected environment must
+    pass this, even when the request is not https or no host matches — a
+    malformed entry fails loudly instead of being silently dropped by the
+    environment merge.
+    """
+    if not isinstance(entry, dict):
+        die("clientCertificate entry must be a mapping")
+    if entry.get("disabled") is True:
+        return False
+    cert_type = entry.get("type")
+    if cert_type is None:
+        die("clientCertificate entry is missing required field: type")
+    if str(cert_type).lower() != "pem":
+        die(f"clientCertificate type not supported: {cert_type} (only pem is supported)")
+    for field in ("domain", "certificateFilePath", "privateKeyFilePath"):
+        if entry.get(field) is None:
+            die(f"clientCertificate entry is missing required field: {field}")
+    return True
+
+
+def merge_client_certificates(collection_entries, environment_entries, variables):
+    """Merge collection and environment certificate lists, environment winning per domain.
+
+    Domains are compared already templated (with the same resolved variable
+    context the selection uses), folded case-insensitively like the matching,
+    so an environment entry overrides the collection entry for the same
+    effective ``domain`` — the same precedence direction variables use. The
+    overriding environment entry replaces the collection entry in place;
+    environment entries for domains the collection does not claim are appended
+    in environment order. ``disabled`` environment entries are skipped and
+    therefore do not mask the collection entry for the same domain. The
+    returned list keeps the existing first-match-wins scan; callers should
+    validate both lists with :func:`validate_client_cert_entry` beforehand.
+    """
+    enabled_env_entries = [
+        e for e in environment_entries
+        if isinstance(e, dict) and e.get("disabled") is not True
+    ]
+    invalid_env_entries = [e for e in environment_entries if not isinstance(e, dict)]
+
+    def fold(domain):
+        return None if domain is None else domain.lower()
+
+    env_overrides = {}
+    for entry in enabled_env_entries:
+        domain = fold(templated_cert_domain(entry, variables))
+        if domain not in env_overrides:
+            env_overrides[domain] = entry
+    merged = []
+    for entry in collection_entries:
+        domain = fold(templated_cert_domain(entry, variables))
+        if domain in env_overrides:
+            merged.append(env_overrides.pop(domain))
+        else:
+            merged.append(entry)
+    merged.extend(env_overrides.values())
+    merged.extend(invalid_env_entries)
+    return merged
 
 
 def domain_matches_host(domain, host):
@@ -567,22 +657,9 @@ def resolve_client_cert_entry(entry, collection_path, variables, host):
     unsupported types, or a matched entry whose certificate or key file is
     missing.
     """
-    if not isinstance(entry, dict):
-        die("clientCertificate entry must be a mapping")
-    if entry.get("disabled") is True:
+    if not validate_client_cert_entry(entry):
         return None
-    cert_type = entry.get("type")
-    if cert_type is None:
-        die("clientCertificate entry is missing required field: type")
-    if str(cert_type).lower() != "pem":
-        die(f"clientCertificate type not supported: {cert_type} (only pem is supported)")
-    if entry.get("domain") is None:
-        die("clientCertificate entry is missing required field: domain")
-    if entry.get("certificateFilePath") is None:
-        die("clientCertificate entry is missing required field: certificateFilePath")
-    if entry.get("privateKeyFilePath") is None:
-        die("clientCertificate entry is missing required field: privateKeyFilePath")
-    domain = apply_template(str(entry["domain"]), variables)
+    domain = templated_cert_domain(entry, variables)
     if not domain_matches_host(domain, host):
         return None
     certificate = resolve_certificate_path(entry["certificateFilePath"], collection_path, variables)
@@ -1258,9 +1335,15 @@ def main_oc(args):
         direct_args = build_basic_oc_args(
             args, request["data"], oc_variables, disabled_query_indexes,
         )
+        manifest_certs = get_manifest_client_certificates(collection["manifest"])
+        environment_certs = get_environment_client_certificates(environment)
+        for entry in manifest_certs:
+            validate_client_cert_entry(entry)
+        for entry in environment_certs:
+            validate_client_cert_entry(entry)
         matched_cert = select_oc_client_cert(
             direct_args.base_url,
-            get_manifest_client_certificates(collection["manifest"]),
+            merge_client_certificates(manifest_certs, environment_certs, oc_variables),
             collection["path"],
             oc_variables,
         )

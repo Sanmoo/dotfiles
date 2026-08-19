@@ -1890,4 +1890,294 @@ run_http_oc_expect_fail --no-interactive -c collectionA other
 }
 assert_contains "$OC_STDERR" "not supported" "malformed entry fails even when the host matches nothing"
 
+# ---------- Test 66: environment-only certificate is matched when selected ----------
+echo "test 66: environment-only certificate matched when that environment is selected"
+setup_oc_tmp
+write_mtls_collection
+printf 'env-cert\n' >"$OC_ROOT/collectionA/certs/env.pem"
+printf 'env-key\n' >"$OC_ROOT/collectionA/certs/env.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: production
+      clientCertificates:
+        - domain: api.example.com
+          type: pem
+          certificateFilePath: certs/env.pem
+          privateKeyFilePath: certs/env.key
+YAML
+run_http_oc --no-interactive -c collectionA -e production get
+assert_contains "$OC_CURL_ARGS" "--cert" "environment certificate reaches executed curl"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/env.pem" "executed curl uses the environment certificate path"
+run_http_oc --no-interactive -c collectionA -e production -n get
+assert_contains "$OC_STDOUT" "--cert" "dry-run shows the environment certificate"
+assert_contains "$OC_STDOUT" "certs/env.pem" "dry-run shows the environment certificate path"
+# an unselected environment must not contribute its certificates
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: development
+      variables:
+        - name: baseUrl
+          value: https://dev.example.com
+    - name: production
+      clientCertificates:
+        - domain: api.example.com
+          type: pem
+          certificateFilePath: certs/env.pem
+          privateKeyFilePath: certs/env.key
+YAML
+run_http_oc --no-interactive -c collectionA -e development -n get
+assert_not_contains "$OC_STDOUT" "--cert" "unselected environment must not contribute certificates"
+
+# ---------- Test 67: environment entry wins over the collection entry for the same domain ----------
+echo "test 67: environment certificate wins over collection for the same domain"
+setup_oc_tmp
+write_mtls_collection
+printf 'coll-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'coll-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+printf 'env-cert\n' >"$OC_ROOT/collectionA/certs/env.pem"
+printf 'env-key\n' >"$OC_ROOT/collectionA/certs/env.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: production
+      clientCertificates:
+        - domain: api.example.com
+          type: pem
+          certificateFilePath: certs/env.pem
+          privateKeyFilePath: certs/env.key
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+run_http_oc --no-interactive -c collectionA -e production -n get
+assert_contains "$OC_STDOUT" "certs/env.pem" "dry-run shows the environment certificate when it wins"
+assert_not_contains "$OC_STDOUT" "certs/client.pem" "environment must mask the collection certificate for the same domain"
+run_http_oc --no-interactive -c collectionA -e production get
+assert_contains "$OC_CURL_ARGS" "certs/env.pem" "executed curl uses the environment certificate"
+assert_not_contains "$OC_CURL_ARGS" "certs/client.pem" "collection certificate not used when the environment wins"
+
+# ---------- Test 68: collection certificate applies when env has no entry for its domain ----------
+echo "test 68: collection certificate applies when environment defines no entry for its domain"
+setup_oc_tmp
+write_mtls_collection
+printf 'coll-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'coll-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+printf 'env-cert\n' >"$OC_ROOT/collectionA/certs/env.pem"
+printf 'env-key\n' >"$OC_ROOT/collectionA/certs/env.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: production
+      clientCertificates:
+        - domain: other.example.org
+          type: pem
+          certificateFilePath: certs/env.pem
+          privateKeyFilePath: certs/env.key
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+run_http_oc --no-interactive -c collectionA -e production -n get
+assert_contains "$OC_STDOUT" "certs/client.pem" "dry-run shows the collection certificate when it is the only match"
+assert_not_contains "$OC_STDOUT" "certs/env.pem" "environment certificate for another domain must not be used"
+run_http_oc --no-interactive -c collectionA -e production get
+assert_contains "$OC_CURL_ARGS" "certs/client.pem" "executed curl uses the collection certificate when env has no entry for its domain"
+
+# ---------- Test 69: environment entries resolve the full variable context ----------
+echo "test 69: environment certificate entries resolve collection/env/request/CLI variables"
+setup_oc_tmp
+write_mtls_collection
+printf 'env-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'env-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: certFileName
+    value: client
+config:
+  environments:
+    - name: production
+      variables:
+        - name: certDomain
+          value: api.example.com
+      clientCertificates:
+        - domain: "{{certDomain}}"
+          type: pem
+          certificateFilePath: "{{certDir}}/{{certFileName}}.{{certExt}}"
+          privateKeyFilePath: "certs/client.key"
+YAML
+cat >"$OC_ROOT/collectionA/requests/get.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+variables:
+  - name: certDir
+    value: certs
+YAML
+run_http_oc --no-interactive -c collectionA -e production -n -v certExt=pem get
+assert_contains "$OC_STDOUT" "--cert" "env certificate selected via a templated domain"
+assert_contains "$OC_STDOUT" "certs/client.pem" "env/collection/request/CLI variables together resolve the cert path"
+run_http_oc --no-interactive -c collectionA -e production -v certExt=pem get
+assert_contains "$OC_CURL_ARGS" "certs/client.pem" "executed curl uses the fully-resolved certificate path"
+
+# ---------- Test 70: disabled environment entry skipped without masking the collection entry ----------
+echo "test 70: disabled environment entry skipped and does not mask the collection entry"
+setup_oc_tmp
+write_mtls_collection
+printf 'coll-cert\n' >"$OC_ROOT/collectionA/certs/client.pem"
+printf 'coll-key\n' >"$OC_ROOT/collectionA/certs/client.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: production
+      clientCertificates:
+        - domain: api.example.com
+          type: pem
+          certificateFilePath: certs/disabled.pem
+          privateKeyFilePath: certs/disabled.key
+          disabled: true
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/client.pem
+      privateKeyFilePath: certs/client.key
+YAML
+run_http_oc --no-interactive -c collectionA -e production get
+assert_contains "$OC_CURL_ARGS" "certs/client.pem" "collection certificate used when the environment entry is disabled"
+assert_not_contains "$OC_CURL_ARGS" "certs/disabled.pem" "disabled environment entry file never referenced"
+run_http_oc --no-interactive -c collectionA -e production -n get
+assert_contains "$OC_STDOUT" "certs/client.pem" "dry-run shows the collection certificate behind a disabled env entry"
+
+# ---------- Test 71: module-boundary unit tests for the environment merge rule ----------
+echo "test 71: merge_client_certificates environment-wins-per-domain"
+python3 <<'PYEOF'
+import importlib.machinery
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+merge = http.merge_client_certificates
+
+
+def entry(domain, path, disabled=False):
+    e = {"domain": domain, "type": "pem",
+         "certificateFilePath": path + ".pem", "privateKeyFilePath": path + ".key"}
+    if disabled:
+        e["disabled"] = True
+    return e
+
+
+def paths(merged):
+    return [e["certificateFilePath"] for e in merged
+            if isinstance(e, dict) and "certificateFilePath" in e]
+
+# no environment: the collection list passes through unchanged, in order
+merged = merge([entry("a.com", "c1"), entry("b.com", "c2")], [], {})
+assert paths(merged) == ["c1.pem", "c2.pem"]
+# environment entry with the same domain replaces the collection entry in place
+merged = merge([entry("api.example.com", "coll")], [entry("api.example.com", "env")], {})
+assert paths(merged) == ["env.pem"]
+# collection entry survives when the environment has no entry for its domain
+merged = merge([entry("api.example.com", "coll"), entry("*.example.com", "wild")],
+               [entry("other.example.org", "env")], {})
+assert paths(merged) == ["coll.pem", "wild.pem", "env.pem"]
+# environment-only domains are appended in environment order after collection slots
+merged = merge([entry("api.example.com", "coll")],
+               [entry("a.example.org", "env1"), entry("*.example.com", "env2")], {})
+assert paths(merged) == ["coll.pem", "env1.pem", "env2.pem"]
+# first environment entry for a domain wins; later duplicates are dropped
+merged = merge([], [entry("api.example.com", "e1"), entry("api.example.com", "e2")], {})
+assert paths(merged) == ["e1.pem"]
+# disabled environment entries claim nothing and never mask the collection entry
+merged = merge([entry("api.example.com", "coll")],
+               [entry("api.example.com", "env", disabled=True)], {})
+assert paths(merged) == ["coll.pem"]
+# domains override case-insensitively, matching domain_matches_host semantics
+merged = merge([entry("api.example.com", "coll")],
+               [entry("API.Example.com", "env")], {})
+assert paths(merged) == ["env.pem"]
+# a case-insensitive disabled environment entry still claims nothing
+merged = merge([entry("api.example.com", "coll")],
+               [entry("API.Example.com", "env", disabled=True)], {})
+assert paths(merged) == ["coll.pem"]
+# domains compare by their resolved (templated) value
+merged = merge([entry("{{certDomain}}", "coll1"), entry("api.example.com", "coll2")],
+               [entry("api.example.com", "env")], {"certDomain": "api.example.com"})
+assert paths(merged) == ["env.pem", "coll2.pem"]
+# non-dict entries pass through for clean selection-time validation
+merged = merge(["junk"], ["nope"], {})
+assert merged == ["junk", "nope"]
+print("OK")
+PYEOF
+
+# ---------- Test 72: a collection entry masked by the environment is still validated ----------
+echo "test 72: collection entry masked by the environment is still validated"
+setup_oc_tmp
+write_mtls_collection
+printf 'env-cert\n' >"$OC_ROOT/collectionA/certs/env.pem"
+printf 'env-key\n' >"$OC_ROOT/collectionA/certs/env.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: production
+      clientCertificates:
+        - domain: api.example.com
+          type: pem
+          certificateFilePath: certs/env.pem
+          privateKeyFilePath: certs/env.key
+  clientCertificates:
+    - domain: api.example.com
+      type: pkcs12
+      certificateFilePath: certs/old.p12
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -e production get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: malformed collection entry masked by the environment should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "not supported" "a collection entry masked by the environment is still validated"
+assert_contains "$OC_STDERR" "pkcs12" "error names the masked entry's unsupported type"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "no curl should run when a masked entry is malformed"
+# malformed environment entry also fails even though a collection entry covers the domain
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: production
+      clientCertificates:
+        - domain: api.example.com
+          type: pkcs12
+          certificateFilePath: certs/env.p12
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/env.pem
+      privateKeyFilePath: certs/env.key
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -e production get
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: malformed environment entry should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "not supported" "a malformed environment entry is validated even when the collection covers the domain"
+assert_contains "$OC_STDERR" "pkcs12" "error names the environment entry's unsupported type"
+
 echo "OK"
