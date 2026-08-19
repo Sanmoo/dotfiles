@@ -1006,7 +1006,23 @@ def save_cached_token(cache_dir, key, token_response, now=None):
     path.chmod(0o600)
 
 
-def run_client_credentials(auth):
+def _token_cert_flags(matched_cert):
+    """Flatten a matched certificate into curl-style ``--cert/--key/--pass`` args.
+
+    Returns [] when no certificate matched; mirrors the main request's flag
+    mapping (``certificateFilePath`` → ``--cert``, ``privateKeyFilePath`` →
+    ``--key``, ``passphrase`` → ``--pass`` only when set).
+    """
+    if matched_cert is None:
+        return []
+    flags = ["--cert", str(matched_cert["certificate"])]
+    flags += ["--key", str(matched_cert["key"])]
+    if matched_cert.get("passphrase"):
+        flags += ["--pass", str(matched_cert["passphrase"])]
+    return flags
+
+
+def run_client_credentials(auth, matched_cert=None):
     form = [
         ("grant_type", "client_credentials"),
         ("client_id", str(auth.get("clientId"))),
@@ -1027,6 +1043,7 @@ def run_client_credentials(auth):
         "--data",
         urlencode(form),
     ]
+    cmd += _token_cert_flags(matched_cert)
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
         print(result.stderr, file=sys.stderr, end="")
@@ -1040,7 +1057,7 @@ def run_client_credentials(auth):
     return data
 
 
-def run_authorization_code(auth, force=False):
+def run_authorization_code(auth, force=False, matched_cert=None):
     helper = shutil.which("auth-code-token")
     if helper is None:
         local = Path(__file__).resolve().parent / "auth-code-token"
@@ -1058,6 +1075,7 @@ def run_authorization_code(auth, force=False):
         cmd += ["--scope", str(auth.get("scope"))]
     if auth.get("redirectUri"):
         cmd += ["--redirect-uri", str(auth.get("redirectUri"))]
+    cmd += _token_cert_flags(matched_cert)
     if force:
         cmd.append("--force-login")
     result = subprocess.run(cmd, text=True, capture_output=True)
@@ -1073,7 +1091,20 @@ def run_authorization_code(auth, force=False):
     return data
 
 
-def resolve_oauth2_token(collection, environment, auth, variables, force=False):
+def resolve_oauth2_token(collection, environment, auth, variables, cert_entries=None,
+                         collection_path=None, cert_variables=None, force=False):
+    """Fetch (or reuse) an OAuth2 token, presenting a matched client certificate.
+
+    ``cert_entries`` is the already-validation-passed merged collection +
+    environment certificate list, ``collection_path`` the collection root for
+    relative certificate resolution, and ``cert_variables`` the variable
+    context used for certificate matching (the same context the main request
+    selection uses). Selection runs only when the token cache misses: a cached
+    token skips the token curl call entirely, so no certificate is looked up
+    (and no ``file not found`` fires) for a cache hit. The selected certificate
+    is matched against the tokenUrl's own https host, exactly like the main
+    request, and does not involve the CLI ``--cert``/``--key`` override.
+    """
     if auth is None:
         return None
     resolved = {}
@@ -1086,10 +1117,19 @@ def resolve_oauth2_token(collection, environment, auth, variables, force=False):
         cached = load_cached_token(cache_dir, key)
         if cached:
             return cached
+    matched_cert = None
+    token_url = resolved.get("tokenUrl")
+    if token_url and cert_entries:
+        matched_cert = select_oc_client_cert(
+            str(token_url),
+            cert_entries,
+            collection_path or Path("."),
+            cert_variables if cert_variables is not None else variables,
+        )
     if grant_type == "client_credentials":
-        token_response = run_client_credentials(resolved)
+        token_response = run_client_credentials(resolved, matched_cert)
     elif grant_type == "authorization_code":
-        token_response = run_authorization_code(resolved, force=force)
+        token_response = run_authorization_code(resolved, force=force, matched_cert=matched_cert)
     else:
         die("unsupported oauth2 grant type for MVP: " + str(grant_type))
     save_cached_token(cache_dir, key, token_response)
@@ -1361,9 +1401,10 @@ def main_oc(args):
             validate_client_cert_entry(entry)
         for entry in environment_certs:
             validate_client_cert_entry(entry)
+        merged_certs = merge_client_certificates(manifest_certs, environment_certs, oc_variables)
         matched_cert = select_oc_client_cert(
             direct_args.base_url,
-            merge_client_certificates(manifest_certs, environment_certs, oc_variables),
+            merged_certs,
             collection["path"],
             oc_variables,
         )
@@ -1377,8 +1418,13 @@ def main_oc(args):
             direct_args.cert = str(matched_cert["certificate"])
             direct_args.key = str(matched_cert["key"])
             direct_args.passphrase = matched_cert.get("passphrase")
-        token = resolve_oauth2_token(collection, environment, auth, variables,
-                                      force=args.auth_no_cache)
+        token = resolve_oauth2_token(
+            collection, environment, auth, variables,
+            cert_entries=merged_certs,
+            collection_path=collection["path"],
+            cert_variables=oc_variables,
+            force=args.auth_no_cache,
+        )
         if token:
             direct_args.headers.append(f"Authorization: Bearer {token}")
         if OC_INTERACTIVE_USED:

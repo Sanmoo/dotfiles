@@ -14,6 +14,7 @@ Usage:
                          [--scope SCOPE] [--redirect-uri URI]
                          [--timeout SECONDS] [--no-browser] [--json]
                          [--force-login] [--auth-param KEY=VALUE]
+                         [--cert CERT] [--key KEY] [--pass PASSPHRASE]
 
 The default loopback redirect URI is http://127.0.0.1:8765/callback — make
 sure that exact URI is registered in your OAuth client configuration (or
@@ -26,6 +27,7 @@ import hashlib
 import http.server
 import json
 import secrets
+import ssl
 import sys
 import time
 import urllib.error
@@ -146,7 +148,7 @@ def serve_callback(port, path, expected_state, timeout):
         thread.join(timeout=2)
 
 
-def post_form(url, data):
+def post_form(url, data, ssl_context=None):
     body = urllib.parse.urlencode(data).encode('ascii')
     req = urllib.request.Request(
         url,
@@ -157,8 +159,34 @@ def post_form(url, data):
         },
         method='POST',
     )
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, context=ssl_context) as resp:
         return json.loads(resp.read())
+
+
+def build_ssl_context(certfile, keyfile, passphrase):
+    """Return a default-verified SSL context carrying the client certificate.
+
+    Returns None when no certificate was given. The context keeps the standard
+    CA verification (``ssl.create_default_context``) and adds the PEM client
+    certificate and key via ``load_cert_chain``, so only the server-side trust
+    rules differ from a plain request — no client identity leaks to plaintext
+    or unverified endpoints. An encrypted key (``--pass``) needs the
+    ``password=`` parameter, which only exists on Python 3.13+; on older
+    Pythons this fails with a clear message.
+    """
+    if certfile is None:
+        return None
+    context = ssl.create_default_context()
+    if passphrase is not None:
+        if sys.version_info < (3, 13):
+            sys.exit(
+                'Error: --pass (encrypted private key) requires Python 3.13+; '
+                'decrypt the key or upgrade Python'
+            )
+        context.load_cert_chain(certfile, keyfile, password=passphrase)
+    else:
+        context.load_cert_chain(certfile, keyfile)
+    return context
 
 
 def parse_auth_params(raw_values):
@@ -238,6 +266,25 @@ def parse_args(argv=None):
         metavar='KEY=VALUE',
         help='Add or override a non-reserved authorization request parameter.',
     )
+    parser.add_argument(
+        '--cert',
+        default=None,
+        metavar='CERT',
+        help='Client certificate (PEM) to present to the token endpoint (mTLS); requires --key.',
+    )
+    parser.add_argument(
+        '--key',
+        default=None,
+        metavar='KEY',
+        help='Client private key (PEM) for --cert; requires --cert.',
+    )
+    parser.add_argument(
+        '--pass',
+        dest='passphrase',
+        default=None,
+        metavar='PASSPHRASE',
+        help='Passphrase for an encrypted private key (requires Python 3.13+).',
+    )
     return parser.parse_args(argv)
 
 
@@ -260,6 +307,12 @@ def resolve_redirect_uri(arg):
 def main(argv=None):
     args = parse_args(argv)
     port, path, redirect_uri = resolve_redirect_uri(args.redirect_uri)
+
+    if (args.cert is None) != (args.key is None):
+        sys.exit('Error: --cert and --key must be provided together')
+    if args.passphrase and args.cert is None:
+        sys.exit('Error: --pass requires --cert and --key')
+    ssl_context = build_ssl_context(args.cert, args.key, args.passphrase)
 
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(16)
@@ -285,13 +338,17 @@ def main(argv=None):
         sys.exit(f'Error: {e}')
 
     try:
-        token_response = post_form(args.token_url, {
-            'grant_type': 'authorization_code',
-            'client_id': args.client_id,
-            'code': code,
-            'redirect_uri': redirect_uri,
-            'code_verifier': verifier,
-        })
+        token_response = post_form(
+            args.token_url,
+            {
+                'grant_type': 'authorization_code',
+                'client_id': args.client_id,
+                'code': code,
+                'redirect_uri': redirect_uri,
+                'code_verifier': verifier,
+            },
+            ssl_context=ssl_context,
+        )
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8', errors='replace')
         sys.exit(f'Error: token endpoint returned {e.code} {e.reason}\n{body}')

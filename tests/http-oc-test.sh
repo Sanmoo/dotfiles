@@ -2354,4 +2354,362 @@ assert "--key" not in cmd and "--cacert" not in cmd, cmd
 print("OK")
 PYEOF
 
+# ---------- Test 80: client_credentials token call receives cert flags for matching token host ----------
+echo "test 80: client_credentials token call receives cert flags for matching token host"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+printf 'auth-cert\n' >"$OC_ROOT/collectionA/certs/auth.pem"
+printf 'auth-key\n' >"$OC_ROOT/collectionA/certs/auth.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+variables:
+  - name: tokenEndpoint
+    value: https://auth.example.com/token
+config:
+  clientCertificates:
+    - domain: auth.example.com
+      type: pem
+      certificateFilePath: certs/auth.pem
+      privateKeyFilePath: certs/auth.key
+      passphrase: tokensecret
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: "{{tokenEndpoint}}"
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "the captured invocation is the token request"
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "token request really ran"
+assert_contains "$OC_CURL_ARGS" "--cert" "token call receives --cert"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/auth.pem" "token call uses the matching certificate path"
+assert_contains "$OC_CURL_ARGS" "--key" "token call receives --key"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/auth.key" "token call uses the matching key path"
+assert_contains "$OC_CURL_ARGS" "--pass" "token call receives --pass"
+assert_contains "$OC_CURL_ARGS" "tokensecret" "token call sends the passphrase"
+assert_not_contains "$OC_STDOUT" "--cert" "main request host (api.example.com) must not receive the token-host certificate"
+
+# ---------- Test 81: authorization_code token call receives cert flags for matching token host ----------
+echo "test 81: authorization_code token call receives cert flags for matching token host"
+setup_oc_tmp
+cat >"$OC_BIN/auth-code-token" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$AUTH_CODE_ARGS_FILE"
+printf '{"access_token":"auth-code-token","token_type":"Bearer","expires_in":3600}\n'
+STUB
+chmod +x "$OC_BIN/auth-code-token"
+export AUTH_CODE_ARGS_FILE="$OC_TMPDIR/auth-code.args"
+: >"$AUTH_CODE_ARGS_FILE"
+mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+printf 'auth-cert\n' >"$OC_ROOT/collectionA/certs/auth.pem"
+printf 'auth-key\n' >"$OC_ROOT/collectionA/certs/auth.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: auth.example.com
+      type: pem
+      certificateFilePath: certs/auth.pem
+      privateKeyFilePath: certs/auth.key
+      passphrase: tokensecret
+request:
+  auth:
+    type: oauth2
+    grantType: authorization_code
+    authorizationUrl: https://auth.example.com/authorize
+    tokenUrl: https://auth.example.com/token
+    clientId: browser-client
+    scope: openid profile
+YAML
+cat >"$OC_ROOT/collectionA/requests/browser.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/browser
+YAML
+run_http_oc --no-interactive -c collectionA -n browser
+assert_contains "$AUTH_CODE_ARGS_FILE" "--cert" "helper receives --cert"
+assert_contains "$AUTH_CODE_ARGS_FILE" "$OC_ROOT/collectionA/certs/auth.pem" "helper receives the matching certificate path"
+assert_contains "$AUTH_CODE_ARGS_FILE" "--key" "helper receives --key"
+assert_contains "$AUTH_CODE_ARGS_FILE" "$OC_ROOT/collectionA/certs/auth.key" "helper receives the matching key path"
+assert_contains "$AUTH_CODE_ARGS_FILE" "--pass" "helper receives --pass"
+assert_contains "$AUTH_CODE_ARGS_FILE" "tokensecret" "helper receives the passphrase"
+assert_not_contains "$OC_STDOUT" "--cert" "main request host must not receive the token-host certificate"
+run_http_oc --no-interactive -c collectionA -n --auth-no-cache browser
+assert_contains "$AUTH_CODE_ARGS_FILE" "--cert" "auth-no-cache refetch passes the certificate to the helper"
+assert_contains "$AUTH_CODE_ARGS_FILE" "--force-login" "auth-no-cache still forces login"
+
+# ---------- Test 82: token host matching no entry gets no certificate flags ----------
+echo "test 82: token host matching no entry gets no certificate flags"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+printf 'api-cert\n' >"$OC_ROOT/collectionA/certs/api.pem"
+printf 'api-key\n' >"$OC_ROOT/collectionA/certs/api.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: api.example.com
+      type: pem
+      certificateFilePath: certs/api.pem
+      privateKeyFilePath: certs/api.key
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: https://auth.example.com/token
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "the captured invocation is the token request"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "token host matching nothing must not receive cert flags"
+assert_not_contains "$OC_CURL_ARGS" "--key" "token host matching nothing must not receive key flags"
+assert_not_contains "$OC_CURL_ARGS" "--pass" "token host matching nothing must not receive pass flags"
+assert_contains "$OC_STDOUT" "--cert" "main request host still receives its own certificate"
+
+# ---------- Test 83: environment-level certificates apply to token matching ----------
+echo "test 83: environment-level certificates apply to token matching like the main request"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+printf 'env-auth-cert\n' >"$OC_ROOT/collectionA/certs/auth.pem"
+printf 'env-auth-key\n' >"$OC_ROOT/collectionA/certs/auth.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  environments:
+    - name: development
+      variables:
+        - name: baseUrl
+          value: https://dev.example.com
+    - name: production
+      variables:
+        - name: baseUrl
+          value: https://prod.example.com
+      clientCertificates:
+        - domain: auth.example.com
+          type: pem
+          certificateFilePath: certs/auth.pem
+          privateKeyFilePath: certs/auth.key
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: https://auth.example.com/token
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: "{{baseUrl}}/secure"
+YAML
+# development environment has no certificates for the token host
+run_http_oc --no-interactive -c collectionA -e development -n secure
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "the captured invocation is the token request"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "environment without certificates must not produce token cert flags"
+# production environment's certificate matches the token host
+run_http_oc --no-interactive -c collectionA -e production -n secure
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "the captured invocation is the token request"
+assert_contains "$OC_CURL_ARGS" "--cert" "environment certificate reaches the token call"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/auth.pem" "token call uses the environment certificate path"
+assert_contains "$OC_STDOUT" "https://prod.example.com/secure" "selected environment still resolves the main request"
+
+# ---------- Test 84: cached token skips the token curl call; --auth-no-cache refetches with the certificate ----------
+echo "test 84: cached token skips the token curl call; --auth-no-cache refetches with the certificate"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+printf 'auth-cert\n' >"$OC_ROOT/collectionA/certs/auth.pem"
+printf 'auth-key\n' >"$OC_ROOT/collectionA/certs/auth.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: auth.example.com
+      type: pem
+      certificateFilePath: certs/auth.pem
+      privateKeyFilePath: certs/auth.key
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: https://auth.example.com/token
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+# first run: no cache, token fetched with the certificate
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "first run fetches the token"
+assert_contains "$OC_CURL_ARGS" "--cert" "first run presents the certificate"
+# cached run: the token curl call is skipped entirely, certificates configured or not
+run_http_oc --no-interactive -c collectionA -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer ***" "cached token reused"
+assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "cached token skips the token curl call"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "no token curl call means no certificate flags"
+# --auth-no-cache forces a refetch that applies the matching certificate
+run_http_oc --no-interactive -c collectionA -n --auth-no-cache secure
+assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "auth-no-cache refetches the token"
+assert_contains "$OC_CURL_ARGS" "--cert" "refetch applies the matching certificate"
+assert_contains "$OC_CURL_ARGS" "$OC_ROOT/collectionA/certs/auth.pem" "refetch uses the certificate path"
+
+# ---------- Test 85: missing token-certificate file exits 2 before any token curl ----------
+echo "test 85: missing token-certificate file exits 2 before any token curl"
+setup_oc_tmp
+mkdir -p "$OC_ROOT/collectionA/requests" "$OC_ROOT/collectionA/certs"
+printf 'fake-key\n' >"$OC_ROOT/collectionA/certs/auth.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: auth.example.com
+      type: pem
+      certificateFilePath: certs/missing.pem
+      privateKeyFilePath: certs/auth.key
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: https://auth.example.com/token
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+run_http_oc_expect_fail --no-interactive -c collectionA -n secure
+[ "$OC_EXIT" -eq 2 ] || {
+  echo "FAIL: missing token certificate file should exit 2, got $OC_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_STDERR" "file not found" "missing token certificate file error"
+assert_not_contains "$OC_STDERR" "Traceback" "missing token cert must not traceback"
+assert_not_contains "$OC_CURL_ARGS" "--cert" "no token curl should run when the certificate file is missing"
+assert_not_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "no token curl should run when the certificate file is missing"
+
+# CLI --cert/--key must keep staying off token requests when a manifest cert matches the token host
+mkdir -p "$OC_ROOT/collectionA/certs"
+printf 'cli-cert\n' >"$OC_TMPDIR/cli.pem"
+printf 'cli-key\n' >"$OC_TMPDIR/cli.key"
+printf 'auth-cert\n' >"$OC_ROOT/collectionA/certs/auth.pem"
+printf 'auth-key\n' >"$OC_ROOT/collectionA/certs/auth.key"
+cat >"$OC_ROOT/collectionA/opencollection.yaml" <<'YAML'
+info:
+  name: collectionA
+config:
+  clientCertificates:
+    - domain: auth.example.com
+      type: pem
+      certificateFilePath: certs/auth.pem
+      privateKeyFilePath: certs/auth.key
+request:
+  auth:
+    type: oauth2
+    grantType: client_credentials
+    tokenUrl: https://auth.example.com/token
+    clientId: my-client
+    clientSecret: my-secret
+YAML
+cat >"$OC_ROOT/collectionA/requests/secure.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://api.example.com/secure
+YAML
+run_http_oc --no-interactive -c collectionA -n --cert "$OC_TMPDIR/cli.pem" --key "$OC_TMPDIR/cli.key" secure
+assert_contains "$OC_CURL_ARGS" "https://auth.example.com/token" "the captured invocation is the token request"
+assert_contains "$OC_CURL_ARGS" "--cert" "manifest certificate still reaches the token call"
+assert_contains "$OC_CURL_ARGS" "certs/auth.pem" "token call uses the manifest certificate, not the CLI one"
+assert_not_contains "$OC_CURL_ARGS" "cli.pem" "CLI certificate must not leak into the token call"
+assert_not_contains "$OC_CURL_ARGS" "cli.key" "CLI key must not leak into the token call"
+assert_contains "$OC_STDOUT" "--cert" "main-request dry-run shows the CLI certificate"
+assert_contains "$OC_STDOUT" "$OC_TMPDIR/cli.pem" "main-request dry-run shows the CLI certificate path"
+
+# ---------- Test 86: module-boundary unit tests for the token cert flag builder ----------
+echo "test 86: _token_cert_flags pure builder"
+python3 <<'PYEOF'
+import importlib.machinery
+
+http = importlib.machinery.SourceFileLoader("http", "general/bin/http").load_module()
+
+assert http._token_cert_flags(None) == []
+flags = http._token_cert_flags({
+    "domain": "auth.example.com",
+    "certificate": "/certs/token.pem",
+    "key": "/certs/token.key",
+    "passphrase": "secret",
+})
+assert flags == ["--cert", "/certs/token.pem", "--key", "/certs/token.key", "--pass", "secret"], flags
+flags = http._token_cert_flags({
+    "domain": "auth.example.com",
+    "certificate": "/certs/token.pem",
+    "key": "/certs/token.key",
+    "passphrase": None,
+})
+assert flags == ["--cert", "/certs/token.pem", "--key", "/certs/token.key"], flags
+flags = http._token_cert_flags({
+    "domain": "auth.example.com",
+    "certificate": "/certs/token.pem",
+    "key": "/certs/token.key",
+    "passphrase": "",
+})
+assert flags == ["--cert", "/certs/token.pem", "--key", "/certs/token.key"], flags
+print("OK")
+PYEOF
+
+# auth-code-token rejects --cert/--key/--pass pairing mistakes before any auth flow
+HELPER="$(dirname "$SCRIPT")/auth-code-token"
+HELPER_EXIT=0
+"$HELPER" client https://auth.example.com/authorize https://auth.example.com/token --key key.pem >/dev/null 2>"$OC_TMPDIR/helper-key-only.err" || HELPER_EXIT=$?
+[ "$HELPER_EXIT" -eq 1 ] || {
+  echo "FAIL: helper --key alone should exit 1, got $HELPER_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_TMPDIR/helper-key-only.err" "--cert and --key must be provided together" "helper rejects --key alone"
+HELPER_EXIT=0
+"$HELPER" client https://auth.example.com/authorize https://auth.example.com/token --cert cert.pem >/dev/null 2>"$OC_TMPDIR/helper-cert-only.err" || HELPER_EXIT=$?
+[ "$HELPER_EXIT" -eq 1 ] || {
+  echo "FAIL: helper --cert alone should exit 1, got $HELPER_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_TMPDIR/helper-cert-only.err" "--cert and --key must be provided together" "helper rejects --cert alone"
+HELPER_EXIT=0
+"$HELPER" client https://auth.example.com/authorize https://auth.example.com/token --pass secret >/dev/null 2>"$OC_TMPDIR/helper-pass-only.err" || HELPER_EXIT=$?
+[ "$HELPER_EXIT" -eq 1 ] || {
+  echo "FAIL: helper --pass alone should exit 1, got $HELPER_EXIT" >&2
+  exit 1
+}
+assert_contains "$OC_TMPDIR/helper-pass-only.err" "--pass requires --cert and --key" "helper rejects --pass without a certificate"
+assert_not_contains "$OC_TMPDIR/helper-pass-only.err" "Traceback" "helper pairing error must not traceback"
+assert_not_contains "$OC_TMPDIR/helper-pass-only.err" "Opening browser" "pairing error must stop before any auth flow"
+
 echo "OK"
