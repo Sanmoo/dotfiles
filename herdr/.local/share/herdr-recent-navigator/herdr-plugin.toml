@@ -75,11 +75,11 @@ width = "60%"
 command = ["herdr-recent-navigator"]
 
 # Uncomment and edit to customize internal navigation keys:
-# [keybindings]
+[keybindings]
 # next_category = ["Tab"]
 # previous_category = ["S-Tab"]
-# move_up = ["Up", "C-p"]
-# move_down = ["Down", "C-n"]
+move_up = ["Up", "C-k"]
+move_down = ["Down", "C-j"]
 # select = ["Enter"]
 # dismiss = ["Esc"]
 # force_quit = ["C-c"]
