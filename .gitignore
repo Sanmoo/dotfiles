@@ -17,3 +17,4 @@ herdr/.config/herdr/session-history.json
 herdr/.config/herdr/focus-state.json
 # binary
 myfin
+/general/bin/mt
