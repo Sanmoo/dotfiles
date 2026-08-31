@@ -485,6 +485,8 @@ assert module.SERVICE_URLS == {
     "route53": "https://console.aws.amazon.com/route53/home",
     "sns": "https://console.aws.amazon.com/sns/v3/home",
     "sqs": "https://console.aws.amazon.com/sqs/v3/home",
+    "ses": "https://console.aws.amazon.com/ses/",
+    "stepfunctions": "https://console.aws.amazon.com/states/home",
     "eks": "https://console.aws.amazon.com/eks/home",
 }
 assert module.GLOBAL_SERVICES == {"iam", "s3", "route53"}
@@ -513,6 +515,14 @@ assert (
 assert (
     module.build_service_url("route53", "sa-east-1")
     == "https://console.aws.amazon.com/route53/home"
+)
+assert (
+    module.build_service_url("ses", "sa-east-1")
+    == "https://console.aws.amazon.com/ses/?region=sa-east-1"
+)
+assert (
+    module.build_service_url("stepfunctions", "sa-east-1")
+    == "https://console.aws.amazon.com/states/home?region=sa-east-1"
 )
 try:
     module.build_service_url("nosuchsvc")

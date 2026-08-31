@@ -57,6 +57,8 @@ SERVICE_URLS = {
     "route53": "https://console.aws.amazon.com/route53/home",
     "sns": "https://console.aws.amazon.com/sns/v3/home",
     "sqs": "https://console.aws.amazon.com/sqs/v3/home",
+    "ses": "https://console.aws.amazon.com/ses/",
+    "stepfunctions": "https://console.aws.amazon.com/states/home",
     "eks": "https://console.aws.amazon.com/eks/home",
 }
 GLOBAL_SERVICES = {"iam", "s3", "route53"}
@@ -217,7 +219,7 @@ if __name__ == "__main__":
         help=(
             "the AWS service console to deep-link to (ecs, ec2, lambda, s3, "
             "cloudwatch, logs, rds, dynamodb, ecr, iam, vpc, route53, sns, "
-            "sqs, eks)"
+            "sqs, ses, stepfunctions, eks)"
         ),
     )
     parser.add_argument(
