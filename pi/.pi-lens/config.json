@@ -1,8 +1,13 @@
 {
-  "widget": {
-    "visible": false
-  },
   "format": {
-    "mode": "immediate"
+    "enabled": false
+  },
+  "autofix": {
+    "enabled": false
+  },
+  "actionableWarnings": {
+    "autoFix": {
+      "enabled": false
+    }
   }
 }
