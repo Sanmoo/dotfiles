@@ -1,4 +1,4 @@
-export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:/usr/local/bin:$PATH:$HOME/bin"
 export HISTSIZE=10000
 export HISTFILESIZE=100000
 
