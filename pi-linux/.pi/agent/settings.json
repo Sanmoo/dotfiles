@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.84.4",
+  "lastChangelogVersion": "0.85.1",
   "enabledModels": [
     "opencode-go/deepseek-v4-pro",
     "opencode-go/deepseek-v4-flash",
@@ -9,7 +9,9 @@
     "opencode-go/kimi-k3",
     "opencode-go/glm-5.3-flash",
     "opencode-go/glm-5.3",
-    "opencode-go/gpt-5.6-luna"
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/deepseek-v4-flash-vision-exp",
+    "openai-codex/gpt-6-astra"
   ],
   "defaultThinkingLevel": "medium",
   "hideThinkingBlock": true,
