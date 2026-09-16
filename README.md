@@ -16,8 +16,12 @@ with a different instruction-loading mechanism need their own configuration;
 `AGENTS.md` is guidance, not a Git enforcement hook.
 
 The defaults require a dedicated branch and a worktree under the target
-repository's gitignored `.worktrees/` directory for new development. Explicit
-workflow rules in a repository-specific `AGENTS.md` take precedence.
+repository's gitignored `.worktrees/` directory for new development. On successful
+completion, the agent commits the task's changes, integrates them into the
+original branch with `git merge --ff-only`, and removes the task's worktree and
+branch. If integration or cleanup is blocked, it preserves the remaining work
+and asks how to proceed. Explicit user instructions or workflow rules in a
+repository-specific `AGENTS.md` take precedence.
 
 ## For `Omarchy`
 
