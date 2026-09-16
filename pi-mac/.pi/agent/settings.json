@@ -25,7 +25,12 @@
     "bifrost/bedrock/openai.gpt-5.6-luna",
     "bifrost/bedrock/openai.gpt-5.6-terra",
     "bifrost/bedrock/moonshotai.kimi-k2.5",
-    "github-copilot/gpt-6-astra"
+    "github-copilot/gpt-6-astra",
+    "github-copilot/claude-fable-5.1",
+    "github-copilot/claude-opus-5",
+    "github-copilot/gpt-5.6-sol",
+    "github-copilot/gpt-5.6-luna",
+    "github-copilot/gpt-5.6-terra"
   ],
   "skills": []
 }
