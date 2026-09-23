@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# UUID version 7: Unix epoch milliseconds followed by random bits.
+if [[ $# -ne 0 ]]; then
+  printf 'Usage: uuid\n' >&2
+  exit 2
+fi
+
+python3 - <<'PY'
+import secrets
+import time
+
+# RFC 9562, section 5.7: 48-bit Unix timestamp in milliseconds,
+# version 7, variant 2, and 74 bits of randomness.
+timestamp = int(time.time() * 1000) & ((1 << 48) - 1)
+rand_a = secrets.randbits(12)
+rand_b = secrets.randbits(62)
+value = (
+    (timestamp << 80)
+    | (0x7 << 76)
+    | (rand_a << 64)
+    | (0b10 << 62)
+    | rand_b
+)
+
+hex_value = f"{value:032x}"
+print(
+    f"{hex_value[:8]}-{hex_value[8:12]}-{hex_value[12:16]}-"
+    f"{hex_value[16:20]}-{hex_value[20:]}"
+)
+PY
