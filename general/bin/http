@@ -150,6 +150,10 @@ def make_oc_parser():
     p.add_argument("-v", "--var", dest="vars", action="append", default=[])
     p.add_argument("--no-interactive", dest="no_interactive", action="store_true")
     p.add_argument("-n", "--dry-run", dest="dry_run", action="store_true")
+    p.add_argument(
+        "-t", "--show-token", "--show-access-token", dest="show_token", action="store_true",
+        help="show the OAuth access token in the dry-run curl command",
+    )
     p.add_argument("-i", "--include", dest="include", action="store_true")
     p.add_argument("-k", "--insecure", dest="insecure", action="store_true")
     p.add_argument("-L", "--follow", dest="follow", action="store_true")
@@ -1437,7 +1441,8 @@ def main_oc(args):
             summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)
         if args.dry_run:
-            print(mask_bearer_token(format_curl_command(curl_args)))
+            command = format_curl_command(curl_args)
+            print(command if args.show_token else mask_bearer_token(command))
             return 0
         result = subprocess.run(["curl", *curl_args])
         return result.returncode

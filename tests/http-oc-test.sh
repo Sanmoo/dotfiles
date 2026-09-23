@@ -534,6 +534,13 @@ assert_contains "$OC_CURL_ARGS" "grant_type=client_credentials" "client_credenti
 assert_contains "$OC_CURL_ARGS" "client_id=my-client" "client id should be form-encoded"
 assert_contains "$OC_CURL_ARGS" "client_secret=my+secret%26secret" "client secret should be form-encoded"
 assert_contains "$OC_CURL_ARGS" "scope=scope+one%2Ftwo" "scope should be form-encoded"
+
+# ---------- Test 20a: --show-token reveals the bearer token in dry-run ----------
+echo "test 20a: show OAuth access token"
+run_http_oc --no-interactive -c collectionA -t -n secure
+assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "show-token should reveal the bearer token"
+assert_not_contains "$OC_STDOUT" "Authorization: Bearer ***" "show-token should not mask the bearer token"
+
 cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
 [ -n "$cache_file" ] || {
   echo "FAIL: expected cache file" >&2
