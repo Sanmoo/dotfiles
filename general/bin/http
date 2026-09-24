@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import quote_plus, urlencode, urlparse
@@ -173,6 +174,10 @@ def make_oc_parser():
     )
     p.add_argument("--auth-no-cache", dest="auth_no_cache", action="store_true",
                    help="force OAuth token regeneration, ignoring the cache")
+    p.add_argument("--allow-scripts", dest="allow_scripts", action="store_true",
+                   help="authorize the request's post-response JavaScript")
+    p.add_argument("--export", dest="exports", action="append", default=[], metavar="SHELL=RUNTIME",
+                   help="reserved for a future shell-export integration")
     p.add_argument("--cert", dest="cert", default=None, metavar="FILE",
                    help="client certificate for the main request, overriding the manifest match; requires --key")
     p.add_argument("--key", dest="key", default=None, metavar="FILE",
@@ -1183,6 +1188,159 @@ def resolve_oauth2_token(collection, environment, auth, variables, cert_entries=
     return str(token_response.get("access_token"))
 
 
+def get_request_runtime_scripts(collection_manifest, request_doc):
+    """Validate the supported request-level runtime.scripts shape."""
+    manifest_runtime = collection_manifest.get("runtime")
+    if isinstance(manifest_runtime, dict) and manifest_runtime.get("scripts") is not None:
+        die("collection-level runtime scripts are not supported; define an after-response script on the request")
+    runtime = request_doc.get("runtime")
+    if runtime is None:
+        return []
+    if not isinstance(runtime, dict):
+        die("request runtime must be a mapping")
+    scripts = runtime.get("scripts")
+    if scripts is None:
+        return []
+    if not isinstance(scripts, list):
+        die("runtime.scripts must be a list")
+    if not scripts:
+        return []
+    if len(scripts) != 1:
+        die("multiple runtime.scripts are not supported yet")
+    script = scripts[0]
+    if not isinstance(script, dict):
+        die("runtime.scripts entry must be a mapping")
+    if "language" in script:
+        die("runtime script language fields are not supported; use JavaScript code")
+    if script.get("type") != "after-response":
+        die("unsupported runtime script type: " + str(script.get("type")))
+    code = script.get("code")
+    if not isinstance(code, str) or not code.strip():
+        die("after-response script requires non-empty code")
+    return [code]
+
+
+def validate_no_unsupported_container_scripts(collection, selected_request):
+    """Reject detected scripts in collection/folder documents, never inherit them."""
+    for current, _dirs, files in os.walk(collection["path"]):
+        for filename in files:
+            path = Path(current) / filename
+            if path == selected_request["path"] or path.name in OC_MANIFEST_NAMES:
+                continue
+            if path.suffix.lower() not in (".yaml", ".yml"):
+                continue
+            data = load_yaml_file(path)
+            if not isinstance(data, dict) or is_http_request_doc(data):
+                continue
+            if isinstance(data.get("runtime"), dict) and data["runtime"].get("scripts") is not None:
+                die(f"scripts in collection/folder document are not supported: {path}")
+
+
+def validate_post_response_scripts(collection, request_doc, args):
+    scripts = get_request_runtime_scripts(collection["manifest"], request_doc)
+    if getattr(args, "exports", None):
+        die("--export is not supported yet; shell exports are not available")
+    if scripts and not args.allow_scripts:
+        die("request contains a post-response script; pass --allow-scripts to authorize it")
+    if scripts and shutil.which("node") is None:
+        die("Node.js is required for post-response scripts but was not found on PATH")
+    return scripts
+
+
+def run_request_with_optional_script(curl_args, script):
+    """Run the main request, preserving curl output before post-processing."""
+    if script is None:
+        return subprocess.run(["curl", *curl_args]).returncode
+
+    include_headers = "-i" in curl_args
+    request_curl_args = [arg for arg in curl_args if arg != "-i"]
+    with tempfile.NamedTemporaryFile(prefix="http-oc-headers-", mode="w+", delete=False) as header_file:
+        header_path = header_file.name
+    with tempfile.NamedTemporaryFile(prefix="http-oc-body-", delete=False) as body_file:
+        body_path = body_file.name
+    try:
+        result = subprocess.run(
+            ["curl", *request_curl_args, "--dump-header", header_path, "--output", body_path],
+            capture_output=True,
+        )
+        if result.stderr:
+            print(result.stderr.decode("utf-8", errors="replace"), file=sys.stderr, end="")
+        header_text = Path(header_path).read_text(encoding="utf-8", errors="replace")
+        raw_output = Path(body_path).read_bytes()
+        body, status, headers = parse_curl_response(raw_output, header_text)
+        response_output = (header_text.encode("utf-8") if include_headers else b"") + raw_output
+        if response_output:
+            stdout = getattr(sys.stdout, "buffer", sys.stdout)
+            if hasattr(stdout, "write") and stdout is not sys.stdout:
+                stdout.write(response_output)
+                stdout.flush()
+            else:
+                print(response_output.decode("utf-8", errors="replace"), end="")
+        if result.returncode != 0:
+            return result.returncode
+        return run_post_response_script(script, body, status, headers)
+    finally:
+        for path in (header_path, body_path):
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+
+
+def parse_curl_response(stdout, header_text, include_headers=False):
+    """Return the response body, status, and headers from curl output."""
+    if isinstance(stdout, str):
+        stdout = stdout.encode("utf-8")
+    blocks = re.split(r"(?=HTTP/\d(?:\.\d)?\s+)", header_text.replace("\r\n", "\n"))
+    block = next((candidate for candidate in reversed(blocks) if candidate.startswith("HTTP/")), "")
+    status_match = re.match(r"HTTP/\S+\s+(\d+)", block)
+    status = int(status_match.group(1)) if status_match else 0
+    headers = {}
+    lines = block.splitlines()[1:]
+    for line in lines:
+        if ":" not in line:
+            continue
+        name, value = line.split(":", 1)
+        headers[name.strip().lower()] = value.strip()
+
+    body = stdout
+    if include_headers:
+        matches = list(re.finditer(rb"HTTP/\d(?:\.\d)?\s+\d+[^\r\n]*(?:\r?\n)", stdout))
+        if matches:
+            header_start = matches[-1].start()
+            separator = re.search(rb"\r?\n\r?\n", stdout[header_start:])
+            if separator:
+                body = stdout[header_start + separator.end():]
+    body_text = body.decode("utf-8", errors="replace")
+    try:
+        parsed_body = json.loads(body_text.strip())
+    except (TypeError, ValueError):
+        parsed_body = body_text
+    return parsed_body, status, headers
+
+
+def run_post_response_script(script, body, status, headers):
+    """Run one authorized script in the deliberately small Node vm runtime."""
+    runner = Path(__file__).with_name("http-post-response-runner.js")
+    payload = json.dumps({"code": script, "body": body, "status": status, "headers": headers})
+    try:
+        result = subprocess.run(
+            ["node", str(runner)], input=payload, text=True, capture_output=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        print("error: post-response script exceeded the 10-second execution limit", file=sys.stderr)
+        return 1
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    if result.returncode != 0:
+        if "timed out" in result.stderr.lower():
+            print("error: post-response script exceeded the 10-second execution limit", file=sys.stderr)
+        else:
+            print("error: post-response script failed", file=sys.stderr)
+    return result.returncode
+
+
 def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_args):
     ns = argparse.Namespace()
     ns.method = method.lower()
@@ -1324,6 +1482,7 @@ def build_equivalent_command(
     collection_name, env_name, request_name, cli_vars=None,
     optional_queries_requested=False, optional_query_names=None,
     data=None, file=None, cert=None, key=None, cacert=None,
+    allow_scripts=False,
 ):
     cmd = ["http", "oc", "-c", collection_name]
     if env_name:
@@ -1343,6 +1502,8 @@ def build_equivalent_command(
         cmd += ["--key", shlex.quote(key)]
     if cacert is not None:
         cmd += ["--cacert", shlex.quote(cacert)]
+    if allow_scripts:
+        cmd.append("--allow-scripts")
     if data is not None:
         cmd += ["-d", shlex.quote(data)]
     elif file is not None:
@@ -1353,7 +1514,8 @@ def build_equivalent_command(
 
 def print_oc_summary(collection, environment, request, direct_args, cli_vars=None,
                      optional_queries_requested=False, optional_query_names=None,
-                     data=None, file=None, cert=None, key=None, cacert=None):
+                     data=None, file=None, cert=None, key=None, cacert=None,
+                     allow_scripts=False):
     env_name = environment.get("name") if environment else ""
     print(f"Collection: {collection['name']}")
     if env_name:
@@ -1364,6 +1526,7 @@ def print_oc_summary(collection, environment, request, direct_args, cli_vars=Non
         collection["name"], env_name, request["name"], cli_vars,
         optional_queries_requested, optional_query_names,
         data=data, file=file, cert=cert, key=key, cacert=cacert,
+        allow_scripts=allow_scripts,
     )
     print(f"Comando equivalente: {cmd}")
 
@@ -1429,12 +1592,17 @@ def main_oc(args):
         if args.data is not None:
             args.resolved_data = templated_data
 
+        validate_no_unsupported_container_scripts(collection, request)
+        scripts = validate_post_response_scripts(collection, request["data"], args)
+        script = scripts[0] if scripts else None
+
         env_name = environment.get("name") if environment else ""
         equivalent_cmd = build_equivalent_command(
             collection["name"], env_name, request["name"], effective_vars,
             optional_requested, optional_names,
             data=templated_data, file=args.file,
             cert=args.cert, key=args.key, cacert=args.cacert,
+            allow_scripts=bool(scripts),
         )
 
         auth = get_oc_auth(collection["manifest"], request["data"])
@@ -1480,6 +1648,7 @@ def main_oc(args):
                 optional_requested, optional_names,
                 data=templated_data, file=args.file,
                 cert=args.cert, key=args.key, cacert=args.cacert,
+                allow_scripts=bool(scripts),
             )
             summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)
@@ -1487,8 +1656,7 @@ def main_oc(args):
             command = format_curl_command(curl_args, multiline=True)
             print(command if args.show_token else mask_bearer_token(command))
             return 0
-        result = subprocess.run(["curl", *curl_args])
-        return result.returncode
+        return run_request_with_optional_script(curl_args, script)
     except KeyboardInterrupt:
         print(file=sys.stderr)
         return 130
