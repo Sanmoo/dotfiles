@@ -1,6 +1,6 @@
 # `http oc` post-response scripts
 
-`http oc` can run one trusted JavaScript `after-response` script from the selected request document. The request must use the standard OpenCollection shape:
+`http oc` can run one or more trusted JavaScript `after-response` scripts from the selected request document. The request must use the standard OpenCollection shape:
 
 ```yaml
 runtime:

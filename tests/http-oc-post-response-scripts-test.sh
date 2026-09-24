@@ -43,10 +43,10 @@ runtime:
         if (res.getHeader("x-test") !== "yes") throw new Error("header mismatch");
         if (bru.getVar("source") !== "environment") throw new Error("resolved variable mismatch");
         if (bru.getProcessEnv("HTTP_OC_TEST_ENV") !== "inherited") throw new Error("process env mismatch");
-        bru.setVar("token", "first");
+        bru.setVar("token", res.body.answer.toString());
     - type: after-response
       code: |
-        if (bru.getVar("token") !== "first") throw new Error("runtime variable was not shared");
+        if (bru.getVar("token") !== "42") throw new Error("runtime variable was not shared");
         bru.setVar("token", "second");
         console.log("runtime", bru.getVar("token"));
 YAML
@@ -102,8 +102,11 @@ assert_contains "$TMP/out" '"answer":42' "response should remain on stdout"
 assert_contains "$TMP/err" "diagnostic 500" "console.log should use stderr"
 assert_contains "$TMP/err" "runtime second" "later scripts should see and overwrite runtime variables"
 assert_not_contains "$TMP/out" "diagnostic" "diagnostics should not contaminate stdout"
+[[ $(grep -c 'https://example.test/inspect' "$TMP/calls") -eq 1 ]]
 
-# Runtime variables are temporary and do not survive another invocation.
+# Runtime variables are temporary and do not survive another invocation;
+# collection and Environment documents are unchanged by script execution.
+manifest_before=$(shasum "$TMP/collections/demo/opencollection.yaml")
 cat >"$TMP/collections/demo/requests/not-shared.yaml" <<'YAML'
 type: http
 request:
@@ -116,6 +119,7 @@ runtime:
         if (bru.getVar("token") !== undefined) throw new Error("runtime state leaked");
 YAML
 run --allow-scripts not-shared >"$TMP/out" 2>"$TMP/err"
+[[ "$manifest_before" == "$(shasum "$TMP/collections/demo/opencollection.yaml")" ]]
 
 # Script failure is nonzero without hiding the received response.
 set +e
@@ -213,7 +217,13 @@ request:
 runtime:
   scripts:
     - type: after-response
-      code: while (true) {}
+      code: |
+        { const started = Date.now();
+          while (Date.now() - started < 6000) {} }
+    - type: after-response
+      code: |
+        { const started = Date.now();
+          while (Date.now() - started < 6000) {} }
 YAML
 set +e
 run --allow-scripts timeout >"$TMP/out" 2>"$TMP/err"
