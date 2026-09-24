@@ -21,7 +21,7 @@ The runnable HTTP call resolved from a request document (method, URL, headers, p
 _Avoid_: call, endpoint (when meaning the resolved call rather than the document)
 
 **Environment**:
-A named config under `config.environments`, selectable with `-e`, holding variables and optionally client certificates.
+A named config under `config.environments`, selectable with `-e`, holding variables and optionally client certificates. Distinct from the calling shell's environment.
 _Avoid_: env, variable set
 
 **Client certificate**:
@@ -35,6 +35,18 @@ _Avoid_: equivalent command (in user-facing prose)
 **Body override**:
 `-d`/`-f` supplying the request body from the command line, replacing the manifest's `request.body`.
 _Avoid_: inline body, CLI body (when meaning the override mechanism)
+
+**Post-response script**:
+A request document's program that processes the response to its request.
+_Avoid_: shell script (when meaning response processing), post-request hook
+
+**Runtime variable**:
+A temporary value available during one request execution, shared by its post-response scripts and distinct from persisted collection or Environment variables.
+_Avoid_: environment variable (when meaning a temporary script value)
+
+**Shell export**:
+An explicit mapping from a script-produced runtime variable to an exported variable in the calling shell session, available to subsequent commands in that session.
+_Avoid_: Environment update, collection variable (when meaning a shell export)
 
 ## aws-console
 
