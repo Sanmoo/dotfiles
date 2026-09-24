@@ -1205,19 +1205,19 @@ def get_request_runtime_scripts(collection_manifest, request_doc):
         die("runtime.scripts must be a list")
     if not scripts:
         return []
-    if len(scripts) != 1:
-        die("multiple runtime.scripts are not supported yet")
-    script = scripts[0]
-    if not isinstance(script, dict):
-        die("runtime.scripts entry must be a mapping")
-    if "language" in script:
-        die("runtime script language fields are not supported; use JavaScript code")
-    if script.get("type") != "after-response":
-        die("unsupported runtime script type: " + str(script.get("type")))
-    code = script.get("code")
-    if not isinstance(code, str) or not code.strip():
-        die("after-response script requires non-empty code")
-    return [code]
+    codes = []
+    for script in scripts:
+        if not isinstance(script, dict):
+            die("runtime.scripts entry must be a mapping")
+        if "language" in script:
+            die("runtime script language fields are not supported; use JavaScript code")
+        if script.get("type") != "after-response":
+            die("unsupported runtime script type: " + str(script.get("type")))
+        code = script.get("code")
+        if not isinstance(code, str) or not code.strip():
+            die("after-response script requires non-empty code")
+        codes.append(code)
+    return codes
 
 
 def validate_no_unsupported_container_scripts(collection, selected_request):
@@ -1247,9 +1247,9 @@ def validate_post_response_scripts(collection, request_doc, args):
     return scripts
 
 
-def run_request_with_optional_script(curl_args, script):
+def run_request_with_optional_script(curl_args, scripts, variables):
     """Run the main request, preserving curl output before post-processing."""
-    if script is None:
+    if not scripts:
         return subprocess.run(["curl", *curl_args]).returncode
 
     include_headers = "-i" in curl_args
@@ -1278,7 +1278,7 @@ def run_request_with_optional_script(curl_args, script):
                 print(response_output.decode("utf-8", errors="replace"), end="")
         if result.returncode != 0:
             return result.returncode
-        return run_post_response_script(script, body, status, headers)
+        return run_post_response_scripts(scripts, body, status, headers, variables)
     finally:
         for path in (header_path, body_path):
             try:
@@ -1319,23 +1319,30 @@ def parse_curl_response(stdout, header_text, include_headers=False):
     return parsed_body, status, headers
 
 
-def run_post_response_script(script, body, status, headers):
-    """Run one authorized script in the deliberately small Node vm runtime."""
+def run_post_response_scripts(scripts, body, status, headers, variables):
+    """Run ordered scripts in one Node vm with one shared temporary runtime."""
     runner = Path(__file__).with_name("http-post-response-runner.js")
-    payload = json.dumps({"code": script, "body": body, "status": status, "headers": headers})
+    payload = json.dumps({
+        "scripts": scripts,
+        "body": body,
+        "status": status,
+        "headers": headers,
+        "variables": variables,
+        "processEnv": dict(os.environ),
+    })
     try:
         result = subprocess.run(
             ["node", str(runner)], input=payload, text=True, capture_output=True,
-            timeout=10,
+            timeout=11,
         )
     except subprocess.TimeoutExpired:
-        print("error: post-response script exceeded the 10-second execution limit", file=sys.stderr)
+        print("error: post-response script sequence exceeded the 10-second execution limit", file=sys.stderr)
         return 1
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
     if result.returncode != 0:
-        if "timed out" in result.stderr.lower():
-            print("error: post-response script exceeded the 10-second execution limit", file=sys.stderr)
+        if "timed out" in result.stderr.lower() or "execution limit" in result.stderr.lower():
+            print("error: post-response script sequence exceeded the 10-second execution limit", file=sys.stderr)
         else:
             print("error: post-response script failed", file=sys.stderr)
     return result.returncode
@@ -1594,8 +1601,6 @@ def main_oc(args):
 
         validate_no_unsupported_container_scripts(collection, request)
         scripts = validate_post_response_scripts(collection, request["data"], args)
-        script = scripts[0] if scripts else None
-
         env_name = environment.get("name") if environment else ""
         equivalent_cmd = build_equivalent_command(
             collection["name"], env_name, request["name"], effective_vars,
@@ -1656,7 +1661,7 @@ def main_oc(args):
             command = format_curl_command(curl_args, multiline=True)
             print(command if args.show_token else mask_bearer_token(command))
             return 0
-        return run_request_with_optional_script(curl_args, script)
+        return run_request_with_optional_script(curl_args, scripts, oc_variables)
     except KeyboardInterrupt:
         print(file=sys.stderr)
         return 130

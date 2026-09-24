@@ -31,16 +31,59 @@ const response = {
   },
 };
 
+const initialVariables = Object.assign({}, input.variables || {});
+const runtimeVariables = Object.create(null);
+const assignedVariables = new Set();
+const processEnvironment = Object.assign({}, input.processEnv || {});
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const bru = {
+  getVar(name) {
+    const key = String(name);
+    if (hasOwn(runtimeVariables, key)) return runtimeVariables[key];
+    return hasOwn(initialVariables, key) ? initialVariables[key] : undefined;
+  },
+  setVar(name, value) {
+    const key = String(name);
+    runtimeVariables[key] = value;
+    assignedVariables.add(key);
+  },
+  getProcessEnv(name) {
+    const key = String(name);
+    return hasOwn(processEnvironment, key) ? processEnvironment[key] : undefined;
+  },
+  setEnvVar() {
+    throw new Error("bru.setEnvVar is unsupported; use bru.setVar for temporary runtime variables");
+  },
+  setCollectionVar() {
+    throw new Error("bru.setCollectionVar is unsupported; use bru.setVar for temporary runtime variables");
+  },
+};
+
 const context = vm.createContext({
   res: response,
+  bru,
   console: {
     log: (...values) => console.error(...values),
     error: (...values) => console.error(...values),
   },
 });
 
+const scripts = Array.isArray(input.scripts) ? input.scripts : [input.code];
+const deadline = Date.now() + 10000;
 try {
-  vm.runInContext(input.code, context, { timeout: 10000, displayErrors: true });
+  for (const code of scripts) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error("post-response script sequence exceeded the 10-second execution limit");
+    }
+    vm.runInContext(code, context, { timeout: remaining, displayErrors: true });
+  }
+  const assigned = Array.from(assignedVariables, (name) => ({
+    name,
+    type: typeof runtimeVariables[name],
+    value: runtimeVariables[name],
+  }));
+  process.stdout.write(JSON.stringify({ assigned }));
 } catch (error) {
   console.error(error && error.stack ? error.stack : String(error));
   process.exit(1);
