@@ -540,6 +540,7 @@ echo "test 20a: show OAuth access token"
 run_http_oc --no-interactive -c collectionA -t -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "show-token should reveal the bearer token"
 assert_not_contains "$OC_STDOUT" "Authorization: Bearer ***" "show-token should not mask the bearer token"
+assert_contains "$OC_STDOUT" $'curl \\\n  --silent \\\n' "dry-run curl should use one argument per line"
 
 cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
 [ -n "$cache_file" ] || {
