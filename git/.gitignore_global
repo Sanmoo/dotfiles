@@ -37,3 +37,10 @@ docs/superpowers
 .pi-subagents/
 .superpowers
 .vlt.lock
+
+
+# Local Instructions 
+.pi/APPEND_SYSTEM.md
+
+# Local draft
+rasc
