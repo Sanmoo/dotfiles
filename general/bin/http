@@ -307,17 +307,43 @@ def format_curl_command(curl_args, multiline=False):
     parts = [shlex.quote(a) for a in curl_args]
     if not multiline:
         return "curl " + " ".join(parts)
-    lines = []
+
+    # Keep the command options together, but give every header and the URL
+    # its own line.  This makes a request with many headers readable without
+    # turning every curl option into a separate line.
     value_flags = {"-X", "-H", "--data", "--cert", "--key", "--pass", "--cacert"}
+    units = []
     index = 0
-    while index < len(parts):
-        line = parts[index]
-        if curl_args[index] in value_flags and index + 1 < len(parts):
-            index += 1
-            line += " " + parts[index]
-        lines.append(f"  {line}")
-        index += 1
-    return "curl \\\n" + " \\\n".join(lines)
+    while index < len(curl_args):
+        end = index + 2 if curl_args[index] in value_flags else index + 1
+        units.append((curl_args[index:end], parts[index:end]))
+        index = end
+
+    url_index = next(
+        (index for index, (raw, _) in enumerate(units) if not raw[0].startswith("-")),
+        len(units),
+    )
+    first_header = next(
+        (index for index, (raw, _) in enumerate(units) if raw[0] == "-H"),
+        url_index,
+    )
+
+    groups = []
+    if first_header:
+        groups.append([part for _, rendered in units[:first_header] for part in rendered])
+    for index in range(first_header, url_index):
+        groups.append(units[index][1])
+    if url_index < len(units):
+        # build_curl_args places --data after the URL; keep such trailing
+        # options on the URL line rather than introducing another break.
+        groups.append([part for _, rendered in units[url_index:] for part in rendered])
+    elif not groups:
+        groups.append([part for _, rendered in units for part in rendered])
+
+    lines = [" ".join(group) for group in groups if group]
+    return "curl " + " \\\n".join(
+        [lines[0]] + [f"  {line}" for line in lines[1:]]
+    )
 
 
 def mask_bearer_token(line):

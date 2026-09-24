@@ -109,6 +109,10 @@ run_http_oc --no-interactive -c collectionA -e development -n get-smart-conditio
 assert_contains "$OC_STDOUT" "https://dev.example.com/smart-conditions/env-customer" "environment variables should resolve in URL"
 assert_contains "$OC_STDOUT" "Accept: application/json" "request headers should be included"
 assert_contains "$OC_STDOUT" "X-Default: from-collection" "collection variables should resolve in headers"
+assert_contains "$OC_STDOUT" $'curl --silent --show-error \\\n  -H' "curl options should share the first line before headers"
+assert_contains "$OC_STDOUT" "  -H 'Accept: application/json'" "first header should be on its own line"
+assert_contains "$OC_STDOUT" "  -H 'X-Default: from-collection'" "second header should be on its own line"
+assert_contains "$OC_STDOUT" "  https://dev.example.com/smart-conditions/env-customer" "URL should be on its own line"
 assert_not_contains "$OC_STDERR" "Traceback" "oc happy path should not traceback"
 assert_not_contains "$OC_CURL_ARGS" "https://dev.example.com" "dry-run should not execute curl"
 
@@ -540,7 +544,7 @@ echo "test 20a: show OAuth access token"
 run_http_oc --no-interactive -c collectionA -t -n secure
 assert_contains "$OC_STDOUT" "Authorization: Bearer stub-token" "show-token should reveal the bearer token"
 assert_not_contains "$OC_STDOUT" "Authorization: Bearer ***" "show-token should not mask the bearer token"
-assert_contains "$OC_STDOUT" $'curl \\\n  --silent \\\n' "dry-run curl should use one argument per line"
+assert_contains "$OC_STDOUT" $'curl --silent --show-error \\\n  -H' "dry-run curl should keep non-header options together"
 
 cache_file="$(find "$OC_HOME/.cache/http-oc" -type f | head -1)"
 [ -n "$cache_file" ] || {
