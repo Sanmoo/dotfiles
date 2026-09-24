@@ -1532,6 +1532,8 @@ assert_contains "$OC_STDOUT" "--key" "dry-run curl receives --key"
 assert_contains "$OC_STDOUT" "--pass" "dry-run curl receives --pass"
 assert_contains "$OC_STDOUT" "certs/client.pem" "dry-run shows certificate path"
 assert_contains "$OC_STDOUT" "certs/client.key" "dry-run shows key path"
+expected_tls_lines="$(printf '  --cert %s \\\n  --key %s \\\n  --pass secret' "$OC_ROOT/collectionA/certs/client.pem" "$OC_ROOT/collectionA/certs/client.key")"
+assert_contains "$OC_STDOUT" "$expected_tls_lines" "value-taking TLS flags should each have their own line"
 
 # ---------- Test 55: exact match only, prefix-sharing host excluded ----------
 echo "test 55: exact domain match; prefix-sharing host excluded"

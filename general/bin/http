@@ -308,37 +308,41 @@ def format_curl_command(curl_args, multiline=False):
     if not multiline:
         return "curl " + " ".join(parts)
 
-    # Keep the command options together, but give every header and the URL
-    # its own line.  This makes a request with many headers readable without
-    # turning every curl option into a separate line.
-    value_flags = {"-X", "-H", "--data", "--cert", "--key", "--pass", "--cacert"}
+    # Keep flags without a value together, but give every flag that consumes a
+    # value and the URL its own line.  ``-X METHOD`` is the one exception:
+    # method selection stays with the initial curl options for readability.
+    value_flags = {"-H", "--data", "--cert", "--key", "--pass", "--cacert"}
     units = []
     index = 0
     while index < len(curl_args):
-        end = index + 2 if curl_args[index] in value_flags else index + 1
+        end = index + 2 if curl_args[index] in value_flags or curl_args[index] == "-X" else index + 1
         units.append((curl_args[index:end], parts[index:end]))
         index = end
 
-    url_index = next(
-        (index for index, (raw, _) in enumerate(units) if not raw[0].startswith("-")),
-        len(units),
-    )
-    first_header = next(
-        (index for index, (raw, _) in enumerate(units) if raw[0] == "-H"),
-        url_index,
-    )
-
     groups = []
-    if first_header:
-        groups.append([part for _, rendered in units[:first_header] for part in rendered])
-    for index in range(first_header, url_index):
-        groups.append(units[index][1])
-    if url_index < len(units):
-        # build_curl_args places --data after the URL; keep such trailing
-        # options on the URL line rather than introducing another break.
-        groups.append([part for _, rendered in units[url_index:] for part in rendered])
-    elif not groups:
-        groups.append([part for _, rendered in units for part in rendered])
+    compact = []
+    url_seen = False
+    for raw, rendered in units:
+        is_url = not raw[0].startswith("-")
+        is_value_flag = raw[0] in value_flags
+        if is_url:
+            if compact:
+                groups.append(compact)
+                compact = []
+            groups.append(rendered)
+            url_seen = True
+        elif is_value_flag:
+            if compact:
+                groups.append(compact)
+                compact = []
+            groups.append(rendered)
+        elif url_seen:
+            # Keep any flag without a value after the URL readable as well.
+            groups.append(rendered)
+        else:
+            compact.extend(rendered)
+    if compact:
+        groups.append(compact)
 
     lines = [" ".join(group) for group in groups if group]
     return "curl " + " \\\n".join(
