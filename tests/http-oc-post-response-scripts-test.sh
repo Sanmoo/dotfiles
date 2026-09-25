@@ -405,7 +405,7 @@ HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-
 
 # Multiple exports are applied as one selected set, including names that
 # overlap helper implementation details.
-HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export value=token --export transfer=account multiple >/dev/null; sh -c '\''printf "%s|%s" "$value" "$transfer"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/multiple"
+HOME="$TMP/home" zsh -fc 'set -u; source "$1"; http oc --no-interactive -c demo --allow-scripts --export value=token --export transfer=account multiple >/dev/null; sh -c '\''printf "%s|%s" "$value" "$transfer"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/multiple"
 [[ "$(cat "$TMP/multiple")" == "token value|account value" ]]
 
 # Empty strings are valid export values.

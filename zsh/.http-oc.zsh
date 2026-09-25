@@ -11,7 +11,7 @@ _http_oc_export_script() {
   decoded="${transfer}.decoded"
   : >| "$decoded"
   while IFS=$'\t' read -r export_shell export_encoded; do
-    if [[ ! "$export_shell" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || "$export_encoded" == *$'\t'* || -n "${destinations[$export_shell]}" ]]; then
+    if [[ ! "$export_shell" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || "$export_encoded" == *$'\t'* || -n "${destinations[$export_shell]-}" ]]; then
       print -u2 'error: invalid http oc export transfer'
       rm -f -- "$decoded"
       return 1
