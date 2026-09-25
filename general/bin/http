@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """http — minimal REST client that builds and runs curl commands."""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -177,7 +178,7 @@ def make_oc_parser():
     p.add_argument("--allow-scripts", dest="allow_scripts", action="store_true",
                    help="authorize the request's post-response JavaScript")
     p.add_argument("--export", dest="exports", action="append", default=[], metavar="SHELL=RUNTIME",
-                   help="reserved for a future shell-export integration")
+                   help="export one script-assigned runtime variable to the calling zsh")
     p.add_argument("--cert", dest="cert", default=None, metavar="FILE",
                    help="client certificate for the main request, overriding the manifest match; requires --key")
     p.add_argument("--key", dest="key", default=None, metavar="FILE",
@@ -1236,18 +1237,50 @@ def validate_no_unsupported_container_scripts(collection, selected_request):
                 die(f"scripts in collection/folder document are not supported: {path}")
 
 
+_SHELL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def parse_export_mapping(raw_values, dry_run=False):
+    """Validate the single shell-to-runtime export mapping for this slice."""
+    if not raw_values:
+        return None
+    if len(raw_values) != 1:
+        die("--export accepts exactly one SHELL=RUNTIME mapping")
+    mapping = raw_values[0]
+    if mapping.count("=") != 1:
+        die("--export expects SHELL=RUNTIME")
+    shell_name, runtime_name = mapping.split("=", 1)
+    if not _SHELL_NAME_RE.fullmatch(shell_name):
+        die("--export destination must be a valid shell variable name")
+    if not runtime_name or "\x00" in runtime_name:
+        die("--export runtime variable name cannot be empty or contain NUL")
+    if dry_run:
+        die("--export cannot be used with --dry-run")
+    if os.environ.get("HTTP_OC_ZSH_INTEGRATION") != "1":
+        die("--export requires the zsh integration; source ~/.http-oc.zsh first")
+    transfer_path = os.environ.get("HTTP_OC_EXPORT_FILE")
+    if not transfer_path:
+        die("--export requires the zsh integration transfer channel")
+    if not Path(transfer_path).is_file():
+        die("--export transfer channel is unavailable")
+    return shell_name, runtime_name
+
+
 def validate_post_response_scripts(collection, request_doc, args):
     scripts = get_request_runtime_scripts(collection["manifest"], request_doc)
-    if getattr(args, "exports", None):
-        die("--export is not supported yet; shell exports are not available")
     if scripts and not args.allow_scripts:
         die("request contains a post-response script; pass --allow-scripts to authorize it")
+    export_mapping = parse_export_mapping(
+        getattr(args, "exports", None), getattr(args, "dry_run", False),
+    )
+    if export_mapping and not scripts:
+        die("--export requires a request post-response script")
     if scripts and shutil.which("node") is None:
         die("Node.js is required for post-response scripts but was not found on PATH")
-    return scripts
+    return scripts, export_mapping
 
 
-def run_request_with_optional_script(curl_args, scripts, variables):
+def run_request_with_optional_script(curl_args, scripts, variables, export_mapping=None):
     """Run the main request, preserving curl output before post-processing."""
     if not scripts:
         return subprocess.run(["curl", *curl_args]).returncode
@@ -1278,7 +1311,7 @@ def run_request_with_optional_script(curl_args, scripts, variables):
                 print(response_output.decode("utf-8", errors="replace"), end="")
         if result.returncode != 0:
             return result.returncode
-        return run_post_response_scripts(scripts, body, status, headers, variables)
+        return run_post_response_scripts(scripts, body, status, headers, variables, export_mapping)
     finally:
         for path in (header_path, body_path):
             try:
@@ -1319,7 +1352,24 @@ def parse_curl_response(stdout, header_text, include_headers=False):
     return parsed_body, status, headers
 
 
-def run_post_response_scripts(scripts, body, status, headers, variables):
+def write_export_transfer(transfer_path, shell_name, value):
+    """Write a shell-safe, private transfer record only after scripts succeed."""
+    encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+    target = Path(transfer_path)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.tmp-", dir=target.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="ascii") as stream:
+            stream.write(f"{shell_name}\t{encoded}\n")
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def run_post_response_scripts(scripts, body, status, headers, variables, export_mapping=None):
     """Run ordered scripts in one Node vm with one shared temporary runtime."""
     runner = Path(__file__).with_name("http-post-response-runner.js")
     payload = json.dumps({
@@ -1329,6 +1379,7 @@ def run_post_response_scripts(scripts, body, status, headers, variables):
         "headers": headers,
         "variables": variables,
         "processEnv": dict(os.environ),
+        "exportSource": export_mapping[1] if export_mapping else None,
     })
     try:
         result = subprocess.run(
@@ -1345,7 +1396,23 @@ def run_post_response_scripts(scripts, body, status, headers, variables):
             print("error: post-response script sequence exceeded the 10-second execution limit", file=sys.stderr)
         else:
             print("error: post-response script failed", file=sys.stderr)
-    return result.returncode
+        return result.returncode
+    if export_mapping:
+        try:
+            message = json.loads(result.stdout)
+            exported = message.get("export")
+            if not isinstance(exported, dict) or exported.get("type") != "string":
+                raise ValueError("runtime variable was not assigned a string")
+            value = exported.get("value")
+            if not isinstance(value, str) or "\x00" in value:
+                raise ValueError("runtime export value must be a string without NUL")
+            write_export_transfer(
+                os.environ["HTTP_OC_EXPORT_FILE"], export_mapping[0], value,
+            )
+        except (KeyError, OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+            print(f"error: cannot apply shell export: {error}", file=sys.stderr)
+            return 1
+    return 0
 
 
 def make_direct_args_from_oc(method, url, headers, queries, body, passthrough_args):
@@ -1489,7 +1556,7 @@ def build_equivalent_command(
     collection_name, env_name, request_name, cli_vars=None,
     optional_queries_requested=False, optional_query_names=None,
     data=None, file=None, cert=None, key=None, cacert=None,
-    allow_scripts=False,
+    allow_scripts=False, exports=None,
 ):
     cmd = ["http", "oc", "-c", collection_name]
     if env_name:
@@ -1511,6 +1578,8 @@ def build_equivalent_command(
         cmd += ["--cacert", shlex.quote(cacert)]
     if allow_scripts:
         cmd.append("--allow-scripts")
+    if exports:
+        cmd += ["--export", exports[0]]
     if data is not None:
         cmd += ["-d", shlex.quote(data)]
     elif file is not None:
@@ -1522,7 +1591,7 @@ def build_equivalent_command(
 def print_oc_summary(collection, environment, request, direct_args, cli_vars=None,
                      optional_queries_requested=False, optional_query_names=None,
                      data=None, file=None, cert=None, key=None, cacert=None,
-                     allow_scripts=False):
+                     allow_scripts=False, exports=None):
     env_name = environment.get("name") if environment else ""
     print(f"Collection: {collection['name']}")
     if env_name:
@@ -1533,7 +1602,7 @@ def print_oc_summary(collection, environment, request, direct_args, cli_vars=Non
         collection["name"], env_name, request["name"], cli_vars,
         optional_queries_requested, optional_query_names,
         data=data, file=file, cert=cert, key=key, cacert=cacert,
-        allow_scripts=allow_scripts,
+        allow_scripts=allow_scripts, exports=exports,
     )
     print(f"Comando equivalente: {cmd}")
 
@@ -1600,7 +1669,7 @@ def main_oc(args):
             args.resolved_data = templated_data
 
         validate_no_unsupported_container_scripts(collection, request)
-        scripts = validate_post_response_scripts(collection, request["data"], args)
+        scripts, export_mapping = validate_post_response_scripts(collection, request["data"], args)
         env_name = environment.get("name") if environment else ""
         equivalent_cmd = build_equivalent_command(
             collection["name"], env_name, request["name"], effective_vars,
@@ -1608,6 +1677,7 @@ def main_oc(args):
             data=templated_data, file=args.file,
             cert=args.cert, key=args.key, cacert=args.cacert,
             allow_scripts=bool(scripts),
+            exports=args.exports,
         )
 
         auth = get_oc_auth(collection["manifest"], request["data"])
@@ -1653,7 +1723,7 @@ def main_oc(args):
                 optional_requested, optional_names,
                 data=templated_data, file=args.file,
                 cert=args.cert, key=args.key, cacert=args.cacert,
-                allow_scripts=bool(scripts),
+                allow_scripts=bool(scripts), exports=args.exports,
             )
             summary_printed = True
         curl_args = build_curl_args(direct_args, direct_args.base_url)
@@ -1661,7 +1731,7 @@ def main_oc(args):
             command = format_curl_command(curl_args, multiline=True)
             print(command if args.show_token else mask_bearer_token(command))
             return 0
-        return run_request_with_optional_script(curl_args, scripts, oc_variables)
+        return run_request_with_optional_script(curl_args, scripts, oc_variables, export_mapping)
     except KeyboardInterrupt:
         print(file=sys.stderr)
         return 130

@@ -60,6 +60,60 @@ runtime:
     - type: after-response
       code: throw new Error("rejected response");
 YAML
+cat >"$TMP/collections/demo/requests/export.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/export
+runtime:
+  scripts:
+    - type: after-response
+      code: |
+        bru.setVar("token", `line one
+        quote ' and "\$(touch /tmp/http-oc-export-pwned)`);
+YAML
+cat >"$TMP/collections/demo/requests/renew.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/renew
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("renewed", "renewed value");
+YAML
+cat >"$TMP/collections/demo/requests/empty.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/empty
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("empty", "");
+YAML
+cat >"$TMP/collections/demo/requests/rejected.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/rejected
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("value", 42);
+YAML
+cat >"$TMP/collections/demo/requests/failure-preserves.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/failure-preserves
+runtime:
+  scripts:
+    - type: after-response
+      code: |
+        bru.setVar("token", "replacement");
+        throw new Error("export failure");
+YAML
 cat >"$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -232,14 +286,77 @@ set -e
 [[ $status -ne 0 ]]
 assert_contains "$TMP/err" "10-second execution limit" "timeout should fail clearly"
 
-# --export is intentionally rejected in this vertical slice.
+# --export requires the separately loaded zsh integration and does not
+# authorize scripts by itself.
 : >"$TMP/calls"
 set +e
 run --export TOKEN=token inspect >"$TMP/out" 2>"$TMP/err"
 status=$?
 set -e
 [[ $status -eq 2 ]]
-assert_contains "$TMP/err" "--export is not supported yet" "export should fail before sending"
+assert_contains "$TMP/err" "--allow-scripts" "export must not authorize scripts"
 [[ ! -s "$TMP/calls" ]]
+set +e
+run --allow-scripts --export TOKEN=token inspect >"$TMP/out" 2>"$TMP/err"
+status=$?
+set -e
+[[ $status -eq 2 ]]
+assert_contains "$TMP/err" "zsh integration" "export should require zsh integration"
+[[ ! -s "$TMP/calls" ]]
+
+# Mapping syntax and multiple mappings are rejected before curl.
+for mapping_args in "BAD-NAME=token" "TOKEN" "TOKEN="; do
+  : >"$TMP/calls"
+  set +e
+  run --allow-scripts --export "$mapping_args" inspect >"$TMP/out" 2>"$TMP/err"
+  status=$?
+  set -e
+  [[ $status -eq 2 ]]
+  [[ ! -s "$TMP/calls" ]]
+done
+: >"$TMP/calls"
+set +e
+run --allow-scripts --export TOKEN=token --export OTHER=token inspect >"$TMP/out" 2>"$TMP/err"
+status=$?
+set -e
+[[ $status -eq 2 ]]
+assert_contains "$TMP/err" "exactly one" "multiple exports should be rejected"
+[[ ! -s "$TMP/calls" ]]
+
+# The zsh integration transfers literal data to the calling shell, including
+# hostile-looking characters, and a subsequent child sees the new value.
+export ZSH_INTEGRATION="$PWD/zsh/.http-oc.zsh"
+export PATH="$TMP/bin:$(dirname "$SCRIPT"):$PATH"
+rm -f /tmp/http-oc-export-pwned
+HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; sh -c '\''printf "%s" "$TOKEN"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/exported" 2>"$TMP/err"
+expected=$'line one\nquote \' and "$(touch /tmp/http-oc-export-pwned)'
+[[ "$(cat "$TMP/exported")" == "$expected" ]]
+[[ ! -e /tmp/http-oc-export-pwned ]]
+
+# A later invocation can renew the same destination in that shell.
+HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; http oc --no-interactive -c demo --allow-scripts --export TOKEN=renewed renew >/dev/null; sh -c '\''printf "%s" "$TOKEN"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/renewed" 2>"$TMP/err"
+[[ "$(cat "$TMP/renewed")" == "renewed value" ]]
+
+# Empty strings are valid export values.
+HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=empty empty >/dev/null; [[ -v TOKEN && "$TOKEN" == "" ]]' 'zsh-test' "$ZSH_INTEGRATION"
+
+# Non-string values and missing assignments are rejected without curl-side
+# success being treated as an export.
+set +e
+HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=value rejected' 'zsh-test' "$ZSH_INTEGRATION" >/dev/null 2>"$TMP/err"
+status=$?
+set -e
+[[ $status -ne 0 ]]
+assert_contains "$TMP/err" "not assigned a string" "non-string export should fail"
+
+# Script rejection never changes an already exported, unexported, or absent
+# destination state.
+HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token failure-preserves >/dev/null 2>/dev/null; test "$TOKEN" = "$2"' 'zsh-test' "$ZSH_INTEGRATION" "$expected"
+HOME="$TMP/home" zsh -fc 'typeset +x TOKEN=local; source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token failure-preserves >/dev/null 2>/dev/null; test "$TOKEN" = local; [[ -z "${parameters[TOKEN][export]}" ]]' 'zsh-test' "$ZSH_INTEGRATION"
+HOME="$TMP/home" zsh -fc 'unset TOKEN; source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token failure-preserves >/dev/null 2>/dev/null; [[ ! -v TOKEN ]]' 'zsh-test' "$ZSH_INTEGRATION"
+
+# Successful HTTP transport is insufficient when the post-response script fails.
+# The zsh boundary preserves the prior value; script diagnostics stay on the
+# redirected stderr for the failing invocation.
 
 echo "OK"

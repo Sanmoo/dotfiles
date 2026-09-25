@@ -83,7 +83,12 @@ try {
     type: typeof runtimeVariables[name],
     value: runtimeVariables[name],
   }));
-  process.stdout.write(JSON.stringify({ assigned }));
+  let exportValue;
+  if (input.exportSource !== null && input.exportSource !== undefined) {
+    const match = assigned.find((entry) => entry.name === input.exportSource);
+    exportValue = match ? match : null;
+  }
+  process.stdout.write(JSON.stringify({ assigned, export: exportValue }));
 } catch (error) {
   console.error(error && error.stack ? error.stack : String(error));
   process.exit(1);
