@@ -21,23 +21,28 @@ http oc --no-interactive -c Example --allow-scripts Login
 
 ## Calling-shell exports
 
-A direct invocation can export one explicitly selected runtime variable into the
-calling zsh session:
+A direct invocation can export explicitly selected runtime variables into the
+calling zsh session. Repeat `--export` for each mapping:
 
 ```sh
 source ~/.http-oc.zsh
-http oc --no-interactive -c Example --allow-scripts --export TOKEN=runtimeToken Login
+http oc --no-interactive -c Example --allow-scripts \
+  --export TOKEN=runtimeToken --export ACCOUNT=runtimeAccount Login
 ```
 
 The integration is a zsh prerequisite and is intentionally loaded separately
 from request execution. It applies only to a direct command; pipelines, command
-substitutions, and subshells are not promised to modify their outer shell. The
-mapping is exactly one `SHELL_NAME=runtime_name` pair in this slice. The source
-must have been assigned with `bru.setVar` during this execution and must be a
-string; empty strings are valid, but NULs and other types are rejected. Values
-are transferred as literal data rather than shell code, and an export is only
-applied after all post-response scripts succeed. A failed request, script, or
-validation leaves the destination unchanged. Exports are temporary shell state:
+substitutions, and subshells are not promised to modify their outer shell. Each
+mapping is a `SHELL_NAME=runtime_name` pair; repeat `--export` to select multiple
+values. The complete selected set is applied atomically: if any source is invalid,
+any script fails, or the shell cannot apply a destination, no selected destination
+changes. Each source must have been assigned with `bru.setVar` during this execution
+and must be a string; empty strings are valid, but NULs and other types are rejected.
+Values are transferred as literal data rather than shell code, and exports are only
+applied after all post-response scripts succeed. Atomicity covers the selected shell
+exports, not the already-sent HTTP operation or arbitrary script side effects. A
+failed request, script, or validation leaves all selected destinations unchanged.
+Exports are temporary shell state:
 request execution does not persist them or rewrite startup, collection, or
 Environment documents. Only the selected destination is changed, and export
 values are not printed or included in the HTTP response stream. Do not use this

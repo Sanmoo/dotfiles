@@ -83,12 +83,12 @@ try {
     type: typeof runtimeVariables[name],
     value: runtimeVariables[name],
   }));
-  let exportValue;
-  if (input.exportSource !== null && input.exportSource !== undefined) {
-    const match = assigned.find((entry) => entry.name === input.exportSource);
-    exportValue = match ? match : null;
-  }
-  process.stdout.write(JSON.stringify({ assigned, export: exportValue }));
+  const exportSources = Array.isArray(input.exportSources) ? input.exportSources : [];
+  const exports = exportSources.map((source) => {
+    const match = assigned.find((entry) => entry.name === source);
+    return match || null;
+  });
+  process.stdout.write(JSON.stringify({ assigned, exports }));
 } catch (error) {
   console.error(error && error.stack ? error.stack : String(error));
   process.exit(1);

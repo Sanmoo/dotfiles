@@ -82,6 +82,67 @@ runtime:
     - type: after-response
       code: bru.setVar("renewed", "renewed value");
 YAML
+cat >"$TMP/collections/demo/requests/multiple.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/multiple
+runtime:
+  scripts:
+    - type: after-response
+      code: |
+        bru.setVar("token", "token value");
+        bru.setVar("account", "account value");
+YAML
+cat >"$TMP/collections/demo/requests/multiple-fail.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/multiple-fail
+runtime:
+  scripts:
+    - type: after-response
+      code: |
+        bru.setVar("token", "new token");
+    - type: after-response
+      code: throw new Error("later export failure");
+YAML
+cat >"$TMP/collections/demo/requests/multiple-invalid.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/multiple-invalid
+runtime:
+  scripts:
+    - type: after-response
+      code: |
+        bru.setVar("token", "new token");
+        bru.setVar("account", 42);
+YAML
+cat >"$TMP/collections/demo/requests/multiple-timeout.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/multiple-timeout
+runtime:
+  scripts:
+    - type: after-response
+      code: |
+        bru.setVar("token", "new token");
+        bru.setVar("account", "new account");
+        const started = Date.now();
+        while (Date.now() - started < 11000) {}
+YAML
+cat >"$TMP/collections/demo/requests/multiple-missing.yaml" <<'YAML'
+type: http
+request:
+  method: GET
+  url: https://example.test/multiple-missing
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("token", "new token");
+YAML
 cat >"$TMP/collections/demo/requests/empty.yaml" <<'YAML'
 type: http
 request:
@@ -285,7 +346,6 @@ status=$?
 set -e
 [[ $status -ne 0 ]]
 assert_contains "$TMP/err" "10-second execution limit" "timeout should fail clearly"
-
 # --export requires the separately loaded zsh integration and does not
 # authorize scripts by itself.
 : >"$TMP/calls"
@@ -304,7 +364,7 @@ set -e
 assert_contains "$TMP/err" "zsh integration" "export should require zsh integration"
 [[ ! -s "$TMP/calls" ]]
 
-# Mapping syntax and multiple mappings are rejected before curl.
+# Mapping syntax and duplicate mappings are rejected before curl.
 for mapping_args in "BAD-NAME=token" "TOKEN" "TOKEN="; do
   : >"$TMP/calls"
   set +e
@@ -316,17 +376,23 @@ for mapping_args in "BAD-NAME=token" "TOKEN" "TOKEN="; do
 done
 : >"$TMP/calls"
 set +e
-run --allow-scripts --export TOKEN=token --export OTHER=token inspect >"$TMP/out" 2>"$TMP/err"
+run --allow-scripts --export TOKEN=token --export TOKEN=token inspect >"$TMP/out" 2>"$TMP/err"
 status=$?
 set -e
 [[ $status -eq 2 ]]
-assert_contains "$TMP/err" "exactly one" "multiple exports should be rejected"
+assert_contains "$TMP/err" "selected once" "duplicate export destinations should be rejected"
 [[ ! -s "$TMP/calls" ]]
 
 # The zsh integration transfers literal data to the calling shell, including
 # hostile-looking characters, and a subsequent child sees the new value.
 export ZSH_INTEGRATION="$PWD/zsh/.http-oc.zsh"
 export PATH="$TMP/bin:$(dirname "$SCRIPT"):$PATH"
+set +e
+HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; export ACCOUNT=old-account; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=account multiple-timeout >/dev/null 2>"$2"' 'zsh-test' "$ZSH_INTEGRATION" "$TMP/err"
+status=$?
+set -e
+[[ $status -ne 0 ]]
+assert_contains "$TMP/err" "10-second execution limit" "multi-export timeout should fail clearly"
 rm -f /tmp/http-oc-export-pwned
 HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; sh -c '\''printf "%s" "$TOKEN"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/exported" 2>"$TMP/err"
 expected=$'line one\nquote \' and "$(touch /tmp/http-oc-export-pwned)'
@@ -336,6 +402,11 @@ expected=$'line one\nquote \' and "$(touch /tmp/http-oc-export-pwned)'
 # A later invocation can renew the same destination in that shell.
 HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; http oc --no-interactive -c demo --allow-scripts --export TOKEN=renewed renew >/dev/null; sh -c '\''printf "%s" "$TOKEN"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/renewed" 2>"$TMP/err"
 [[ "$(cat "$TMP/renewed")" == "renewed value" ]]
+
+# Multiple exports are applied as one selected set, including names that
+# overlap helper implementation details.
+HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export value=token --export transfer=account multiple >/dev/null; sh -c '\''printf "%s|%s" "$value" "$transfer"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/multiple"
+[[ "$(cat "$TMP/multiple")" == "token value|account value" ]]
 
 # Empty strings are valid export values.
 HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=empty empty >/dev/null; [[ -v TOKEN && "$TOKEN" == "" ]]' 'zsh-test' "$ZSH_INTEGRATION"
@@ -352,6 +423,10 @@ assert_contains "$TMP/err" "not assigned a string" "non-string export should fai
 # Script rejection never changes an already exported, unexported, or absent
 # destination state.
 HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token failure-preserves >/dev/null 2>/dev/null; test "$TOKEN" = "$2"' 'zsh-test' "$ZSH_INTEGRATION" "$expected"
+HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; ACCOUNT=old-account; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=account multiple-fail >/dev/null 2>/dev/null; test "$TOKEN" = old-token; test "$ACCOUNT" = old-account' 'zsh-test' "$ZSH_INTEGRATION"
+HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; typeset +x ACCOUNT=old-account; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=account multiple-invalid >/dev/null 2>/dev/null; test "$TOKEN" = old-token; test "$ACCOUNT" = old-account; [[ "${parameters[ACCOUNT]}" != *export* ]]' 'zsh-test' "$ZSH_INTEGRATION"
+HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; typeset -r ACCOUNT=old-account; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=account multiple >/dev/null 2>/dev/null; test "$TOKEN" = old-token; test "$ACCOUNT" = old-account; [[ "${parameters[TOKEN]}" == *export* ]]' 'zsh-test' "$ZSH_INTEGRATION"
+HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; unset ACCOUNT; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=missing multiple-missing >/dev/null 2>/dev/null; test "$TOKEN" = old-token; [[ ! -v ACCOUNT ]]' 'zsh-test' "$ZSH_INTEGRATION"
 HOME="$TMP/home" zsh -fc 'typeset +x TOKEN=local; source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token failure-preserves >/dev/null 2>/dev/null; test "$TOKEN" = local; [[ -z "${parameters[TOKEN][export]}" ]]' 'zsh-test' "$ZSH_INTEGRATION"
 HOME="$TMP/home" zsh -fc 'unset TOKEN; source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token failure-preserves >/dev/null 2>/dev/null; [[ ! -v TOKEN ]]' 'zsh-test' "$ZSH_INTEGRATION"
 
