@@ -243,3 +243,4 @@ export JDTLS_PATH=$HOME/.local/share/nvim/mason/bin/jdtls
 # Local overrides must beat mise prepended tool bins (e.g. nd DeferUntil wrapper)
 export PATH="$HOME/.local/bin:$PATH"
 source $HOME/.http-oc.zsh
+autoload -U compinit; compinit
