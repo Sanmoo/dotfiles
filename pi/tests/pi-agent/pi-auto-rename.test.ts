@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	formatInvalidModelMessage,
+	openCodeSessionHeaders,
 	sanitizeSessionName,
 } from "../../.pi/agent/extensions/pi-auto-rename/utils";
 
@@ -56,5 +57,52 @@ describe("sanitizeSessionName", () => {
 		const title = "B".repeat(170);
 
 		expect(sanitizeSessionName(title)).toHaveLength(160);
+	});
+});
+
+describe("openCodeSessionHeaders", () => {
+	it("adds session routing for opencode-go", () => {
+		expect(
+			openCodeSessionHeaders({ provider: "opencode-go" }, "session-1"),
+		).toEqual({
+			"x-opencode-session": "session-1",
+			"x-opencode-client": "pi",
+		});
+	});
+
+	it("adds session routing for the opencode provider", () => {
+		expect(openCodeSessionHeaders({ provider: "opencode" }, "session-2")).toEqual(
+			{
+				"x-opencode-session": "session-2",
+				"x-opencode-client": "pi",
+			},
+		);
+	});
+
+	it("adds session routing by baseUrl host", () => {
+		expect(
+			openCodeSessionHeaders(
+				{ provider: "custom", baseUrl: "https://opencode.ai/zen/go/v1" },
+				"session-3",
+			),
+		).toEqual({
+			"x-opencode-session": "session-3",
+			"x-opencode-client": "pi",
+		});
+	});
+
+	it("stays unchanged for other providers", () => {
+		expect(
+			openCodeSessionHeaders(
+				{ provider: "anthropic", baseUrl: "https://api.anthropic.com" },
+				"session-4",
+			),
+		).toBeUndefined();
+	});
+
+	it("needs a session id", () => {
+		expect(
+			openCodeSessionHeaders({ provider: "opencode-go" }, undefined),
+		).toBeUndefined();
 	});
 });

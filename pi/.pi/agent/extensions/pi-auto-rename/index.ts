@@ -23,6 +23,7 @@ import {
 	formatInvalidModelMessage,
 	getConversationTranscript,
 	getFirstUserMessageText,
+	openCodeSessionHeaders,
 	sanitizeSessionName,
 } from "./utils.ts";
 
@@ -306,11 +307,16 @@ async function generateName(
 			] satisfies TextContent[],
 			timestamp: Date.now(),
 		};
+		const sessionId = ctx.sessionManager.getSessionId();
+		const headers = {
+			...resolved.headers,
+			...openCodeSessionHeaders(resolved.model, sessionId),
+		};
 		const response = await withTimeout(
 			complete(
 				resolved.model,
 				{ systemPrompt: SYSTEM_PROMPT, messages: [prompt] },
-				{ apiKey: resolved.apiKey, headers: resolved.headers, maxTokens: 128 },
+				{ apiKey: resolved.apiKey, headers, sessionId, maxTokens: 128 },
 			),
 			RENAME_TIMEOUT_MS,
 		);

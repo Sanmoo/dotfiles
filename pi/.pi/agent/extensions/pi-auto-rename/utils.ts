@@ -17,6 +17,44 @@ export function formatInvalidModelMessage(
 	);
 }
 
+// ─── Provider session attribution ─────────────────────────────────────────────
+
+const OPENCODE_SESSION_HEADER = "x-opencode-session";
+const OPENCODE_CLIENT_HEADER = "x-opencode-client";
+const OPENCODE_HOST = "opencode.ai";
+
+function matchesOpenCodeHost(baseUrl: unknown): boolean {
+	try {
+		return new URL(String(baseUrl ?? "")).hostname === OPENCODE_HOST;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * OpenCode routing headers for extension-initiated model calls.
+ *
+ * Pi merges these in its main agent loop, but `complete()` side-calls from
+ * extensions dispatch directly and bypass that merge, which makes OpenCode
+ * answer `400 MissingSessionID`. Returns undefined for every other provider so
+ * non-OpenCode requests stay unchanged.
+ */
+export function openCodeSessionHeaders(
+	model: { provider: string; baseUrl?: string | undefined },
+	sessionId: string | undefined,
+): Record<string, string> | undefined {
+	if (!sessionId) return undefined;
+	const isOpenCode =
+		model.provider === "opencode" ||
+		model.provider === "opencode-go" ||
+		matchesOpenCodeHost(model.baseUrl);
+	if (!isOpenCode) return undefined;
+	return {
+		[OPENCODE_SESSION_HEADER]: sessionId,
+		[OPENCODE_CLIENT_HEADER]: "pi",
+	};
+}
+
 // ─── Content extraction ───────────────────────────────────────────────────────
 
 function isLlmMessage(
