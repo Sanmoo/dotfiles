@@ -306,51 +306,77 @@ describe("permission-gate", () => {
 		expect(result).toEqual({ block: true, reason: "Bloqueado pelo usuário" });
 	});
 
-	it("toggles YOLO mode through /permission-gate on and /permission-gate off", async () => {
+	it("uses /permission-gate on to restore confirmations and off to silence them", async () => {
 		const { commands, toolCall, entries } = setupPermissionGate();
 		const notifications: Notification[] = [];
 		const statuses: StatusUpdate[] = [];
 		const ctx = makeContext({ notifications, statuses });
 
+		await toolCall(
+			bashEvent("sudo id"),
+			makeContext({ select: async () => REMEMBER_OPTION }),
+		);
+
 		await commands.get("permission-gate")!("on", ctx);
-
-		expect(entries).toEqual([{ customType: YOLO_ENTRY_TYPE, data: { active: true } }]);
-		expect(statuses).toEqual([{ key: "permission-gate", text: YOLO_STATUS_TEXT }]);
-		expect(notifications[0]?.type).toBe("warning");
-		expect(await toolCall(bashEvent("sudo id"), makeContext())).toBeUndefined();
-
-		await commands.get("permission-gate")!("off", ctx);
 
 		expect(entries).toEqual([
 			{ customType: YOLO_ENTRY_TYPE, data: { active: true } },
 			{ customType: YOLO_ENTRY_TYPE, data: { active: false } },
 		]);
-		expect(statuses[1]).toEqual({ key: "permission-gate", text: undefined });
-		expect(
-			await toolCall(
-				bashEvent("sudo id"),
-				makeContext({ select: async () => "Sim" }),
-			),
-		).toBeUndefined();
+		expect(statuses).toEqual([{ key: "permission-gate", text: undefined }]);
+		expect(notifications).toEqual([
+			{ message: "Avisos ligados: comandos perigosos voltam a pedir confirmação.", type: "info" },
+		]);
+
+		let selectCalls = 0;
+		const blocked = await toolCall(
+			bashEvent("sudo id"),
+			makeContext({
+				select: async () => {
+					selectCalls += 1;
+					return "Não";
+				},
+			}),
+		);
+		expect(blocked).toEqual({ block: true, reason: "Bloqueado pelo usuário" });
+		expect(selectCalls).toBe(1);
+
+		await commands.get("permission-gate")!("off", ctx);
+
+		expect(entries.at(-1)).toEqual({ customType: YOLO_ENTRY_TYPE, data: { active: true } });
+		expect(statuses.at(-1)).toEqual({ key: "permission-gate", text: YOLO_STATUS_TEXT });
+		expect(notifications.at(-1)?.type).toBe("warning");
+		expect(await toolCall(bashEvent("rm -rf /"), makeContext())).toBeUndefined();
 	});
 
-	it("reports YOLO mode status through bare /permission-gate", async () => {
+	it("accepts ask and yolo as unambiguous aliases for on and off", async () => {
+		const { commands, entries } = setupPermissionGate();
+		const ctx = makeContext();
+
+		await commands.get("permission-gate")!("yolo", ctx);
+		expect(entries).toEqual([{ customType: YOLO_ENTRY_TYPE, data: { active: true } }]);
+
+		await commands.get("permission-gate")!("ask", ctx);
+		expect(entries.at(-1)).toEqual({ customType: YOLO_ENTRY_TYPE, data: { active: false } });
+	});
+
+	it("reports the gate status and points at the command to change it", async () => {
 		const { commands } = setupPermissionGate();
 		const notifications: Notification[] = [];
 		const ctx = makeContext({ notifications });
 
 		await commands.get("permission-gate")!("", ctx);
-		expect(notifications).toEqual([
-			{
-				message: "YOLO desativado: comandos perigosos pedem confirmação.",
-				type: "info",
-			},
-		]);
+		expect(notifications[0]).toEqual({
+			message:
+				"Avisos ativos: comandos perigosos pedem confirmação. Use /permission-gate off para desligá-los (YOLO) nesta sessão.",
+			type: "info",
+		});
 
-		await commands.get("permission-gate")!("on", ctx);
+		await commands.get("permission-gate")!("off", ctx);
 		await commands.get("permission-gate")!("", ctx);
 		expect(notifications[2]).toEqual({
-			message: "YOLO ativo: esta extensão não confirma nenhum comando nesta sessão.",
+			message:
+				"YOLO ativo: esta extensão não confirma nenhum comando nesta sessão. Use /permission-gate on para voltar a pedir confirmação.",
 			type: "info",
 		});
 	});
@@ -365,7 +391,11 @@ describe("permission-gate", () => {
 		);
 
 		expect(notifications).toEqual([
-			{ message: "Uso: /permission-gate [on|off]", type: "warning" },
+			{
+				message:
+					"Uso: /permission-gate [on|off] — on volta a pedir confirmação, off desliga os avisos (YOLO)",
+				type: "warning",
+			},
 		]);
 	});
 });

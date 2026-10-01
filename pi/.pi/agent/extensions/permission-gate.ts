@@ -14,7 +14,8 @@
  * and it is ignored without a UI (non-interactive runs keep failing closed).
  *
  * YOLO mode shows a footer status and can be inspected or toggled with
- * /permission-gate [on|off].
+ * /permission-gate: there, on/off describe the gate itself, so "on" restores the
+ * confirmations and "off" silences them for the rest of the session.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -31,7 +32,12 @@ interface YoloState {
 	active: boolean;
 }
 
-const USAGE = "Uso: /permission-gate [on|off]";
+const USAGE =
+	"Uso: /permission-gate [on|off] — on volta a pedir confirmação, off desliga os avisos (YOLO)";
+/** "on" is about the gate: the warnings are on, so dangerous commands ask again. */
+const GATE_ON_ARGS = new Set(["on", "ask", "perguntar"]);
+/** "off" is about the gate: the warnings are off, so YOLO mode takes over. */
+const GATE_OFF_ARGS = new Set(["off", "yolo"]);
 
 export default function (pi: ExtensionAPI) {
 	let yoloActive = false;
@@ -88,18 +94,18 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const requested = args.trim().toLowerCase();
 
-			if (requested === "on" || requested === "ligar") {
+			if (GATE_ON_ARGS.has(requested)) {
+				setYoloMode(false, ctx);
+				ctx.ui.notify("Avisos ligados: comandos perigosos voltam a pedir confirmação.", "info");
+				return;
+			}
+
+			if (GATE_OFF_ARGS.has(requested)) {
 				setYoloMode(true, ctx);
 				ctx.ui.notify(
 					"YOLO ativado: comandos perigosos rodam sem confirmação até o fim desta sessão.",
 					"warning",
 				);
-				return;
-			}
-
-			if (requested === "off" || requested === "desligar") {
-				setYoloMode(false, ctx);
-				ctx.ui.notify("YOLO desativado: comandos perigosos voltam a pedir confirmação.", "info");
 				return;
 			}
 
@@ -110,8 +116,8 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.notify(
 				yoloActive
-					? "YOLO ativo: esta extensão não confirma nenhum comando nesta sessão."
-					: "YOLO desativado: comandos perigosos pedem confirmação.",
+					? "YOLO ativo: esta extensão não confirma nenhum comando nesta sessão. Use /permission-gate on para voltar a pedir confirmação."
+					: "Avisos ativos: comandos perigosos pedem confirmação. Use /permission-gate off para desligá-los (YOLO) nesta sessão.",
 				"info",
 			);
 		},
