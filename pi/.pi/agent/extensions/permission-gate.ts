@@ -7,73 +7,66 @@
  * Patterns checked: rm -rf, sudo, chmod/chown 777, dd, fdisk, mkfs,
  * destructive redirects (>/dev/...), and pipe from curl/wget to shell.
  *
- * The prompt offers "Sim, e não perguntar novamente (perigo!)", which remembers
- * the exact command so that identical commands are never asked about again.
- * Exceptions are stored in <config-dir>/permission-gate-allowlist.json and can be
- * reviewed or revoked with /permission-gate.
+ * The prompt offers "Sim, e não perguntar novamente (perigo!)", which turns on
+ * YOLO mode for the current session: this extension stops confirming any command
+ * until the session ends. The toggle is recorded as a session entry, so it is
+ * restored on /reload and on branch navigation, but it never leaves the session
+ * and it is ignored without a UI (non-interactive runs keep failing closed).
+ *
+ * YOLO mode shows a footer status and can be inspected or toggled with
+ * /permission-gate [on|off].
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const CONFIRM_OPTION = "Sim";
 const DENY_OPTION = "Não";
 const REMEMBER_OPTION = "Sim, e não perguntar novamente (perigo!)";
 
-const ALLOWLIST_FILE = "permission-gate-allowlist.json";
-const ALLOWLIST_OBJECT_KEY = "commands";
+const YOLO_ENTRY_TYPE = "permission-gate-yolo";
+const YOLO_STATUS_KEY = "permission-gate";
+const YOLO_STATUS_TEXT = "⚠ YOLO: sem confirmações";
 
-function configDir(): string {
-	const override = process.env.PI_CODING_AGENT_DIR?.trim();
-	return override ? override : join(homedir(), ".pi", "agent");
+interface YoloState {
+	active: boolean;
 }
 
-function allowlistPath(): string {
-	return join(configDir(), ALLOWLIST_FILE);
-}
-
-function summarizeCommand(command: string, maxLength = 72): string {
-	const singleLine = command.replace(/\s+/g, " ").trim();
-	return singleLine.length > maxLength ? `${singleLine.slice(0, maxLength - 1)}…` : singleLine;
-}
-
-function readAllowlist(): Set<string> {
-	let raw: unknown;
-	try {
-		raw = JSON.parse(readFileSync(allowlistPath(), "utf-8"));
-	} catch {
-		// A missing or unreadable allowlist simply means nothing is allowed yet.
-		return new Set();
-	}
-
-	const commands = (raw as Record<string, unknown> | null)?.[ALLOWLIST_OBJECT_KEY];
-	if (!Array.isArray(commands)) return new Set();
-
-	return new Set(commands.filter((entry): entry is string => typeof entry === "string"));
-}
-
-/** Returns a failure message when the allowlist could not be persisted. */
-function writeAllowlist(commands: Set<string>): string | undefined {
-	try {
-		const path = allowlistPath();
-		mkdirSync(dirname(path), { recursive: true });
-		const payload = `${JSON.stringify({ [ALLOWLIST_OBJECT_KEY]: [...commands] }, null, 2)}\n`;
-		writeFileSync(path, payload, "utf-8");
-		return undefined;
-	} catch (error) {
-		return error instanceof Error ? error.message : String(error);
-	}
-}
+const USAGE = "Uso: /permission-gate [on|off]";
 
 export default function (pi: ExtensionAPI) {
+	let yoloActive = false;
+
 	const emitHerdrBlocked = (data: { active: boolean; label?: string }) => {
 		try {
 			pi.events.emit("herdr:blocked", data);
 		} catch {
 			// Herdr status reporting is best-effort and must not affect permission gating.
 		}
+	};
+
+	const publishYoloStatus = (ctx: ExtensionContext) => {
+		if (!ctx.hasUI) return;
+		ctx.ui.setStatus(YOLO_STATUS_KEY, yoloActive ? YOLO_STATUS_TEXT : undefined);
+	};
+
+	const setYoloMode = (active: boolean, ctx: ExtensionContext) => {
+		yoloActive = active;
+		pi.appendEntry<YoloState>(YOLO_ENTRY_TYPE, { active });
+		publishYoloStatus(ctx);
+	};
+
+	// The toggle lives in the session branch, so /reload and branch navigation keep
+	// it consistent with the active history. Without a UI there is nobody to
+	// approve a dangerous command, so YOLO stays off.
+	const restoreYoloMode = (ctx: ExtensionContext) => {
+		let restored = false;
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type === "custom" && entry.customType === YOLO_ENTRY_TYPE) {
+				restored = (entry.data as YoloState | undefined)?.active === true;
+			}
+		}
+		yoloActive = ctx.hasUI ? restored : false;
+		publishYoloStatus(ctx);
 	};
 
 	const dangerousPatterns = [
@@ -91,63 +84,45 @@ export default function (pi: ExtensionAPI) {
 	];
 
 	pi.registerCommand("permission-gate", {
-		description: "Revisar exceções: comandos liberados sem aviso",
+		description: "Mostrar ou alternar o modo YOLO (sem confirmações) desta sessão",
 		handler: async (args, ctx) => {
 			const requested = args.trim().toLowerCase();
 
-			if (requested === "clear" || requested === "limpar") {
-				const failure = writeAllowlist(new Set());
+			if (requested === "on" || requested === "ligar") {
+				setYoloMode(true, ctx);
 				ctx.ui.notify(
-					failure === undefined
-						? "Exceções do permission-gate removidas."
-						: `Não foi possível limpar as exceções: ${failure}`,
-					failure === undefined ? "info" : "error",
+					"YOLO ativado: comandos perigosos rodam sem confirmação até o fim desta sessão.",
+					"warning",
 				);
 				return;
 			}
 
+			if (requested === "off" || requested === "desligar") {
+				setYoloMode(false, ctx);
+				ctx.ui.notify("YOLO desativado: comandos perigosos voltam a pedir confirmação.", "info");
+				return;
+			}
+
 			if (requested.length > 0) {
-				ctx.ui.notify("Uso: /permission-gate [limpar]", "warning");
-				return;
-			}
-
-			const allowed = readAllowlist();
-			if (allowed.size === 0) {
-				ctx.ui.notify("Nenhuma exceção do permission-gate registrada.", "info");
-				return;
-			}
-
-			const commands = [...allowed];
-			const clearAll = `Limpar todas (${commands.length})`;
-			const options = [
-				clearAll,
-				...commands.map((command, index) => `${index + 1}. ${summarizeCommand(command)}`),
-			];
-			const choice = await ctx.ui.select(
-				`Comandos liberados sem aviso:\n  ${allowlistPath()}\n\nSelecione um para revogar:`,
-				options,
-			);
-			if (choice === undefined) return;
-
-			const selected = commands[options.indexOf(choice) - 1];
-			if (choice !== clearAll && selected === undefined) return;
-
-			if (choice === clearAll) allowed.clear();
-			else allowed.delete(selected as string);
-
-			const failure = writeAllowlist(allowed);
-			if (failure !== undefined) {
-				ctx.ui.notify(`Não foi possível atualizar as exceções: ${failure}`, "error");
+				ctx.ui.notify(USAGE, "warning");
 				return;
 			}
 
 			ctx.ui.notify(
-				choice === clearAll
-					? `Exceções do permission-gate removidas (${commands.length}).`
-					: `Revogado: ${summarizeCommand(selected as string)}`,
+				yoloActive
+					? "YOLO ativo: esta extensão não confirma nenhum comando nesta sessão."
+					: "YOLO desativado: comandos perigosos pedem confirmação.",
 				"info",
 			);
 		},
+	});
+
+	pi.on("session_start", async (_event, ctx) => {
+		restoreYoloMode(ctx);
+	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		restoreYoloMode(ctx);
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -157,9 +132,7 @@ export default function (pi: ExtensionAPI) {
 		const isDangerous = dangerousPatterns.some((p) => p.test(command));
 
 		if (!isDangerous) return undefined;
-
-		const allowedCommands = readAllowlist();
-		if (allowedCommands.has(command)) return undefined;
+		if (yoloActive) return undefined;
 
 		if (!ctx.hasUI) {
 			return {
@@ -181,14 +154,11 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		if (choice === REMEMBER_OPTION) {
-			allowedCommands.add(command);
-			const failure = writeAllowlist(allowedCommands);
-			if (failure !== undefined) {
-				ctx.ui.notify(
-					`Não foi possível salvar a exceção (${failure}). O comando foi liberado apenas desta vez.`,
-					"warning",
-				);
-			}
+			setYoloMode(true, ctx);
+			ctx.ui.notify(
+				"YOLO ativado: comandos perigosos rodam sem confirmação até o fim desta sessão.",
+				"warning",
+			);
 			return undefined;
 		}
 
