@@ -15,6 +15,9 @@ herdr/.config/herdr/release-notes.json
 herdr/.config/herdr/plugins.json
 herdr/.config/herdr/session-history.json
 herdr/.config/herdr/focus-state.json
+herdr/.config/herdr/herdr.sock.agent
+herdr/.config/herdr/plugins/
+herdr/.config/herdr/session-snapshots/
 # binary
 myfin
 /general/bin/mt
