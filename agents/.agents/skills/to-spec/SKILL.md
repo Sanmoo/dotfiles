@@ -28,15 +28,17 @@ The problem that the user is facing, from the user's perspective.
 
 The solution to the problem, from the user's perspective.
 
-## User Stories
+## Job Stories
 
-A LONG, numbered list of user stories. Each user story should be in the format of:
+A LONG, numbered list of job stories. Each job story should be in the format of:
 
-1. As an <actor>, I want a <feature>, so that <benefit>
+1. When <situation/context>, I want to <motivation/action>, so that <expected outcome>
 
-<user-story-example>
-1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
-</user-story-example>
+<job-story-example>
+1. When I review my account before making a purchase, I want to see my current balance, so that I can make an informed decision about my spending
+</job-story-example>
+
+Job stories should focus on the situation, motivation, and expected outcome rather than requiring a named actor. Cover all relevant contexts and edge cases extensively without duplicating implementation decisions or testing criteria.
 
 This list of user stories should be extremely extensive and cover all aspects of the feature.
 
