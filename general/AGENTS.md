@@ -40,9 +40,15 @@ complete the following without waiting for a separate integration request:
    that worktree, remove it with `git worktree remove <task-worktree>`, then delete
    its branch with `git branch -d <task-branch>`. Remove only the branch and
    worktree created for this task, leaving pre-existing resources intact.
+   If integration rewrote the commits (rebase or squash merge), the tip will not
+   be an ancestor even though the content is identical: verify integration by
+   content instead (no diff between the task branch and the updated destination),
+   then delete the branch with `git branch -D <task-branch>` without asking,
+   provided the worktree is clean and the remote branch is already gone.
 4. Report the destination branch, integrated commit, validation results, and
    cleanup status. If anything remains, include its branch and worktree path.
 
 If fast-forward integration or safe cleanup is not possible, preserve the
 remaining resources and ask how to proceed. Do not substitute a merge commit,
-rebase, reset, or forced deletion. Integration is local; push only when requested.
+rebase, reset, or forced deletion — the only exception being the content-verified
+`git branch -D` in step 3. Integration is local; push only when requested.
