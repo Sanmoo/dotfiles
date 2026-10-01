@@ -23,6 +23,22 @@ branch. If integration or cleanup is blocked, it preserves the remaining work
 and asks how to proceed. Explicit user instructions or workflow rules in a
 repository-specific `AGENTS.md` take precedence.
 
+## Agent skills
+
+`agents/.agents/skills/` installs to `~/.agents/skills/`, the shared skills
+location that Pi discovers in every session. `~/.agents` is a symlink into this
+repository, so a new skill directory takes effect immediately; `stow agents` is
+only needed on a fresh machine.
+
+Skills are vendored and tracked in Git, so adding one needs no `git add -f`. The
+exceptions are the machine-local symlinks that point outside the repository
+(`omarchy`, `orchestrated-work-companion`), which `agents/.agents/.gitignore`
+excludes.
+
+A skill with `disable-model-invocation: true` in its frontmatter is kept out of
+the model's context and starts only when explicitly asked for with
+`/skill:<name>`. `gh-address-comments` uses this so it never fires on its own.
+
 ## For `Omarchy`
 
 `stow general git hypr nvim tasks tmux zsh pi pi-linux`

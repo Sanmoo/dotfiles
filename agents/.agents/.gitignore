@@ -1,1 +1,6 @@
-skills
+# Machine-local skill symlinks pointing outside this repo (other checkouts or
+# tool installs). They resolve to absolute paths, so committing them would be
+# broken elsewhere. Everything else under skills/ is vendored and tracked, so
+# new skills need no `git add -f`.
+skills/omarchy
+skills/orchestrated-work-companion
