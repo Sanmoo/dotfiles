@@ -1,0 +1,17 @@
+# Herdr Recent Navigator settings. This file is yours; upgrades never touch it.
+
+# Fallback theme, used only when Herdr itself reports no theme name.
+# "terminal" inherits your terminal palette; "dark"/"light" force a built-in
+# palette. Herdr's own theme is preferred when it is set.
+# theme = "terminal"
+
+# Customize internal navigation keys. Current releases read these from this
+# per-user config file rather than the plugin manifest.
+[keybindings]
+move_up = ["Up", "C-k"]
+move_down = ["Down", "C-j"]
+
+# Order and visibility of the category tabs: position is display order. A tab
+# left out is hidden. Valid names: workspaces, tabs, panes, agents, all.
+# [navigator]
+# tabs = ["workspaces", "tabs", "panes", "agents", "all"]
