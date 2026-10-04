@@ -25,32 +25,122 @@ repository-specific `AGENTS.md` take precedence.
 
 ## Agent skills
 
-`agents/.agents/skills/` contains only skills authored in this repository. When
-applying the package, use Stow's `--no-folding` option so it links owned files
-into the real `~/.agents` directory without taking ownership of that shared
-directory. Skills installed from external sources and their lockfiles stay in
-`~/.agents` and are managed separately.
+The shared `~/.agents` and `~/.agents/skills` directories are real directories
+outside this checkout. External skills, third-party adaptations, their source
+links, and installation metadata such as `.skill-lock.json` are machine-local.
+They are not distributed by these dotfiles. Editing a third-party skill does
+not make it your own: maintain adaptations in the corresponding fork.
 
-Apply the configuration with `stow --no-folding agents`. Install or update external skills
-using the tool and source you choose for that machine. The bootstrap does not
-download, update, or select external skills.
+`agents/.agents/skills/` is reserved for skills authored by the user, maintained
+independently, and containing no company-specific content. Currently that is
+`jira-issue-formatting`. Add your own skills there; Stow links their files
+individually, without owning the shared directory or replacing local entries.
 
-If `~/.agents` is still a symlink to this checkout, migrate it before removing
-the old tracked files:
+### Apply configuration on a new or migrated machine
+
+With GNU Stow and Python 3 available, run from this checkout:
 
 ```sh
-migrate-agent-skills ~/.agents
+general/bin/apply-agent-config "$PWD"
 ```
 
-The command moves the linked directory before replacing the link with a real
-directory. It preserves regular files, untracked files, lockfiles, symlinks, and
-symlink destinations. It refuses an existing destination, treats an already-real
-directory as a safe no-op, and keeps the old state recoverable if an operation
-fails.
+This command refuses symlinked shared directories, checks for conflicts first,
+and applies `stow --no-folding agents`. It does not download, update, select, or
+install dependencies. Use this guarded command for the agents package; ordinary
+`stow agents` can fold the directory into a checkout link on a fresh home.
+Apply other packages separately using the platform commands below.
 
-A skill with `disable-model-invocation: true` in its frontmatter is kept out of
-the model's context and starts only when explicitly asked for with
-`/skill:<name>`. `gh-address-comments` uses this so it never fires on its own.
+### Install external dependencies separately
+
+Choose the source and installation tool locally for each machine. For example,
+on a personal machine using the existing Skills CLI:
+
+```sh
+cd "$HOME"
+npx skills add mattpocock/skills -g
+```
+
+Other public sources can be installed the same way, such as `anthropics/skills`,
+`vercel-labs/skills`, and `openai/skills`. Review the selection before installing.
+An alternative is an individual link under `~/.agents/skills` to a separately
+maintained checkout. Keep non-public sources and source selections local; there
+is no employer profile or fork configuration in this repository. Updates belong
+to the chosen tool/source, not to Stow or the bootstrap. Existing dependencies
+remain untouched when applying configuration.
+
+### Migrate a legacy checkout before integrating removals
+
+Do not update a legacy checkout to the removal commit while `~/.agents` still
+points into it: doing so can delete the only installed copy. Obtain the new
+scripts in a separate worktree first, keeping the old checkout untouched. From
+the old checkout, run the script from that worktree:
+
+```sh
+# migration_checkout is the worktree containing the new scripts.
+"$migration_checkout/general/bin/migrate-agent-skills" "$PWD"
+```
+
+The command accepts an optional home agent path and `--backup NEW_DIRECTORY`.
+Without `--backup`, it creates a private `.agents-backup-*` directory beside
+`~/.agents` and prints its path. It validates the legacy link against the
+explicit checkout, copies the entire local directory without following links,
+verifies contents and file modes, then installs an independent copy. The
+checkout is not modified. Existing backup paths and unexpected states are
+errors; an already-real external directory is a no-op.
+
+Absolute external links, including unavailable targets, stay unchanged. Relative
+external links are made absolute to retain their original targets, while links
+into the old directory are rebased to the new directory. The recovery snapshot
+keeps every original link text. No external link target is copied or modified.
+
+Before integrating the removal, verify that the skills and metadata are present
+under the real `~/.agents`. Keep the printed backup path. If local edits or links
+in the old package block a fast-forward, preserve that exact package before
+restoring **only that package's** tracked working-tree files:
+
+```sh
+# backup is the printed recovery directory; NEW_REF is the validated task ref.
+mv agents/.agents "$backup/checkout-original"
+git restore --source=HEAD --worktree -- agents/.agents
+git merge --ff-only NEW_REF
+```
+
+This step requires an unchanged index for the package. Stop if staged edits or
+other unexpected changes exist; do not stash, reset, or commit machine-local
+links. Other configuration and other worktrees must remain untouched. Existing
+Git history is preserved.
+
+Then apply configuration with `general/bin/apply-agent-config "$PWD"`. A
+preserved local file with the same name as an owned file is a Stow conflict,
+not permission to overwrite it. Compare it first; if identical, archive the
+local file in the backup before linking the owned version. If different, keep
+it in place and decide how to reconcile it. Keep recovery backups until you
+have verified the installation; they may contain private machine-local data.
+
+### Recover an interrupted migration
+
+Before the link exchange, the original checkout and link are unchanged. During
+exchange, the original link is saved as `BACKUP/legacy-link`; `snapshot` keeps
+the verified contents and `recovery.json` records the original paths. Ordinary
+errors and handled interruptions restore the link when possible. Even an
+unrecoverable process kill leaves both the original checkout and snapshot.
+
+If `~/.agents` is missing and `BACKUP/legacy-link` exists, restore it with
+`mv BACKUP/legacy-link "$HOME/.agents"` before retrying. Never overwrite an
+existing entry: inspect it first. Do not remove the legacy package after a
+failed migration. If its files were already archived for integration, restore
+that archive to its original checkout path before restoring the legacy link.
+
+### Validate without touching real installations
+
+```sh
+bash tests/external-skills-local-installation-test.sh
+```
+
+The shell integration test uses temporary homes, fictitious skills, real Stow,
+and a local Git fixture. It exercises conflicts, backup-copy failure via an OS
+write limit, repeatability, link relocation, the complete removal/integration
+order, and installation of a new dependency without checkout changes.
 
 ## For `Omarchy`
 

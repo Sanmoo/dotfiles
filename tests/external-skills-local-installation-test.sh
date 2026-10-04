@@ -3,7 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATE="$ROOT_DIR/general/bin/migrate-agent-skills"
+APPLY="$ROOT_DIR/general/bin/apply-agent-config"
 TMPDIR="$(mktemp -d)"
+# Do not load the real home's Stow config or machine-specific Git hooks.
+export HOME="$TMPDIR/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 trap 'rm -rf "$TMPDIR"' EXIT
 
 assert_equals() {
@@ -27,7 +30,7 @@ mkdir -p "$home"
 
 # Applying the package to a new home creates a real shared directory and only
 # links the repository-owned file into it.
-stow --no-folding -d "$ROOT_DIR" -t "$home" agents
+"$APPLY" "$ROOT_DIR" "$home"
 assert_not_symlink "$home/.agents"
 assert_file "$home/.agents/README.md"
 
@@ -36,13 +39,25 @@ assert_file "$home/.agents/README.md"
 mkdir -p "$home/.agents/skills/vendor"
 printf 'installed dependency\n' >"$home/.agents/skills/vendor/SKILL.md"
 printf '{"local":true}\n' >"$home/.agents/.skill-lock.json"
-stow --no-folding -d "$ROOT_DIR" -t "$home" agents
+"$APPLY" "$ROOT_DIR" "$home"
 assert_equals 'installed dependency' "$(<"$home/.agents/skills/vendor/SKILL.md")" \
 	'local dependency remains unchanged'
 assert_equals '{"local":true}' "$(<"$home/.agents/.skill-lock.json")" \
 	'local installation metadata remains unchanged'
 
-# Migration moves the legacy checkout directory into the real global
+# Unexpected links must leave both the link and its target intact.
+unexpected="$TMPDIR/unexpected-home"
+mkdir -p "$unexpected/other" "$TMPDIR/expected-checkout/agents/.agents"
+printf 'untouched\n' >"$unexpected/other/file"
+ln -s "$unexpected/other" "$unexpected/.agents"
+if "$MIGRATE" "$TMPDIR/expected-checkout" "$unexpected/.agents" >"$TMPDIR/unexpected.out" 2>&1; then
+	printf 'FAIL: migration accepted an unexpected symlink\n' >&2
+	exit 1
+fi
+[[ -L "$unexpected/.agents" ]] || { echo 'FAIL: unexpected link changed' >&2; exit 1; }
+assert_equals 'untouched' "$(<"$unexpected/other/file")" 'unexpected target remains untouched'
+
+# Migration copies the legacy checkout directory into the real global
 # directory, preserving files, metadata, and links to unavailable targets.
 legacy_home="$TMPDIR/legacy-home"
 checkout="$TMPDIR/dotfiles"
@@ -53,7 +68,7 @@ printf '{"installed":true}\n' >"$checkout/agents/.agents/.skill-lock.json"
 ln -s /path/that/does/not/exist "$checkout/agents/.agents/skills/unavailable"
 ln -s "$checkout/agents/.agents" "$legacy_home/.agents"
 
-"$MIGRATE" "$legacy_home/.agents"
+"$MIGRATE" "$checkout" "$legacy_home/.agents" --backup "$legacy_home/backup"
 assert_not_symlink "$legacy_home/.agents"
 assert_equals 'tracked skill' "$(<"$legacy_home/.agents/skills/vendor/SKILL.md")" \
 	'migration preserves tracked files'
@@ -63,13 +78,11 @@ assert_equals '{"installed":true}' "$(<"$legacy_home/.agents/.skill-lock.json")"
 	'migration preserves metadata'
 assert_equals '/path/that/does/not/exist' "$(readlink "$legacy_home/.agents/skills/unavailable")" \
 	'migration preserves symlink destinations'
-[[ ! -e "$checkout/agents/.agents" ]] || {
-	printf 'FAIL: migration left the legacy checkout directory in place\n' >&2
-	exit 1
-}
+assert_file "$checkout/agents/.agents/skills/vendor/SKILL.md"
+assert_file "$legacy_home/backup/snapshot/skills/vendor/SKILL.md"
 
 # Repeating a migration is a safe no-op.
-"$MIGRATE" "$legacy_home/.agents"
+"$MIGRATE" "$checkout" "$legacy_home/.agents"
 assert_equals 'tracked skill' "$(<"$legacy_home/.agents/skills/vendor/SKILL.md")" \
 	'repeated migration keeps the valid state'
 
@@ -79,7 +92,7 @@ conflict_checkout="$TMPDIR/conflict-checkout"
 mkdir -p "$conflict_home" "$conflict_checkout/agents/.agents" "$conflict_home/destination"
 printf 'legacy\n' >"$conflict_checkout/agents/.agents/file"
 ln -s "$conflict_checkout/agents/.agents" "$conflict_home/.agents"
-if "$MIGRATE" "$conflict_home/.agents" "$conflict_home/destination"; then
+if "$MIGRATE" "$conflict_checkout" "$conflict_home/.agents" --backup "$conflict_home/destination"; then
 	printf 'FAIL: migration accepted a conflicting destination\n' >&2
 	exit 1
 fi
@@ -88,5 +101,129 @@ fi
 	exit 1
 }
 assert_file "$conflict_checkout/agents/.agents/file"
+
+# Applying configuration refuses legacy/unexpected directory links instead of
+# allowing Stow to write through them.
+if "$APPLY" "$ROOT_DIR" "$unexpected" >"$TMPDIR/apply-unexpected.out" 2>&1; then
+	echo 'FAIL: application accepted a symlinked shared directory' >&2; exit 1
+fi
+assert_equals 'untouched' "$(<"$unexpected/other/file")" 'application does not follow the link'
+
+# A broken global link or a regular file is not an already-migrated directory.
+for state in broken file; do
+	state_home="$TMPDIR/$state-home"
+	mkdir "$state_home"
+	if [[ "$state" == broken ]]; then
+		ln -s "$TMPDIR/missing" "$state_home/.agents"
+	else
+		printf 'not a directory\n' >"$state_home/.agents"
+	fi
+	if "$MIGRATE" "$checkout" "$state_home/.agents" >"$TMPDIR/$state.out" 2>&1; then
+		echo "FAIL: accepted $state state" >&2; exit 1
+	fi
+done
+
+# Relative external links keep their target, even when unavailable. Absolute
+# links into the legacy directory are rebased so removal cannot break them.
+links_home="$TMPDIR/links-home"
+links_checkout="$TMPDIR/links-checkout"
+mkdir -p "$links_home" "$links_checkout/agents/.agents/skills/example" "$links_checkout/sources"
+printf 'relative target\n' >"$links_checkout/sources/file"
+printf 'internal file\n' >"$links_checkout/agents/.agents/skills/example/file"
+ln -s ../../../../sources/file "$links_checkout/agents/.agents/skills/example/relative"
+ln -s ../../../../sources/missing "$links_checkout/agents/.agents/skills/example/broken-relative"
+ln -s "$links_checkout/agents/.agents/skills/example/file" "$links_checkout/agents/.agents/skills/example/absolute-internal"
+ln -s file "$links_checkout/agents/.agents/skills/example/relative-internal"
+ln -s ../links-checkout/agents/.agents "$links_home/.agents"
+"$MIGRATE" "$links_checkout" "$links_home/.agents" --backup "$links_home/backup"
+assert_equals 'relative target' "$(<"$links_home/.agents/skills/example/relative")" 'relative external target is preserved'
+assert_equals 'file' "$(readlink "$links_home/.agents/skills/example/relative-internal")" 'relative internal text is preserved'
+assert_equals '../../../../sources/missing' "$(readlink "$links_home/backup/snapshot/skills/example/broken-relative")" 'backup retains original relative link'
+rm -rf "$links_checkout/agents/.agents"
+assert_equals 'internal file' "$(<"$links_home/.agents/skills/example/absolute-internal")" 'internal link survives checkout removal'
+
+# A real OS write limit interrupts backup copying, before the legacy link is
+# exchanged. No implementation hooks or real installations are used.
+failure_home="$TMPDIR/failure-home"
+failure_checkout="$TMPDIR/failure-checkout"
+mkdir -p "$failure_home" "$failure_checkout/agents/.agents"
+python3 - "$failure_checkout/agents/.agents/large" <<'PY'
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_bytes(b'x' * (1024 * 1024))
+PY
+ln -s "$failure_checkout/agents/.agents" "$failure_home/.agents"
+if (ulimit -f 1; "$MIGRATE" "$failure_checkout" "$failure_home/.agents" --backup "$failure_home/backup") >"$TMPDIR/failure.out" 2>&1; then
+	echo 'FAIL: write-limit failure was not exercised' >&2; exit 1
+fi
+[[ -L "$failure_home/.agents" ]] || { echo 'FAIL: failure removed legacy link' >&2; exit 1; }
+assert_equals '1048576' "$(wc -c <"$failure_home/.agents/large" | tr -d ' ')" 'original installation survives copying failure'
+"$MIGRATE" "$failure_checkout" "$failure_home/.agents" --backup "$failure_home/retry-backup"
+assert_not_symlink "$failure_home/.agents"
+
+# End-to-end Git transition: migrate local edits and untracked installations,
+# normalize only the archived legacy package, then fast-forward its removal.
+transition_home="$TMPDIR/transition-home"
+transition_checkout="$TMPDIR/transition-checkout"
+mkdir -p "$transition_home" "$transition_checkout/agents/.agents/skills/vendor"
+printf 'tracked upstream\n' >"$transition_checkout/agents/.agents/skills/vendor/SKILL.md"
+printf '{}\n' >"$transition_checkout/agents/.agents/.skill-lock.json"
+printf 'original settings\n' >"$transition_checkout/settings.txt"
+git -C "$transition_checkout" -c init.templateDir= init -q -b main
+git -C "$transition_checkout" config user.name 'Fixture User'
+git -C "$transition_checkout" config user.email fixture@example.invalid
+git -C "$transition_checkout" add .
+git -C "$transition_checkout" commit -qm 'legacy fixture'
+base=$(git -C "$transition_checkout" rev-parse HEAD)
+git -C "$transition_checkout" checkout -qb separation
+rm -rf "$transition_checkout/agents/.agents"
+mkdir -p "$transition_checkout/agents/.agents/skills/mine"
+printf 'own skill\n' >"$transition_checkout/agents/.agents/skills/mine/SKILL.md"
+git -C "$transition_checkout" add -A
+git -C "$transition_checkout" commit -qm 'separate fixture dependencies'
+git -C "$transition_checkout" checkout -q main
+printf 'local tracked edit\n' >"$transition_checkout/agents/.agents/skills/vendor/SKILL.md"
+printf 'unrelated settings\n' >"$transition_checkout/settings.txt"
+mkdir -p "$transition_checkout/agents/.agents/skills/local"
+printf 'untracked installation\n' >"$transition_checkout/agents/.agents/skills/local/SKILL.md"
+ln -s /unavailable/fixture/provider "$transition_checkout/agents/.agents/skills/provider"
+printf '{"chosen":"local"}\n' >"$transition_checkout/agents/.agents/.skill-lock.json"
+ln -s "$transition_checkout/agents/.agents" "$transition_home/.agents"
+"$MIGRATE" "$transition_checkout" "$transition_home/.agents" --backup "$transition_home/backup"
+# Preserve the exact original package as well as the verified migration backup.
+mv "$transition_checkout/agents/.agents" "$transition_home/backup/checkout-original"
+git -C "$transition_checkout" restore --source=HEAD --worktree -- agents/.agents
+git -C "$transition_checkout" merge -q --ff-only separation
+"$APPLY" "$transition_checkout" "$transition_home"
+"$APPLY" "$transition_checkout" "$transition_home"
+assert_equals 'local tracked edit' "$(<"$transition_home/.agents/skills/vendor/SKILL.md")" 'tracked local edit survives removal'
+assert_equals 'untracked installation' "$(<"$transition_home/.agents/skills/local/SKILL.md")" 'untracked skill survives removal'
+assert_equals '{"chosen":"local"}' "$(<"$transition_home/.agents/.skill-lock.json")" 'local lockfile survives removal'
+assert_equals '/unavailable/fixture/provider' "$(readlink "$transition_home/.agents/skills/provider")" 'provider symlink survives removal'
+assert_equals 'own skill' "$(<"$transition_home/.agents/skills/mine/SKILL.md")" 'owned skill is available individually'
+assert_not_symlink "$transition_home/.agents/skills"
+[[ -L "$transition_home/.agents/skills/mine/SKILL.md" ]] || { echo 'FAIL: owned file not linked' >&2; exit 1; }
+git -C "$transition_checkout" merge-base --is-ancestor "$base" HEAD
+assert_equals 'agents/.agents/skills/mine/SKILL.md' "$(git -C "$transition_checkout" ls-files agents/.agents)" 'only own skill is tracked'
+assert_equals 'unrelated settings' "$(<"$transition_checkout/settings.txt")" 'unrelated configuration is untouched'
+status_before=$(git -C "$transition_checkout" status --porcelain)
+mkdir -p "$transition_home/.agents/skills/new-vendor"
+printf 'new dependency\n' >"$transition_home/.agents/skills/new-vendor/SKILL.md"
+printf '{"new":true}\n' >"$transition_home/.agents/.skill-lock.json"
+assert_equals "$status_before" "$(git -C "$transition_checkout" status --porcelain)" 'new dependency does not change the checkout'
+
+# Stow conflicts must not overwrite a local entry or apply other pending links.
+rm "$transition_home/.agents/skills/mine/SKILL.md"
+printf 'local conflict\n' >"$transition_home/.agents/skills/mine/SKILL.md"
+printf 'second owned file\n' >"$transition_checkout/agents/.agents/skills/mine/EXTRA.md"
+if "$APPLY" "$transition_checkout" "$transition_home" >"$TMPDIR/stow-conflict.out" 2>&1; then
+	echo 'FAIL: application overwrote a local entry' >&2; exit 1
+fi
+assert_equals 'local conflict' "$(<"$transition_home/.agents/skills/mine/SKILL.md")" 'conflicting local file remains intact'
+[[ ! -e "$transition_home/.agents/skills/mine/EXTRA.md" ]] || { echo 'FAIL: applied despite conflict' >&2; exit 1; }
+
+# The current package must not distribute third-party skills even if patched.
+assert_equals 'jira-issue-formatting' "$(find "$ROOT_DIR/agents/.agents/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)" 'only independently maintained authorship remains'
+[[ ! -e "$ROOT_DIR/agents/.agents/.skill-lock.json" ]] || { echo 'FAIL: tracked installation lock remains' >&2; exit 1; }
 
 printf 'external skills local installation tests passed\n'

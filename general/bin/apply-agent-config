@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Apply only repository-owned agent configuration; never install dependencies.
+set -euo pipefail
+
+if (($# < 1 || $# > 2)); then
+	printf 'Usage: %s CHECKOUT [HOME_DIRECTORY]\n' "${0##*/}" >&2
+	exit 2
+fi
+checkout=$(cd "$1" && pwd -P)
+home=$(cd "${2:-$HOME}" && pwd -P)
+case "$home/" in
+	"$checkout/"*) echo 'Home must be outside the checkout' >&2; exit 1 ;;
+esac
+for directory in "$home/.agents" "$home/.agents/skills"; do
+	if [[ -L "$directory" || ( -e "$directory" && ! -d "$directory" ) ]]; then
+		printf 'Refusing unexpected directory state: %s. Migrate the legacy link first.\n' "$directory" >&2
+		exit 1
+	fi
+done
+stow --no-folding --simulate --dir="$checkout" --target="$home" agents
+stow --no-folding --dir="$checkout" --target="$home" agents

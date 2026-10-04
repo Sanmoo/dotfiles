@@ -1,76 +1,141 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""Replace a legacy agent-directory link with a verified independent copy."""
 
-usage() {
-	printf 'Usage: %s LEGACY_LINK [DESTINATION]\n' "${0##*/}" >&2
-}
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import stat
+import sys
+import tempfile
 
-if (($# < 1 || $# > 2)); then
-	usage
-	exit 2
-fi
 
-legacy_link=$1
-destination=${2:-$legacy_link}
+def inventory(root):
+    """Read content and link text without following links, including broken ones."""
+    entries = {}
 
-if [[ ! -L "$legacy_link" ]]; then
-	if [[ -d "$legacy_link" ]]; then
-		if [[ "$legacy_link" == "$destination" ]]; then
-			exit 0
-		fi
-		printf 'Refusing to migrate non-legacy directory: %s\n' "$legacy_link" >&2
-	else
-		printf 'Legacy agent directory is not a symlink or directory: %s\n' "$legacy_link" >&2
-	fi
-	exit 1
-fi
+    def visit(path):
+        info = path.lstat()
+        relative = str(path.relative_to(root))
+        mode = stat.S_IMODE(info.st_mode)
+        if stat.S_ISLNK(info.st_mode):
+            entries[relative] = ("link", mode, os.readlink(path))
+        elif stat.S_ISREG(info.st_mode):
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            entries[relative] = ("file", mode, digest.hexdigest())
+        elif stat.S_ISDIR(info.st_mode):
+            entries[relative] = ("directory", mode, "")
+            for child in sorted(path.iterdir()):
+                visit(child)
+        else:
+            raise ValueError(f"Unsupported filesystem entry; nothing migrated: {path}")
 
-source_dir=$(readlink "$legacy_link")
-if [[ "$source_dir" != /* ]]; then
-	source_dir="$(cd "$(dirname "$legacy_link")" && cd "$(dirname "$source_dir")" && pwd)/$(basename "$source_dir")"
-fi
-source_dir=$(cd "$source_dir" 2>/dev/null && pwd) || {
-	printf 'Legacy link target is unavailable: %s\n' "$source_dir" >&2
-	exit 1
-}
+    visit(root)
+    return entries
 
-if [[ ! -d "$source_dir" ]]; then
-	printf 'Legacy link target is not a directory: %s\n' "$source_dir" >&2
-	exit 1
-fi
 
-if [[ "$destination" != "$legacy_link" && ( -e "$destination" || -L "$destination" ) ]]; then
-	printf 'Migration destination already exists: %s\n' "$destination" >&2
-	exit 1
-fi
+def migrate(checkout, agents, backup_path=None):
+    checkout_absolute = Path(os.path.abspath(checkout))
+    checkout = checkout.resolve(strict=True)
+    source = checkout / "agents" / ".agents"
+    source_aliases = (source, checkout_absolute / "agents" / ".agents")
+    # Resolve the parent, not the legacy link itself.
+    agents = agents.parent.resolve(strict=True) / agents.name
+    if agents == checkout or checkout in agents.parents:
+        raise ValueError("Agent directory must be outside the checkout")
+    if not agents.is_symlink():
+        if agents.is_dir() and not (agents / "skills").is_symlink():
+            print(f"Already independent: {agents}")
+            return
+        raise ValueError(f"Unexpected agent-directory state: {agents}")
+    original_link = os.readlink(agents)
+    if source.is_symlink() or not source.is_dir() or agents.resolve() != source:
+        raise ValueError(f"Unexpected symlink; expected the legacy directory in {checkout}")
+    if (source / "skills").is_symlink():
+        raise ValueError("The legacy skills directory itself must be real")
 
-parent=$(dirname "$destination")
-mkdir -p "$parent"
+    before = inventory(source)
+    if backup_path is None:
+        backup = Path(tempfile.mkdtemp(prefix=".agents-backup-", dir=agents.parent))
+    else:
+        backup = backup_path.parent.resolve(strict=True) / backup_path.name
+        if backup == checkout or checkout in backup.parents or backup == agents or agents in backup.parents:
+            raise ValueError("Backup must be outside the checkout and agent directory")
+        backup.mkdir(mode=0o700)  # An existing path is a conflict, never a merge.
+    print(f"Recovery backup: {backup}", flush=True)
+    (backup / "recovery.json").write_text(json.dumps({
+        "agent_directory": str(agents), "source": str(source),
+        "original_link": original_link,
+    }, indent=2) + "\n")
+    snapshot = backup / "snapshot"
+    staged = backup / "staged"
+    shutil.copytree(source, snapshot, symlinks=True)
+    if inventory(snapshot) != before or inventory(source) != before:
+        raise ValueError("Source changed or backup verification failed; legacy link is unchanged")
+    shutil.copytree(snapshot, staged, symlinks=True)
+    if inventory(staged) != before:
+        raise ValueError("Staging verification failed; legacy link is unchanged")
+    # Absolute external links remain byte-for-byte unchanged. Relative external
+    # links and absolute internal links need rebasing to keep the same meaning
+    # after relocation; the recovery snapshot always keeps their original text.
+    expected = dict(before)
+    for relative, (kind, mode, text) in before.items():
+        if kind != "link":
+            continue
+        old_target = Path(os.path.abspath((source / relative).parent / text))
+        internal_root = next((root for root in source_aliases
+                              if old_target == root or root in old_target.parents), None)
+        if internal_root is not None:
+            new_text = str(agents / old_target.relative_to(internal_root)) if os.path.isabs(text) else text
+        else:
+            new_text = text if os.path.isabs(text) else str(old_target)
+        if new_text != text:
+            link = staged / relative
+            link.unlink()
+            link.symlink_to(new_text)
+            expected[relative] = (kind, mode, new_text)
+    if inventory(staged) != expected or inventory(source) != before:
+        raise ValueError("Verification failed; legacy link is unchanged")
+    if not agents.is_symlink() or os.readlink(agents) != original_link:
+        raise ValueError("Legacy link changed during migration; refusing to replace it")
 
-if [[ "$destination" == "$legacy_link" ]]; then
-	temporary="$parent/.agents.migration.$$.tmp"
-	if [[ -e "$temporary" || -L "$temporary" ]]; then
-		printf 'Migration temporary path already exists: %s\n' "$temporary" >&2
-		exit 1
-	fi
-	if ! mv "$source_dir" "$temporary"; then
-		printf 'Could not stage the legacy directory for migration: %s\n' "$source_dir" >&2
-		exit 1
-	fi
-	if ! rm "$legacy_link"; then
-		mv "$temporary" "$source_dir" || true
-		printf 'Could not remove the legacy link: %s\n' "$legacy_link" >&2
-		exit 1
-	fi
-	if ! mv "$temporary" "$destination"; then
-		mv "$temporary" "$source_dir" || true
-		ln -s "$source_dir" "$legacy_link" || true
-		printf 'Could not install the real agent directory: %s\n' "$destination" >&2
-		exit 1
-	fi
-else
-	if ! mv "$source_dir" "$destination"; then
-		printf 'Could not move legacy directory to: %s\n' "$destination" >&2
-		exit 1
-	fi
-fi
+    saved_link = backup / "legacy-link"
+    try:
+        agents.rename(saved_link)
+        staged.rename(agents)
+    except BaseException:
+        # All installation content is still present in both source and snapshot.
+        if saved_link.is_symlink() and not os.path.lexists(agents):
+            saved_link.rename(agents)
+        raise
+    print(f"Migrated: {agents}")
+
+
+def interrupted(signum, _frame):
+    raise InterruptedError(f"Interrupted by signal {signum}")
+
+
+def main():
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGHUP, interrupted)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("checkout", type=Path, help="checkout containing the legacy agents/.agents directory")
+    parser.add_argument("agents", nargs="?", type=Path, default=Path.home() / ".agents")
+    parser.add_argument("--backup", type=Path, help="new recovery directory (must not exist)")
+    args = parser.parse_args()
+    try:
+        migrate(args.checkout, args.agents, args.backup)
+    except (OSError, ValueError, KeyboardInterrupt) as error:
+        print(f"Migration failed: {error}. Keep the recovery backup and do not remove the legacy files.", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
