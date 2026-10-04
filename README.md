@@ -81,6 +81,22 @@ the old checkout, run the script from that worktree:
 ```
 
 The command accepts an optional home agent path and `--backup NEW_DIRECTORY`.
+If skills were also installed inside another Stow package, preserve those local
+files in the same transition by explicitly supplying their directory. For the
+legacy OpenCode package in this repository:
+
+```sh
+"$migration_checkout/general/bin/migrate-agent-skills" "$PWD" \
+  --extra-skills "$PWD/opencode/.config/opencode/skills"
+```
+
+`--extra-skills` is repeatable and only copies existing local installations; it
+does not download or choose an upstream. Name collisions between sources fail
+before the link exchange, without overwriting either installation. All supplied
+sources get verified recovery snapshots. On an already-migrated home the command
+is a no-op and does not import newly supplied directories; manage subsequent
+installations independently.
+
 Without `--backup`, it creates a private `.agents-backup-*` directory beside
 `~/.agents` and prints its path. It validates the legacy link against the
 explicit checkout, copies the entire local directory without following links,
@@ -89,9 +105,11 @@ checkout is not modified. Existing backup paths and unexpected states are
 errors; an already-real external directory is a no-op.
 
 Absolute external links, including unavailable targets, stay unchanged. Relative
-external links are made absolute to retain their original targets, while links
-into the old directory are rebased to the new directory. The recovery snapshot
-keeps every original link text. No external link target is copied or modified.
+links are rebased when needed, resolving intermediate symlinks before `..` and
+retaining unavailable path suffixes. Links into the old directories are rebased
+to the new directory, including paths that leave and re-enter a source. Recovery
+snapshots keep every original link text. No external link target is copied or
+modified; only path metadata is consulted when resolving a relative route.
 
 Before integrating the removal, verify that the skills and metadata are present
 under the real `~/.agents`. Keep the printed backup path. If local edits or links
@@ -104,6 +122,13 @@ mv agents/.agents "$backup/checkout-original"
 git restore --source=HEAD --worktree -- agents/.agents
 git merge --ff-only NEW_REF
 ```
+
+If local changes in another supplied source also block integration, archive
+that exact source in the same backup and restore only its affected tracked
+paths before merging. Do not remove any source until the independent copy and
+its snapshot have been verified. The removed OpenCode dependencies include
+`docx`, `ppt-master`, `coding-guidelines`, `skill-architect`, and the externally
+linked `article-summarizer`; their local copies belong outside the checkout.
 
 This step requires an unchanged index for the package. Stop if staged edits or
 other unexpected changes exist; do not stash, reset, or commit machine-local

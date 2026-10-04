@@ -102,6 +102,22 @@ fi
 }
 assert_file "$conflict_checkout/agents/.agents/file"
 
+# Additional local source collisions are detected before creating a backup or
+# modifying either source; adding another vendor creates no special exception.
+extra_home="$TMPDIR/extra-conflict-home"
+extra_checkout="$TMPDIR/extra-conflict-checkout"
+extra_source="$TMPDIR/extra-source"
+mkdir -p "$extra_home" "$extra_checkout/agents/.agents/skills/vendor" "$extra_source/vendor"
+printf 'installed origin\n' >"$extra_checkout/agents/.agents/skills/vendor/SKILL.md"
+printf 'conflicting origin\n' >"$extra_source/vendor/SKILL.md"
+ln -s "$extra_checkout/agents/.agents" "$extra_home/.agents"
+if "$MIGRATE" "$extra_checkout" "$extra_home/.agents" --backup "$extra_home/backup" --extra-skills "$extra_source" >"$TMPDIR/extra-conflict.out" 2>&1; then
+	echo 'FAIL: conflicting additional source was accepted' >&2; exit 1
+fi
+[[ -L "$extra_home/.agents" && ! -e "$extra_home/backup" ]] || { echo 'FAIL: collision modified installation state' >&2; exit 1; }
+assert_equals 'installed origin' "$(<"$extra_home/.agents/skills/vendor/SKILL.md")" 'existing origin remains intact'
+assert_equals 'conflicting origin' "$(<"$extra_source/vendor/SKILL.md")" 'additional origin remains intact'
+
 # Applying configuration refuses legacy/unexpected directory links instead of
 # allowing Stow to write through them.
 if "$APPLY" "$ROOT_DIR" "$unexpected" >"$TMPDIR/apply-unexpected.out" 2>&1; then
@@ -134,13 +150,38 @@ ln -s ../../../../sources/file "$links_checkout/agents/.agents/skills/example/re
 ln -s ../../../../sources/missing "$links_checkout/agents/.agents/skills/example/broken-relative"
 ln -s "$links_checkout/agents/.agents/skills/example/file" "$links_checkout/agents/.agents/skills/example/absolute-internal"
 ln -s file "$links_checkout/agents/.agents/skills/example/relative-internal"
+mkdir -p "$links_home/external/deep"
+printf 'correct external target\n' >"$links_home/external/choice"
+printf 'wrong lexical target\n' >"$links_checkout/agents/.agents/skills/example/choice"
+ln -s "$links_home/external/deep" "$links_checkout/agents/.agents/skills/example/hop"
+ln -s hop/../choice "$links_checkout/agents/.agents/skills/example/through-hop"
+ln -s ../../../../agents/.agents/skills/example/file "$links_checkout/agents/.agents/skills/example/reentry"
+ln -s ../../../../sources/missing/../file "$links_checkout/agents/.agents/skills/example/missing-parent"
 ln -s ../links-checkout/agents/.agents "$links_home/.agents"
 "$MIGRATE" "$links_checkout" "$links_home/.agents" --backup "$links_home/backup"
 assert_equals 'relative target' "$(<"$links_home/.agents/skills/example/relative")" 'relative external target is preserved'
+assert_equals 'correct external target' "$(<"$links_home/.agents/skills/example/through-hop")" 'dot-dot is evaluated after following an intermediate symlink'
+[[ ! -e "$links_home/.agents/skills/example/missing-parent" ]] || { echo 'FAIL: broken path became a different working target' >&2; exit 1; }
 assert_equals 'file' "$(readlink "$links_home/.agents/skills/example/relative-internal")" 'relative internal text is preserved'
 assert_equals '../../../../sources/missing' "$(readlink "$links_home/backup/snapshot/skills/example/broken-relative")" 'backup retains original relative link'
 rm -rf "$links_checkout/agents/.agents"
 assert_equals 'internal file' "$(<"$links_home/.agents/skills/example/absolute-internal")" 'internal link survives checkout removal'
+assert_equals 'internal file' "$(<"$links_home/.agents/skills/example/reentry")" 'leave-and-reenter link survives checkout removal'
+
+# A relative external hop must honor the intermediate symlink before '..'.
+# The source symlink may be unavailable; the raw suffix must not be flattened.
+printf 'wrong normalized target\n' >"$links_checkout/sources/choice"
+ln -s "$links_home/external/deep" "$links_checkout/sources/hop"
+# Exercise it in a fresh fixture so the complete transition runs again.
+hop_home="$TMPDIR/hop-home"
+hop_checkout="$TMPDIR/hop-checkout"
+mkdir -p "$hop_home" "$hop_checkout/agents/.agents/skills/example"
+ln -s "$links_checkout/sources/hop/../choice" "$hop_checkout/agents/.agents/skills/example/absolute-external"
+ln -s "../../../../../links-checkout/sources/hop/../choice" "$hop_checkout/agents/.agents/skills/example/relative-external-hop"
+ln -s "$hop_checkout/agents/.agents" "$hop_home/.agents"
+"$MIGRATE" "$hop_checkout" "$hop_home/.agents" --backup "$hop_home/backup"
+assert_equals 'correct external target' "$(<"$hop_home/.agents/skills/example/relative-external-hop")" 'external intermediate symlink is followed before dot-dot'
+assert_equals "$links_checkout/sources/hop/../choice" "$(readlink "$hop_home/.agents/skills/example/absolute-external")" 'absolute external link text remains unchanged'
 
 # A real OS write limit interrupts backup copying, before the legacy link is
 # exchanged. No implementation hooks or real installations are used.
@@ -165,7 +206,10 @@ assert_not_symlink "$failure_home/.agents"
 # normalize only the archived legacy package, then fast-forward its removal.
 transition_home="$TMPDIR/transition-home"
 transition_checkout="$TMPDIR/transition-checkout"
-mkdir -p "$transition_home" "$transition_checkout/agents/.agents/skills/vendor"
+mkdir -p "$transition_home" "$transition_checkout/agents/.agents/skills/vendor" \
+	"$transition_checkout/opencode/.config/opencode/skills/other-vendor"
+printf 'another provider\n' >"$transition_checkout/opencode/.config/opencode/skills/other-vendor/SKILL.md"
+ln -s /unavailable/other/provider "$transition_checkout/opencode/.config/opencode/skills/provider-link"
 printf 'tracked upstream\n' >"$transition_checkout/agents/.agents/skills/vendor/SKILL.md"
 printf '{}\n' >"$transition_checkout/agents/.agents/.skill-lock.json"
 printf 'original settings\n' >"$transition_checkout/settings.txt"
@@ -176,7 +220,7 @@ git -C "$transition_checkout" add .
 git -C "$transition_checkout" commit -qm 'legacy fixture'
 base=$(git -C "$transition_checkout" rev-parse HEAD)
 git -C "$transition_checkout" checkout -qb separation
-rm -rf "$transition_checkout/agents/.agents"
+rm -rf "$transition_checkout/agents/.agents" "$transition_checkout/opencode/.config/opencode/skills"
 mkdir -p "$transition_checkout/agents/.agents/skills/mine"
 printf 'own skill\n' >"$transition_checkout/agents/.agents/skills/mine/SKILL.md"
 git -C "$transition_checkout" add -A
@@ -189,11 +233,14 @@ printf 'untracked installation\n' >"$transition_checkout/agents/.agents/skills/l
 ln -s /unavailable/fixture/provider "$transition_checkout/agents/.agents/skills/provider"
 printf '{"chosen":"local"}\n' >"$transition_checkout/agents/.agents/.skill-lock.json"
 ln -s "$transition_checkout/agents/.agents" "$transition_home/.agents"
-"$MIGRATE" "$transition_checkout" "$transition_home/.agents" --backup "$transition_home/backup"
+"$MIGRATE" "$transition_checkout" "$transition_home/.agents" --backup "$transition_home/backup" \
+	--extra-skills "$transition_checkout/opencode/.config/opencode/skills"
 # Preserve the exact original package as well as the verified migration backup.
 mv "$transition_checkout/agents/.agents" "$transition_home/backup/checkout-original"
 git -C "$transition_checkout" restore --source=HEAD --worktree -- agents/.agents
 git -C "$transition_checkout" merge -q --ff-only separation
+assert_equals 'another provider' "$(<"$transition_home/.agents/skills/other-vendor/SKILL.md")" 'skills from another package survive removal'
+assert_equals '/unavailable/other/provider' "$(readlink "$transition_home/.agents/skills/provider-link")" 'another package source link is preserved'
 "$APPLY" "$transition_checkout" "$transition_home"
 "$APPLY" "$transition_checkout" "$transition_home"
 assert_equals 'local tracked edit' "$(<"$transition_home/.agents/skills/vendor/SKILL.md")" 'tracked local edit survives removal'
@@ -225,5 +272,10 @@ assert_equals 'local conflict' "$(<"$transition_home/.agents/skills/mine/SKILL.m
 # The current package must not distribute third-party skills even if patched.
 assert_equals 'jira-issue-formatting' "$(find "$ROOT_DIR/agents/.agents/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)" 'only independently maintained authorship remains'
 [[ ! -e "$ROOT_DIR/agents/.agents/.skill-lock.json" ]] || { echo 'FAIL: tracked installation lock remains' >&2; exit 1; }
+
+for dependency in article-summarizer coding-guidelines docx ppt-master skill-architect; do
+	path="$ROOT_DIR/opencode/.config/opencode/skills/$dependency"
+	[[ ! -e "$path" && ! -L "$path" ]] || { echo "FAIL: OpenCode still distributes $dependency" >&2; exit 1; }
+done
 
 printf 'external skills local installation tests passed\n'
