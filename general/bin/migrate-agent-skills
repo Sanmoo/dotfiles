@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+	printf 'Usage: %s LEGACY_LINK [DESTINATION]\n' "${0##*/}" >&2
+}
+
+if (($# < 1 || $# > 2)); then
+	usage
+	exit 2
+fi
+
+legacy_link=$1
+destination=${2:-$legacy_link}
+
+if [[ ! -L "$legacy_link" ]]; then
+	if [[ -d "$legacy_link" ]]; then
+		if [[ "$legacy_link" == "$destination" ]]; then
+			exit 0
+		fi
+		printf 'Refusing to migrate non-legacy directory: %s\n' "$legacy_link" >&2
+	else
+		printf 'Legacy agent directory is not a symlink or directory: %s\n' "$legacy_link" >&2
+	fi
+	exit 1
+fi
+
+source_dir=$(readlink "$legacy_link")
+if [[ "$source_dir" != /* ]]; then
+	source_dir="$(cd "$(dirname "$legacy_link")" && cd "$(dirname "$source_dir")" && pwd)/$(basename "$source_dir")"
+fi
+source_dir=$(cd "$source_dir" 2>/dev/null && pwd) || {
+	printf 'Legacy link target is unavailable: %s\n' "$source_dir" >&2
+	exit 1
+}
+
+if [[ ! -d "$source_dir" ]]; then
+	printf 'Legacy link target is not a directory: %s\n' "$source_dir" >&2
+	exit 1
+fi
+
+if [[ "$destination" != "$legacy_link" && ( -e "$destination" || -L "$destination" ) ]]; then
+	printf 'Migration destination already exists: %s\n' "$destination" >&2
+	exit 1
+fi
+
+parent=$(dirname "$destination")
+mkdir -p "$parent"
+
+if [[ "$destination" == "$legacy_link" ]]; then
+	temporary="$parent/.agents.migration.$$.tmp"
+	if [[ -e "$temporary" || -L "$temporary" ]]; then
+		printf 'Migration temporary path already exists: %s\n' "$temporary" >&2
+		exit 1
+	fi
+	if ! mv "$source_dir" "$temporary"; then
+		printf 'Could not stage the legacy directory for migration: %s\n' "$source_dir" >&2
+		exit 1
+	fi
+	if ! rm "$legacy_link"; then
+		mv "$temporary" "$source_dir" || true
+		printf 'Could not remove the legacy link: %s\n' "$legacy_link" >&2
+		exit 1
+	fi
+	if ! mv "$temporary" "$destination"; then
+		mv "$temporary" "$source_dir" || true
+		ln -s "$source_dir" "$legacy_link" || true
+		printf 'Could not install the real agent directory: %s\n' "$destination" >&2
+		exit 1
+	fi
+else
+	if ! mv "$source_dir" "$destination"; then
+		printf 'Could not move legacy directory to: %s\n' "$destination" >&2
+		exit 1
+	fi
+fi

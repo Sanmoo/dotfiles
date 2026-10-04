@@ -25,15 +25,28 @@ repository-specific `AGENTS.md` take precedence.
 
 ## Agent skills
 
-`agents/.agents/skills/` installs to `~/.agents/skills/`, the shared skills
-location that Pi discovers in every session. `~/.agents` is a symlink into this
-repository, so a new skill directory takes effect immediately; `stow agents` is
-only needed on a fresh machine.
+`agents/.agents/skills/` contains only skills authored in this repository. When
+applying the package, use Stow's `--no-folding` option so it links owned files
+into the real `~/.agents` directory without taking ownership of that shared
+directory. Skills installed from external sources and their lockfiles stay in
+`~/.agents` and are managed separately.
 
-Skills are vendored and tracked in Git, so adding one needs no `git add -f`. The
-exceptions are the machine-local symlinks that point outside the repository
-(`omarchy`, `orchestrated-work-companion`), which `agents/.agents/.gitignore`
-excludes.
+Apply the configuration with `stow --no-folding agents`. Install or update external skills
+using the tool and source you choose for that machine. The bootstrap does not
+download, update, or select external skills.
+
+If `~/.agents` is still a symlink to this checkout, migrate it before removing
+the old tracked files:
+
+```sh
+migrate-agent-skills ~/.agents
+```
+
+The command moves the linked directory before replacing the link with a real
+directory. It preserves regular files, untracked files, lockfiles, symlinks, and
+symlink destinations. It refuses an existing destination, treats an already-real
+directory as a safe no-op, and keeps the old state recoverable if an operation
+fails.
 
 A skill with `disable-model-invocation: true` in its frontmatter is kept out of
 the model's context and starts only when explicitly asked for with
