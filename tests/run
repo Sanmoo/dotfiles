@@ -366,17 +366,15 @@ report_unit() {
 	printf '%s\t%s\t%s\t%s\n' "$status" "$tier" "$duration" "$label" >"$RESULTS_DIR/result.$index"
 }
 
-# The unit list mirrors the launch order: fast files, then (only in a Full gate)
-# the slow files, then the Bun suite as one unit. TOTAL_UNITS includes the Bun
-# unit, so the list length proves no unit was lost.
+# The unit list is the launch order. A Full gate dispatches the slow-tier files
+# first: they are the longest individual units, so starting them first is the
+# longest-processing-time-first schedule that keeps the critical path (the
+# slowest file) off the end of the run. The fast files follow, then the Bun
+# suite as one unit. TOTAL_UNITS includes the Bun unit, so the list length
+# proves no unit was lost.
 UNIT_TIERS=()
 UNIT_LABELS=()
 UNIT_FILES=()
-for f in "${FAST_FILES[@]}"; do
-	UNIT_TIERS+=("fast")
-	UNIT_LABELS+=("$f")
-	UNIT_FILES+=("$f")
-done
 if [[ $MODE == full ]]; then
 	for f in "${SLOW_FILES[@]}"; do
 		UNIT_TIERS+=("slow")
@@ -384,6 +382,11 @@ if [[ $MODE == full ]]; then
 		UNIT_FILES+=("$f")
 	done
 fi
+for f in "${FAST_FILES[@]}"; do
+	UNIT_TIERS+=("fast")
+	UNIT_LABELS+=("$f")
+	UNIT_FILES+=("$f")
+done
 UNIT_TIERS+=("fast")
 UNIT_LABELS+=('pi/tests (bun test)')
 UNIT_FILES+=('')
