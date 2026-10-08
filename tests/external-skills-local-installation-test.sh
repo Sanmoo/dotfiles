@@ -28,9 +28,19 @@ assert_not_symlink() {
 home="$TMPDIR/home"
 mkdir -p "$home"
 
+# Real Stow refuses to stow a package tree that contains absolute symlinks, and
+# a machine with external skills installed locally has gitignored absolute
+# symlinks under agents/.agents/skills/ in the live checkout. Build a fixture
+# containing only the repository's tracked content and apply from that, so the
+# apply steps never see machine-local entries. The assertion at the end still
+# inspects the live checkout.
+fixture="$TMPDIR/fixture-checkout"
+mkdir -p "$fixture"
+git -C "$ROOT_DIR" archive HEAD agents | tar -x -C "$fixture"
+
 # Applying the package to a new home creates a real shared directory and only
 # links the repository-owned file into it.
-"$APPLY" "$ROOT_DIR" "$home"
+"$APPLY" "$fixture" "$home"
 assert_not_symlink "$home/.agents"
 assert_file "$home/.agents/README.md"
 
@@ -39,7 +49,7 @@ assert_file "$home/.agents/README.md"
 mkdir -p "$home/.agents/skills/vendor"
 printf 'installed dependency\n' >"$home/.agents/skills/vendor/SKILL.md"
 printf '{"local":true}\n' >"$home/.agents/.skill-lock.json"
-"$APPLY" "$ROOT_DIR" "$home"
+"$APPLY" "$fixture" "$home"
 assert_equals 'installed dependency' "$(<"$home/.agents/skills/vendor/SKILL.md")" \
 	'local dependency remains unchanged'
 assert_equals '{"local":true}' "$(<"$home/.agents/.skill-lock.json")" \
@@ -120,7 +130,7 @@ assert_equals 'conflicting origin' "$(<"$extra_source/vendor/SKILL.md")" 'additi
 
 # Applying configuration refuses legacy/unexpected directory links instead of
 # allowing Stow to write through them.
-if "$APPLY" "$ROOT_DIR" "$unexpected" >"$TMPDIR/apply-unexpected.out" 2>&1; then
+if "$APPLY" "$fixture" "$unexpected" >"$TMPDIR/apply-unexpected.out" 2>&1; then
 	echo 'FAIL: application accepted a symlinked shared directory' >&2; exit 1
 fi
 assert_equals 'untouched' "$(<"$unexpected/other/file")" 'application does not follow the link'
