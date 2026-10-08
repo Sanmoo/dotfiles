@@ -292,13 +292,18 @@ export default function (pi: ExtensionAPI) {
 		settingsPath = resolveSettingsPath(ctx.cwd);
 		if (!settingsPath) return; // No settings to protect
 
-		// Crash recovery: if .bak exists, restore from it first
+		// Crash recovery: restore only the keys this extension protects. Copying
+		// the whole snapshot back would revert unrelated settings, such as
+		// defaultTools, that were edited by hand while a session was running.
 		const bakPath = settingsPath + ".bak";
 		if (existsSync(bakPath)) {
-			const bakContent = readFileSync(bakPath, "utf-8");
-			const currentContent = readFileSync(settingsPath, "utf-8");
-			if (bakContent !== currentContent) {
-				writeFileSync(settingsPath, bakContent, "utf-8");
+			try {
+				restoreSettings(
+					settingsPath,
+					snapshotSettings(readSettings(bakPath)),
+				);
+			} catch {
+				// Unreadable snapshot: leave the current settings untouched.
 			}
 		}
 
