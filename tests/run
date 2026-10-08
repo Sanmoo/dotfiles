@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+#
+# tests/run — the single entry point for this repository's test suite.
+#
+# One invocation discovers and runs every test group:
+#
+#   tests/*-test.sh        shell tests
+#   general/bin/*.test     bash tests
+#   pi/tests               the Bun suite, run as one unit (`bun test pi/tests`)
+#
+# The repository root is resolved from this script's own location, so the
+# runner works from any current directory. Every unit is executed from the
+# repository root.
+#
+# Output: each unit reports its name and duration as it finishes; a failing
+# unit also prints its captured output. The run ends with a summary and the
+# total wall clock. There is no fail-fast: one run reports every failure.
+#
+# Exit status:
+#   0   every unit passed
+#   1   at least one unit failed (a red suite)
+#   2   the runner itself failed (missing tool, unreadable file, ...)
+#
+# Every unit runs with stdin closed and a hard per-unit timeout: several tests
+# in this repository block forever when stdin is left open. The runner never
+# sets or touches TMPDIR/TMP/TEMP for its children, because the Bun tests
+# create their scratch directories with mkdtempSync(tmpdir(), ...).
+
+set -uo pipefail
+
+# Hard per-unit timeout, in seconds.
+UNIT_TIMEOUT=300
+
+# ---------------------------------------------------------------------------
+# Environment and repository location
+# ---------------------------------------------------------------------------
+
+runner_error() {
+	printf 'tests/run: RUNNER ERROR: %s\n' "$1" >&2
+	exit 2
+}
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) ||
+	runner_error 'cannot resolve this script'"'"'s directory'
+
+ROOT_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd) ||
+	runner_error "cannot resolve the repository root from $SCRIPT_DIR"
+
+cd -- "$ROOT_DIR" || runner_error "cannot enter $ROOT_DIR"
+
+# ---------------------------------------------------------------------------
+# Clock
+# ---------------------------------------------------------------------------
+
+# Seconds since the epoch as a decimal number. EPOCHREALTIME (bash >= 5) is
+# read without forking; `date` is the fallback for older shells.
+NOW=""
+set_now() {
+	if [[ -n ${EPOCHREALTIME:-} ]]; then
+		NOW=$EPOCHREALTIME
+		return
+	fi
+	local t
+	t=$(date +%s.%N 2>/dev/null) || t=""
+	if [[ -n $t && $t != *N ]]; then
+		NOW=$t
+	else
+		NOW=$(date +%s)
+	fi
+}
+
+format_duration() { # <start-seconds> <end-seconds> -> "0.42"
+	awk -v a="$1" -v b="$2" 'BEGIN { printf "%.2f", b - a }'
+}
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
+# Every unit is bounded by `timeout`. Falling back to an unbounded run would
+# reintroduce the hang this runner exists to prevent, so a missing `timeout` is
+# a hard error rather than a degraded run.
+TIMEOUT_BIN=""
+for candidate in timeout gtimeout; do
+	if command -v "$candidate" >/dev/null 2>&1; then
+		TIMEOUT_BIN=$candidate
+		break
+	fi
+done
+[[ -n $TIMEOUT_BIN ]] ||
+	runner_error "the 'timeout' command is required to bound every test and was not found on PATH"
+
+BUN_BIN=""
+if command -v bun >/dev/null 2>&1; then
+	BUN_BIN=bun
+fi
+
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+
+shopt -s nullglob
+SHELL_TESTS=(tests/*-test.sh)
+BIN_TESTS=(general/bin/*.test)
+
+(( ${#SHELL_TESTS[@]} > 0 )) || runner_error 'no shell tests matched tests/*-test.sh'
+(( ${#BIN_TESTS[@]} > 0 )) || runner_error 'no bash tests matched general/bin/*.test'
+[[ -d pi/tests ]] || runner_error 'the Bun suite directory pi/tests is missing'
+[[ -n $BUN_BIN ]] ||
+	runner_error "the 'bun' tool is required to run the pi/tests group and was not found on PATH"
+
+for f in "${SHELL_TESTS[@]}" "${BIN_TESTS[@]}"; do
+	[[ -r $f ]] || runner_error "test file is not readable: $f"
+done
+
+TOTAL_UNITS=$(( ${#SHELL_TESTS[@]} + ${#BIN_TESTS[@]} + 1 ))
+
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
+
+TMP_DIR=$(mktemp -d) || runner_error 'cannot create a temporary directory'
+trap 'rm -rf -- "$TMP_DIR"' EXIT
+
+RESULTS_FILE="$TMP_DIR/results"
+: >"$RESULTS_FILE"
+UNIT_INDEX=0
+
+# run_unit <label> <command...>
+# Runs one unit with stdin closed and a hard timeout, prints its verdict, and
+# records it in RESULTS_FILE. A failing unit's captured output is printed; a
+# passing unit reports only its duration.
+run_unit() {
+	local label=$1
+	shift
+	UNIT_INDEX=$((UNIT_INDEX + 1))
+
+	local outfile="$TMP_DIR/unit.$UNIT_INDEX.out"
+	local start end rc status duration
+
+	set_now
+	start=$NOW
+	rc=0
+	"$TIMEOUT_BIN" "$UNIT_TIMEOUT" "$@" >"$outfile" 2>&1 </dev/null || rc=$?
+	set_now
+	end=$NOW
+	duration=$(format_duration "$start" "$end")
+
+	if (( rc == 0 )); then
+		status=PASS
+		printf 'PASS %s (%ss)\n' "$label" "$duration"
+	else
+		status=FAIL
+		printf 'FAIL %s (%ss, exit %d)\n' "$label" "$duration" "$rc"
+		printf '%s\n' '----- output -----'
+		cat -- "$outfile"
+		# Keep the end marker on its own line even when the captured output does
+		# not end with a newline (`tail -c 1` yields the final byte; command
+		# substitution strips it when it is a newline).
+		if [[ -s $outfile && -n $(tail -c 1 -- "$outfile") ]]; then
+			printf '\n'
+		fi
+		printf '%s\n' '--- end output ---'
+		printf '\n'
+	fi
+
+	printf '%s\t%s\t%s\t%s\n' "$status" "$duration" "$outfile" "$label" >>"$RESULTS_FILE"
+}
+
+printf 'tests/run: running %d units from %s\n\n' "$TOTAL_UNITS" "$ROOT_DIR"
+
+set_now
+TOTAL_START=$NOW
+
+for f in "${SHELL_TESTS[@]}"; do
+	run_unit "$f" bash "$f"
+done
+for f in "${BIN_TESTS[@]}"; do
+	run_unit "$f" bash "$f"
+done
+
+# The Bun suite is one unit: it is a single `bun test` process over pi/tests.
+run_unit 'pi/tests (bun test)' "$BUN_BIN" test pi/tests
+
+set_now
+TOTAL_END=$NOW
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+passed=0
+failed=0
+failed_labels=()
+recorded=0
+while IFS=$'\t' read -r status duration outfile label; do
+	recorded=$((recorded + 1))
+	if [[ $status == PASS ]]; then
+		passed=$((passed + 1))
+	else
+		failed=$((failed + 1))
+		failed_labels+=("$label")
+	fi
+done <"$RESULTS_FILE"
+
+(( recorded == TOTAL_UNITS )) ||
+	runner_error "recorded $recorded units but discovered $TOTAL_UNITS"
+
+total=$(format_duration "$TOTAL_START" "$TOTAL_END")
+
+printf '\n'
+if (( failed == 0 )); then
+	printf 'ALL PASSED: %d of %d units\n' "$passed" "$TOTAL_UNITS"
+else
+	printf 'FAILED: %d of %d units:\n' "$failed" "$TOTAL_UNITS"
+	for label in "${failed_labels[@]}"; do
+		printf '  - %s\n' "$label"
+	done
+fi
+printf 'total wall clock: %ss\n' "$total"
+
+if (( failed > 0 )); then
+	exit 1
+fi
+exit 0
