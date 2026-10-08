@@ -6,7 +6,7 @@
 
 **Blocked by:** 05
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Exactly `tests/http-oc-test.sh` and `general/bin/aws-console.test` carry the marker.
 - [ ] The bare invocation excludes slow-tier files; `--full` includes them.

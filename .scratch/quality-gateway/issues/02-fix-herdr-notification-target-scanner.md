@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Every `[[keys.command]]` block is evaluated at any section boundary, including when another binding follows it.
 - [ ] `tests/herdr-notification-target-test.sh` passes on `main`.

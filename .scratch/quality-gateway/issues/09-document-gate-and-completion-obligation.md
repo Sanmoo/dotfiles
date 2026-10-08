@@ -6,7 +6,7 @@
 
 **Blocked by:** 01, 02, 03, 06. The obligation is only meaningful once the Full gate can pass green.
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] The repository's `AGENTS.md` states the completion obligation, naming `tests/run --full` and the `FULL GATE: PASS` verdict line.
 - [ ] `general/AGENTS.md` is unchanged.

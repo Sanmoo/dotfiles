@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] The apply steps run against a fixture whose `agents` package contains only repository-tracked content.
 - [ ] The final assertion still checks the live checkout: only `jira-issue-formatting` is a real directory under the skills folder.

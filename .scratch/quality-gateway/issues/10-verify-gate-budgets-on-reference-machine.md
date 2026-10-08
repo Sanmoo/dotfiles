@@ -6,7 +6,7 @@
 
 **Blocked by:** 04, 07, 09
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] The Fast gate completes within 5 seconds, green, on the reference machine.
 - [ ] The Full gate completes within 12 seconds, green, on the reference machine.

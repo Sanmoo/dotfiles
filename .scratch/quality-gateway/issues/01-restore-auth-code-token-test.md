@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] `tests/auth-code-token-test.sh` passes on `main`.
 - [ ] The stub accepts the TLS context keyword and ignores it.

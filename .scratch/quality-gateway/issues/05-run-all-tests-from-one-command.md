@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] `tests/run` discovers and runs all three groups.
 - [ ] Each file's name and duration are printed, followed by the total wall clock.

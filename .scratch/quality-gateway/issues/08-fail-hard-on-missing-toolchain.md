@@ -6,7 +6,7 @@
 
 **Blocked by:** 05
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] With `bun` unavailable, `tests/run` exits non-zero.
 - [ ] Its message names `bun` and the `pi/tests` group it blocks.

@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] With the variable unset, a script sequence exceeding 10 seconds still fails with the existing execution-limit message.
 - [ ] With the variable set to 1, the same failure is reported in about one second.

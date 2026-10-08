@@ -6,7 +6,7 @@
 
 **Blocked by:** 05
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Test files run concurrently, with the default worker count equal to the available CPUs.
 - [ ] The caller can override the worker count.
