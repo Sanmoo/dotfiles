@@ -21,3 +21,4 @@ herdr/.config/herdr/session-snapshots/
 # binary
 myfin
 /general/bin/mt
+herdr/.config/herdr/.plugins.lock
