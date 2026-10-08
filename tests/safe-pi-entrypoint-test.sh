@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tier: slow
 # Tests for the sandbox entrypoint at its external boundaries.
 #
 # The entrypoint converges the declared environment with `mise`, puts the
