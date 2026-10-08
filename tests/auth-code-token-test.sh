@@ -23,7 +23,7 @@ module = importlib.util.module_from_spec(spec)
 loader.exec_module(module)
 
 module.serve_callback = lambda port, path, state, timeout: 'auth-code'
-module.post_form = lambda url, data: {
+module.post_form = lambda url, data, ssl_context=None: {
     'access_token': 'abc123',
     'refresh_token': 'refresh456',
     'token_type': 'Bearer',
