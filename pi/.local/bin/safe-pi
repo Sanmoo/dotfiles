@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+# safe-pi — run Pi in a throwaway Docker container.
+#
+# Installed by stow as part of the `pi` package. The script resolves its own
+# real path (following the stow symlink) to find the build context beside the
+# repository, builds the image on first use, and runs Pi in the container.
+# Script-owned flags are consumed; every other argument reaches Pi unchanged.
+set -euo pipefail
+
+readonly SCRIPT_NAME="safe-pi"
+readonly IMAGE_REPO="safe-pi"
+readonly SANDBOX_MARKER="SAFE_PI_SANDBOX"
+
+usage() {
+	cat <<'USAGE'
+Usage: safe-pi [safe-pi flags] [--] [pi arguments...]
+
+Run Pi in a throwaway Docker container that sees the current directory.
+
+Script flags (never forwarded to Pi):
+  --rebuild   rebuild the current image tag with the version it already has
+  --update    resolve the latest Pi release and re-point the current tag
+  --shell     start a shell in the sandbox instead of Pi
+  --dry-run   print the Docker invocation and exit
+  help        print this message
+
+-h, --help, and --version are forwarded to Pi.
+USAGE
+}
+
+# Preflight failures (usage, root, missing Docker, missing build context).
+die() {
+	printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+	exit 2
+}
+
+# --- Re-entry guard -----------------------------------------------------------
+# The wrapper exports this marker into the container. Seeing it means we are
+# already inside the sandbox, so run Pi directly instead of nesting containers.
+if [[ -n "${!SANDBOX_MARKER-}" ]]; then
+	exec pi "$@"
+fi
+
+# --- Parse script-owned flags -------------------------------------------------
+MODE="run"
+REBUILD=0
+UPDATE=0
+DRY_RUN=0
+pi_args=()
+
+if [[ "${1-}" == "help" ]]; then
+	usage
+	exit 0
+fi
+
+while (($#)); do
+	case "$1" in
+	--)
+		shift
+		pi_args+=("$@")
+		break
+		;;
+	--rebuild)
+		REBUILD=1
+		shift
+		;;
+	--update)
+		UPDATE=1
+		shift
+		;;
+	--shell)
+		MODE="shell"
+		shift
+		;;
+	--dry-run)
+		DRY_RUN=1
+		shift
+		;;
+	*)
+		pi_args+=("$1")
+		shift
+		;;
+	esac
+done
+
+if ((REBUILD && UPDATE)); then
+	die "use either --rebuild or --update, not both"
+fi
+
+# --- Preflight ----------------------------------------------------------------
+if [[ "$(id -u)" -eq 0 ]]; then
+	die "refusing to run as root; container file ownership depends on your uid"
+fi
+
+# Resolve the build context through the installed symlink. `readlink -f`
+# follows the stow symlink into the repository; deriving the directory from
+# BASH_SOURCE alone would point at the installed location.
+resolve_build_context() {
+	local override="${SAFE_PI_BUILD_CONTEXT-}"
+	if [[ -n "$override" ]]; then
+		if [[ -f "$override" ]]; then
+			DOCKERFILE="$(readlink -f "$override")"
+			BUILD_CONTEXT="$(dirname "$DOCKERFILE")"
+		elif [[ -d "$override" ]]; then
+			BUILD_CONTEXT="$(readlink -f "$override")"
+			DOCKERFILE="$BUILD_CONTEXT/Dockerfile"
+		else
+			die "SAFE_PI_BUILD_CONTEXT points at '$override', which does not exist"
+		fi
+		return
+	fi
+
+	local script_real script_dir repo_root
+	script_real="$(readlink -f "${BASH_SOURCE[0]}")"
+	script_dir="$(dirname "$script_real")"
+	repo_root="$(cd "$script_dir/../../.." 2>/dev/null && pwd)" || repo_root=""
+	BUILD_CONTEXT="${repo_root:+$repo_root/safe-pi}"
+	DOCKERFILE="${BUILD_CONTEXT:+$BUILD_CONTEXT/Dockerfile}"
+}
+
+resolve_build_context
+if [[ ! -f "$DOCKERFILE" ]]; then
+	die "cannot find the safe-pi build context (expected $DOCKERFILE); the script was probably copied instead of installed by stow — set SAFE_PI_BUILD_CONTEXT to its Dockerfile or directory"
+fi
+
+# --- Image identity -----------------------------------------------------------
+CURRENT_TAG="$IMAGE_REPO:current-u$(id -u)"
+
+version_tag() {
+	printf '%s:pi-%s-u%s' "$IMAGE_REPO" "$1" "$(id -u)"
+}
+
+image_exists() {
+	docker image inspect "$1" >/dev/null 2>&1
+}
+
+image_pi_version() {
+	docker image inspect --format '{{ index .Config.Labels "safe-pi.pi.version" }}' "$1" 2>/dev/null
+}
+
+build_image() { # $1 = tag, $2 = optional Pi version
+	local tag="$1" version="${2-}"
+	local args=(
+		build
+		--tag "$tag"
+		--build-arg "UID=$(id -u)"
+		--build-arg "GID=$(id -g)"
+		--build-arg "USERNAME=$(id -un)"
+	)
+	if [[ -n "$version" ]]; then
+		args+=(--build-arg "PI_VERSION=$version")
+	fi
+	args+=(--file "$DOCKERFILE" "$BUILD_CONTEXT")
+	docker "${args[@]}"
+}
+
+# Record the baked Pi version as its own tag, so --update can reuse it.
+tag_baked_version() {
+	local version
+	version="$(image_pi_version "$CURRENT_TAG" || true)"
+	if [[ -n "$version" ]]; then
+		docker tag "$CURRENT_TAG" "$(version_tag "$version")"
+	fi
+}
+
+resolve_latest_pi_version() {
+	npm view @earendil-works/pi-coding-agent version 2>/dev/null | tail -n1
+}
+
+# --- Resolve the Docker invocation before touching Docker ---------------------
+run_args=(
+	run
+	--rm
+)
+if [[ -t 0 && -t 1 ]]; then
+	run_args+=(--interactive --tty)
+fi
+run_args+=(
+	--workdir "$PWD"
+	--volume "$PWD:$PWD"
+	--env "$SANDBOX_MARKER=1"
+	"$CURRENT_TAG"
+)
+if [[ "$MODE" == "shell" ]]; then
+	run_args+=(bash)
+else
+	run_args+=(pi)
+fi
+if ((${#pi_args[@]})); then
+	run_args+=("${pi_args[@]}")
+fi
+
+# --- Dry run: print the invocation without touching Docker --------------------
+if ((DRY_RUN)); then
+	printf 'docker'
+	printf ' %q' "${run_args[@]}"
+	printf '\n'
+	exit 0
+fi
+
+# --- Docker presence ----------------------------------------------------------
+if ! command -v docker >/dev/null 2>&1; then
+	die "Docker is not installed or not on PATH"
+fi
+if ! docker info >/dev/null 2>&1; then
+	die "cannot reach the Docker daemon; is it running and accessible to you?"
+fi
+
+# --- Build only when the current tag is absent --------------------------------
+if ((UPDATE)); then
+	latest="$(resolve_latest_pi_version)" || latest=""
+	if [[ -z "$latest" ]]; then
+		printf '%s: could not resolve the latest Pi release with npm\n' "$SCRIPT_NAME" >&2
+		exit 1
+	fi
+	latest_tag="$(version_tag "$latest")"
+	if ! image_exists "$latest_tag"; then
+		build_image "$latest_tag" "$latest"
+	fi
+	docker tag "$latest_tag" "$CURRENT_TAG"
+elif ((REBUILD)); then
+	version="$(image_pi_version "$CURRENT_TAG" || true)"
+	build_image "$CURRENT_TAG" "$version"
+	tag_baked_version
+elif ! image_exists "$CURRENT_TAG"; then
+	build_image "$CURRENT_TAG"
+	tag_baked_version
+fi
+
+# --- Version drift ------------------------------------------------------------
+# Surface a difference between the image's baked Pi and the host's Pi, so
+# following Pi releases on the host does not silently diverge from the sandbox.
+warn_on_version_drift() {
+	local baked host_version
+	baked="$(image_pi_version "$CURRENT_TAG" || true)"
+	[[ -n "$baked" ]] || return 0
+	command -v pi >/dev/null 2>&1 || return 0
+	host_version="$(pi --version 2>/dev/null || true)"
+	host_version="${host_version##* }"
+	[[ -n "$host_version" ]] || return 0
+	if [[ "$host_version" != "$baked" ]]; then
+		printf '%s: warning: the image has Pi %s but the host has Pi %s; run safe-pi --update to refresh the image\n' \
+			"$SCRIPT_NAME" "$baked" "$host_version" >&2
+	fi
+}
+
+# --- Run Pi in the container --------------------------------------------------
+warn_on_version_drift
+docker "${run_args[@]}"
