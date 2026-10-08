@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tier: slow
 set -euo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/general/bin/http"
