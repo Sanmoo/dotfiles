@@ -61,7 +61,9 @@ case "$cmd" in
 		}
 		tag="${*: -1}"
 		if grep -Fxq -- "$tag" <<<"${SAFE_PI_FAKE_IMAGES:-}"; then
-			if [[ " $* " == *" --format "* ]]; then
+			if [[ "$*" == *"safe-pi.entrypoint"* ]]; then
+				printf '%s\n' "${SAFE_PI_FAKE_ENTRYPOINT-}"
+			elif [[ " $* " == *" --format "* ]]; then
 				printf '%s\n' "${SAFE_PI_FAKE_PI_VERSION:-1.1.0}"
 			fi
 			exit 0
@@ -108,6 +110,7 @@ reset_stubs() {
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
+	FAKE_ENTRYPOINT="1"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]
@@ -145,6 +148,7 @@ run_safe_pi() {
 			SAFE_PI_FAKE_DOCKER_UP="${FAKE_DOCKER_UP-1}" \
 			SAFE_PI_FAKE_RUN_STATUS="${FAKE_RUN_STATUS-0}" \
 			SAFE_PI_FAKE_HOST_PI_VERSION="${FAKE_HOST_PI_VERSION-}" \
+			SAFE_PI_FAKE_ENTRYPOINT="${FAKE_ENTRYPOINT-1}" \
 			"$bash_bin" "${SAFE_PI_TEST_SCRIPT:-$SCRIPT}" "$@"
 	)
 }
@@ -253,6 +257,31 @@ run_safe_pi --update || fail "update reuse run failed"
 assert_no_log "docker build"
 assert_log "docker tag safe-pi:pi-3.3.3-u$uid $current_tag"
 assert_log "docker run --rm"
+
+# An image built before the entrypoint existed is rebuilt, rather than run
+# without convergence; a stale version tag is not reused by --update either.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_ENTRYPOINT=""
+run_safe_pi -c 2>"$tmpdir/stale.err" || fail "stale image run failed"
+assert_log "docker build --tag $current_tag"
+assert_log "--build-arg PI_VERSION=1.1.0"
+assert_log "docker run --rm"
+grep -Fq "entrypoint" "$tmpdir/stale.err" || fail "stale image rebuild should say why"
+
+reset_stubs
+FAKE_IMAGES="$current_tag
+safe-pi:pi-3.3.3-u$uid"
+FAKE_ENTRYPOINT=""
+FAKE_LATEST_PI="3.3.3"
+run_safe_pi --update || fail "stale version tag update failed"
+assert_log "docker build --tag safe-pi:pi-3.3.3-u$uid"
+
+# A current image with the entrypoint is not rebuilt.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+run_safe_pi -c || fail "current image run failed"
+assert_no_log "docker build"
 
 # A normal run performs no version lookup.
 reset_stubs
@@ -538,7 +567,7 @@ SAFE_PI_TEST_HOME="$dry_home" \
 	run_safe_pi --dry-run -c >/dev/null || fail "dry run failed"
 [[ ! -e "$dry_home/.pi" ]] || fail "dry run created \$HOME/.pi on the host"
 
-# --- Prepare converges the declared toolchain and never starts Pi -------------
+# --- Prepare converges the declared environment and never starts Pi -------------
 
 reset_stubs
 FAKE_IMAGES="$current_tag"

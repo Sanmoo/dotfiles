@@ -21,7 +21,7 @@ Script flags (never forwarded to Pi):
   --rebuild   rebuild the current image tag with the version it already has
   --update    resolve the latest Pi release and re-point the current tag
   --shell     start a shell in the sandbox instead of Pi
-  --prepare   converge the declared toolchain and exit without starting Pi
+  --prepare   converge the declared environment and exit without starting Pi
   --dry-run   print the Docker invocation and exit
   help        print this message
 
@@ -46,7 +46,6 @@ fi
 MODE="run"
 REBUILD=0
 UPDATE=0
-PREPARE=0
 DRY_RUN=0
 pi_args=()
 
@@ -71,11 +70,13 @@ while (($#)); do
 		shift
 		;;
 	--shell)
+		[[ "$MODE" != "prepare" ]] || die "use either --prepare or --shell, not both"
 		MODE="shell"
 		shift
 		;;
 	--prepare)
-		PREPARE=1
+		[[ "$MODE" != "shell" ]] || die "use either --prepare or --shell, not both"
+		MODE="prepare"
 		shift
 		;;
 	--dry-run)
@@ -92,10 +93,8 @@ done
 if ((REBUILD && UPDATE)); then
 	die "use either --rebuild or --update, not both"
 fi
-if ((PREPARE)); then
-	[[ "$MODE" != "shell" ]] || die "use either --prepare or --shell, not both"
-	((${#pi_args[@]} == 0)) || die "--prepare converges the toolchain and starts nothing, so it takes no Pi arguments"
-	MODE="prepare"
+if [[ "$MODE" == "prepare" ]] && ((${#pi_args[@]})); then
+	die "--prepare converges the declared environment and starts nothing, so it takes no Pi arguments"
 fi
 
 # --- Preflight ----------------------------------------------------------------
@@ -152,6 +151,12 @@ image_exists() {
 
 image_pi_version() {
 	docker image inspect --format '{{ index .Config.Labels "safe-pi.pi.version" }}' "$1" 2>/dev/null
+}
+
+# Images built before the entrypoint existed carry no label, and would run
+# without converging the declared environment, so they count as stale.
+image_has_entrypoint() {
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "1" ]]
 }
 
 build_image() { # $1 = tag, $2 = optional Pi version
@@ -323,7 +328,7 @@ run_args+=("${mount_args[@]}")
 run_args+=(--tmpfs /tmp)
 run_args+=("${env_args[@]}")
 run_args+=("$CURRENT_TAG")
-# The image's entrypoint converges the declared toolchain before whatever
+# The image's entrypoint converges the declared environment before whatever
 # command follows the image name runs.
 case "$MODE" in
 shell)
@@ -357,7 +362,7 @@ if ! docker info >/dev/null 2>&1; then
 	die "cannot reach the Docker daemon; is it running and accessible to you?"
 fi
 
-# --- Build only when the current tag is absent --------------------------------
+# --- Build only when the current tag is absent or stale -----------------------
 if ((UPDATE)); then
 	latest="$(resolve_latest_pi_version)" || latest=""
 	if [[ -z "$latest" ]]; then
@@ -365,7 +370,7 @@ if ((UPDATE)); then
 		exit 1
 	fi
 	latest_tag="$(version_tag "$latest")"
-	if ! image_exists "$latest_tag"; then
+	if ! image_exists "$latest_tag" || ! image_has_entrypoint "$latest_tag"; then
 		build_image "$latest_tag" "$latest"
 	fi
 	docker tag "$latest_tag" "$CURRENT_TAG"
@@ -375,6 +380,11 @@ elif ((REBUILD)); then
 	tag_baked_version
 elif ! image_exists "$CURRENT_TAG"; then
 	build_image "$CURRENT_TAG"
+	tag_baked_version
+elif ! image_has_entrypoint "$CURRENT_TAG"; then
+	printf '%s: the current image predates the declared-environment entrypoint; rebuilding it\n' "$SCRIPT_NAME" >&2
+	version="$(image_pi_version "$CURRENT_TAG" || true)"
+	build_image "$CURRENT_TAG" "$version"
 	tag_baked_version
 fi
 

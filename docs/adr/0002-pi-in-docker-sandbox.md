@@ -18,5 +18,6 @@ Pi had the run of the home directory: every command the agent ran could read or 
 - The sandbox is a filesystem boundary, not a credential boundary: it reads every credential and session in the mounted agent directory.
 - Starting a sandbox depends on the network only when the declaration has something to install. Each start first probes the declaration, so an installed toolchain starts silently and works offline; a missing tool that cannot be fetched is a warning, not a block, unless the strict prepare mode is used.
 - The toolchain volume holds mise's cache and state as well as its installs. An interrupted install is then recorded and cleaned up on the next start, instead of looking complete, and `latest` pins resolve from the cache without a network round trip.
+- An image built before the entrypoint existed is rebuilt on its next use, since running it would start Pi without converging the declared environment.
 - Pi updates are explicit (`safe-pi --update`), so the image's Pi can lag the host's; the wrapper warns when the versions differ.
 - `pi install` and `pi update` do not work inside the sandbox by design; the host stays the place where Pi packages are managed.

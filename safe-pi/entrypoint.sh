@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# safe-pi entrypoint — converge the declared toolchain, then run the command.
+# safe-pi entrypoint — converge the declared environment, then run the command.
 #
 # The image's entrypoint, so every sandbox start (Pi, the debug shell, or a
 # prepare run) goes through the same convergence:
 #
-#   1. converges the toolchain declared in the mounted mise configuration, plus
+#   1. converges the environment declared in the mounted mise configuration, plus
 #      the working repository's own pins, into the toolchain volume;
 #   2. puts the declared tools' shims ahead of the image's own binaries;
 #   3. before a Pi start, checks that the Node Pi will run on satisfies Pi's
@@ -53,13 +53,17 @@ fi
 # --- Declared tools first on PATH ---------------------------------------------
 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
 export MISE_DATA_DIR
+# Mise's cache and state belong in the volume too: state there is what lets an
+# interrupted install be recognised on the next start.
+export MISE_CACHE_DIR="${MISE_CACHE_DIR:-$MISE_DATA_DIR/cache}"
+export MISE_STATE_DIR="${MISE_STATE_DIR:-$MISE_DATA_DIR/state}"
 export PATH="$MISE_DATA_DIR/shims:$PATH"
 
 # The working repository's own mise configuration is honoured because the
 # sandbox is the boundary: Pi already runs whatever the repository contains.
 export MISE_TRUSTED_CONFIG_PATHS="$PWD${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
 
-# --- Converge the declared toolchain ------------------------------------------
+# --- Converge the declared environment ------------------------------------------
 # Converges the configuration that applies in DIR. The probe is silent and
 # fast when everything is installed, so a steady start prints nothing; the
 # install runs, with its progress, only when something is missing.
@@ -75,7 +79,7 @@ converge_in() {
 # The volume may be converged by several containers at once. The lock
 # serializes them, so the second one waits and then finds everything installed.
 converge() {
-	local lock="$MISE_DATA_DIR/.safe-pi-converge.lock"
+	local lock="$MISE_DATA_DIR/.safe-pi-converge.lock" status=0
 	mkdir -p "$MISE_DATA_DIR"
 	(
 		exec 9>"$lock"
@@ -83,7 +87,6 @@ converge() {
 			printf '%s: waiting for another sandbox to finish converging the toolchain\n' "$SCRIPT_NAME" >&2
 			flock 9
 		fi
-		status=0
 		# The declaration applies everywhere, so it converges from home. The
 		# repository's own pins follow; where they override a declared tool, mise
 		# installs the pinned version alongside the declared one. Both steps run
@@ -119,15 +122,16 @@ check_pi_engine() {
 	node -e '
 		const semver = require(process.argv[1]);
 		const pkg = require(process.argv[2]);
+		const name = process.argv[3];
 		const range = pkg.engines && pkg.engines.node;
 		if (!range || semver.satisfies(process.version, range)) process.exit(0);
 		console.error(
-			"safe-pi: refusing to start Pi: node " + process.version +
+			name + ": refusing to start Pi: node " + process.version +
 			" does not satisfy the engine requirement of Pi " + pkg.version +
 			" (node " + range + ")"
 		);
 		process.exit(1);
-	' "$semver" "$pi_package/package.json"
+	' "$semver" "$pi_package/package.json" "$SCRIPT_NAME"
 }
 
 if ((run_pi)); then

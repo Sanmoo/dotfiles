@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for the sandbox entrypoint at its external boundaries.
 #
-# The entrypoint converges the declared toolchain with `mise`, puts the
+# The entrypoint converges the declared environment with `mise`, puts the
 # declared shims ahead of the image's binaries, checks Pi's Node engine
 # requirement, and then runs the command. This harness runs the real script
 # with stubs for `mise`, `pi`, and `npm` on a controlled PATH and asserts on
@@ -43,8 +43,9 @@ if [[ " $* " == *" --dry-run-code "* ]]; then
 	exit 0
 fi
 printf 'mise-begin\n' >>"$log"
-printf 'mise %s cwd=%s trusted=%s data=%s\n' "$*" "$PWD" \
-	"${MISE_TRUSTED_CONFIG_PATHS-}" "${MISE_DATA_DIR-}" >>"$log"
+printf 'mise %s cwd=%s trusted=%s data=%s cache=%s state=%s\n' "$*" "$PWD" \
+	"${MISE_TRUSTED_CONFIG_PATHS-}" "${MISE_DATA_DIR-}" \
+	"${MISE_CACHE_DIR-}" "${MISE_STATE_DIR-}" >>"$log"
 sleep "${SAFE_PI_FAKE_MISE_SLEEP:-0}"
 printf 'mise-end\n' >>"$log"
 if [[ -n "${SAFE_PI_FAKE_MISE_FAIL_CWD-}" && "$PWD" == "$SAFE_PI_FAKE_MISE_FAIL_CWD" ]]; then
@@ -183,6 +184,9 @@ run_entrypoint pi --version || fail "start with a converged toolchain failed"
 assert_call "mise install --yes cwd=$home"
 assert_call "mise install --yes cwd=$workdir"
 assert_call "data=$data"
+# Cache and state sit in the volume even when the wrapper does not set them,
+# so the image run directly still keeps its mise state where it survives.
+assert_call "cache=$data/cache state=$data/state"
 assert_call "trusted=$workdir"
 assert_call "pi --version"
 
@@ -226,7 +230,7 @@ assert_call "trusted=$workdir:/elsewhere"
 
 # --- The declaration converges even when a repository pin fails -----------------
 # A repository that pins a tool the declaration also names must not stop the
-# declared toolchain from converging, and the failure is still reported.
+# declared environment from converging, and the failure is still reported.
 reset_stubs
 FAKE_MISE_FAIL_CWD="$workdir"
 fail_status="$(status_of run_entrypoint --prepare 2>"$tmpdir/pin.err")"

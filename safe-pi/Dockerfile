@@ -4,7 +4,7 @@
 #
 # The image provides Pi, mise, and the base utilities Pi probes for and the
 # sandbox needs. It carries no credentials, no host paths, and no Docker
-# socket; the wrapper mounts those at run time. The declared toolchain is not
+# socket; the wrapper mounts those at run time. The declared environment is not
 # baked in: the entrypoint installs it into a named volume on every start.
 #
 # Build arguments:
@@ -28,6 +28,7 @@ ARG GID=1000
 ARG USERNAME=sandbox
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
+      safe-pi.entrypoint="1" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \
@@ -103,7 +104,7 @@ RUN set -eux; \
         "/home/${USERNAME}/.local/share/mise"; \
     install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/ssh-agent.sock
 
-# The entrypoint converges the declared toolchain into the volume, puts its
+# The entrypoint converges the declared environment into the volume, puts its
 # shims ahead of the image's binaries, checks Pi's Node requirement, and then
 # runs the command. Every start goes through it, including the debug shell.
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/safe-pi-entrypoint
