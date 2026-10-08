@@ -7,6 +7,9 @@
   "extensions": [
     "-builtin:mcp"
   ],
+  "defaultTools": [
+    "+codemode"
+  ],
   "packages": [
     "npm:pi-subagents",
     "npm:@juicesharp/rpiv-todo",
