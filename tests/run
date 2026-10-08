@@ -18,21 +18,26 @@
 #
 #   # tier: slow
 #
-# as a comment beginning at the start of a line, conventionally on the line
-# next to the shebang. The marker is read from anywhere in the file, so a
-# marker placed below the header is honoured rather than silently ignored.
-# The `tier` keyword is matched case-insensitively, so a typo like `# Tier:` is
-# reported rather than silently ignored; the value must be exactly `slow` or
-# `fast`. The accepted values are:
+# as a comment line in the file's header, conventionally on the line next to
+# the shebang. The header is the leading run of blank and comment (`#`) lines,
+# allowing an optional `#!` shebang as the first line; it ends at the first line
+# that is neither blank nor a comment. A `# tier:` line anywhere after the
+# header is not a marker and is ignored, so a stray marker in the body of a test
+# never silently reclassifies it. Within the header, a comment whose keyword
+# contains `tier` (case-insensitively) but is not exactly `tier` — a typo such as
+# `# tiers: slow` — is a malformed marker, not prose. The `tier` keyword is
+# matched case-insensitively, so `# Tier: slow` is the marker it looks like; the
+# value must be exactly `slow` or `fast`. The accepted values are:
 #
 #   # tier: slow   slow tier: excluded from the Fast gate, included by --full
 #   # tier: fast   fast tier: an explicit statement of the default below
 #   (no marker)    fast tier
 #
-# Any other value (`# tier: sloww`), a marker with no value (`# tier:`), or two
-# conflicting tier markers in one file is a RUNNER ERROR: the runner prints a
-# message naming the file, the line and the offending value, and exits 2. A
-# malformed marker is never silently treated as fast.
+# Any other value (`# tier: sloww`), a marker with no value (`# tier:`), two
+# conflicting tier markers in one file, or a header comment whose keyword merely
+# contains `tier` (`# tiers: slow`) is a RUNNER ERROR: the runner prints a
+# message naming the file, the line and the offending keyword or value, and
+# exits 2. A malformed marker is never silently treated as fast.
 #
 # `--full` runs the union of both tiers: the slow files are appended to the
 # fast file list discovered in the same pass, so the Full gate's file set is a
@@ -234,21 +239,45 @@ done
 # Tier classification
 # ---------------------------------------------------------------------------
 
-# The marker is a column-start comment `# tier: VALUE`. FILE_TIER is set by
-# tier_of rather than printed, so that a malformed marker can abort the whole
-# run (a runner_error inside a command substitution would only exit the
-# subshell and silently degrade to the fast tier).
+# The marker is a comment line `# tier: VALUE` in the file's header. The header
+# is the leading run of blank and comment (`#`) lines, with an optional `#!`
+# shebang as the first line; scanning stops at the first line that is neither
+# blank nor a comment, so a marker after the header is ignored rather than
+# honoured. FILE_TIER is set by tier_of rather than printed, so that a malformed
+# marker can abort the whole run (a runner_error inside a command substitution
+# would only exit the subshell and silently degrade to the fast tier).
 FILE_TIER=fast
 tier_of() { # <file> -> sets FILE_TIER; a malformed marker is a runner error
 	local file=$1
-	local marker lineno text value tier=''
-	while IFS= read -r marker; do
-		[[ -n $marker ]] || continue
-		lineno=${marker%%:*}
-		text=${marker#*:}
+	local line='' lineno=0 text='' key='' value='' tier=''
+	while IFS= read -r line || [[ -n $line ]]; do
+		lineno=$(( lineno + 1 ))
+		# A blank line keeps the header open; an indented comment is still a
+		# comment line, and a shebang (`#!`) is a comment by construction.
+		text=${line#"${line%%[![:space:]]*}"}
+		case $text in
+		'') continue ;;
+		'#'*) ;;
+		*) break ;;
+		esac
+		text=${text#'#'}
+		# Only a comment carrying a key (the text before its first colon) can be
+		# a tier marker; every other header comment is prose.
+		[[ $text == *:* ]] || continue
+		key=${text%%:*}
+		key=${key#"${key%%[![:space:]]*}"}
+		key=${key%"${key##*[![:space:]]}"}
 		value=${text#*:}
 		value=${value#"${value%%[![:space:]]*}"}
 		value=${value%"${value##*[![:space:]]}"}
+		if [[ ${key,,} != tier ]]; then
+			# A keyword that merely contains `tier` is a malformed marker, not
+			# prose: `# tiers: slow` must never be silently ignored.
+			if [[ ${key,,} == *tier* ]]; then
+				runner_error "$file:$lineno: malformed tier marker keyword '$key' in '$line'; the keyword must be exactly 'tier' (use '# tier: slow' or '# tier: fast')"
+			fi
+			continue
+		fi
 		case $value in
 		slow | fast) ;;
 		'') runner_error "$file:$lineno: tier marker has no value ('# tier:'); use '# tier: slow' or '# tier: fast'" ;;
@@ -258,7 +287,7 @@ tier_of() { # <file> -> sets FILE_TIER; a malformed marker is a runner error
 			runner_error "$file:$lineno: conflicting tier markers ('$tier' and '$value')"
 		fi
 		tier=$value
-	done < <(grep -n -E '^#[[:space:]]*[Tt][Ii][Ee][Rr][[:space:]]*:' -- "$file" || true)
+	done <"$file"
 	FILE_TIER=${tier:-fast}
 }
 
