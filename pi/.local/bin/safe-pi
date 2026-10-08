@@ -21,6 +21,7 @@ Script flags (never forwarded to Pi):
   --rebuild   rebuild the current image tag with the version it already has
   --update    resolve the latest Pi release and re-point the current tag
   --shell     start a shell in the sandbox instead of Pi
+  --prepare   converge the declared toolchain and exit without starting Pi
   --dry-run   print the Docker invocation and exit
   help        print this message
 
@@ -45,6 +46,7 @@ fi
 MODE="run"
 REBUILD=0
 UPDATE=0
+PREPARE=0
 DRY_RUN=0
 pi_args=()
 
@@ -72,6 +74,10 @@ while (($#)); do
 		MODE="shell"
 		shift
 		;;
+	--prepare)
+		PREPARE=1
+		shift
+		;;
 	--dry-run)
 		DRY_RUN=1
 		shift
@@ -85,6 +91,11 @@ done
 
 if ((REBUILD && UPDATE)); then
 	die "use either --rebuild or --update, not both"
+fi
+if ((PREPARE)); then
+	[[ "$MODE" != "shell" ]] || die "use either --prepare or --shell, not both"
+	((${#pi_args[@]} == 0)) || die "--prepare converges the toolchain and starts nothing, so it takes no Pi arguments"
+	MODE="prepare"
 fi
 
 # --- Preflight ----------------------------------------------------------------
@@ -190,6 +201,10 @@ GIT_CONFIG_FILE="$HOME/.gitconfig"
 CONTAINER_SESSION_DIR="/run/safe-pi/sessions"
 CONTAINER_MISE_CONFIG_DIR="$HOME/.config/mise"
 CONTAINER_MISE_DATA_DIR="$HOME/.local/share/mise"
+# Mise's cache sits inside the toolchain volume, so remote version lookups
+# survive container restarts instead of being refetched on every start.
+CONTAINER_MISE_CACHE_DIR="$CONTAINER_MISE_DATA_DIR/cache"
+CONTAINER_MISE_STATE_DIR="$CONTAINER_MISE_DATA_DIR/state"
 CONTAINER_SSH_SOCK="/run/safe-pi/ssh-agent.sock"
 
 # Pi groups sessions by working directory. The container-only sessions path
@@ -267,6 +282,8 @@ forward_env() { # names to forward from this process's environment
 env_args=(--env "$SANDBOX_MARKER=1")
 forward_env HOME USER LANG LC_ALL LC_CTYPE TERM TZ
 env_args+=(--env "MISE_DATA_DIR=$CONTAINER_MISE_DATA_DIR")
+env_args+=(--env "MISE_CACHE_DIR=$CONTAINER_MISE_CACHE_DIR")
+env_args+=(--env "MISE_STATE_DIR=$CONTAINER_MISE_STATE_DIR")
 env_args+=(--env "PI_CODING_AGENT_SESSION_DIR=$CONTAINER_PROJECT_SESSION_DIR")
 forward_env HERDR_ENV HERDR_SOCKET_PATH HERDR_PANE_ID
 # The SSH agent socket is mounted only when the host provides one.
@@ -306,12 +323,20 @@ run_args+=("${mount_args[@]}")
 run_args+=(--tmpfs /tmp)
 run_args+=("${env_args[@]}")
 run_args+=("$CURRENT_TAG")
-if [[ "$MODE" == "shell" ]]; then
+# The image's entrypoint converges the declared toolchain before whatever
+# command follows the image name runs.
+case "$MODE" in
+shell)
 	build_shell_banner
 	run_args+=(bash -c "$SHELL_BANNER")
-else
+	;;
+prepare)
+	run_args+=(--prepare)
+	;;
+*)
 	run_args+=(pi)
-fi
+	;;
+esac
 if ((${#pi_args[@]})); then
 	run_args+=("${pi_args[@]}")
 fi
@@ -376,5 +401,7 @@ warn_on_version_drift() {
 mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR"
 
 # --- Run Pi in the sandbox ----------------------------------------------------
-warn_on_version_drift
+if [[ "$MODE" != "prepare" ]]; then
+	warn_on_version_drift
+fi
 docker "${run_args[@]}"

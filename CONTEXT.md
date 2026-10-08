@@ -59,7 +59,7 @@ The set of tool versions the sandbox installs, read from the repository's tracke
 _Avoid_: dev environment, toolchain (when meaning the declaration)
 
 **Toolchain volume**:
-The named Docker volume that keeps the declared environment's installed tools across sandbox runs, distinct from the image itself.
+The named Docker volume that keeps the declared environment's installed tools, and mise's cache and state, across sandbox runs, distinct from the image itself.
 _Avoid_: cache volume, mise volume
 
 **Host path parity**:

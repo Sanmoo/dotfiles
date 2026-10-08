@@ -4,7 +4,8 @@
 #
 # The image provides Pi, mise, and the base utilities Pi probes for and the
 # sandbox needs. It carries no credentials, no host paths, and no Docker
-# socket; the wrapper mounts those at run time.
+# socket; the wrapper mounts those at run time. The declared toolchain is not
+# baked in: the entrypoint installs it into a named volume on every start.
 #
 # Build arguments:
 #   BASE_IMAGE    Base image, defaulting to the Node major the host Pi runs on.
@@ -91,16 +92,27 @@ RUN set -eux; \
 # as a file so Docker binds the host socket over a file instead of creating a
 # directory; the sessions directory is the container-only path Pi reports.
 # The mise data directory is seeded (empty, user-owned) so a fresh toolchain
-# volume inherits the right ownership on first use.
+# volume inherits the right ownership on first use. Every level down to it is
+# created user-owned: `install -d` owns only the leaf it is given, and a
+# root-owned ~/.local would stop tools from writing their own state there.
 RUN set -eux; \
     install -d -o "${USERNAME}" -g "${USERNAME}" \
         /run/safe-pi /run/safe-pi/sessions \
+        "/home/${USERNAME}/.local" \
+        "/home/${USERNAME}/.local/share" \
         "/home/${USERNAME}/.local/share/mise"; \
     install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/ssh-agent.sock
+
+# The entrypoint converges the declared toolchain into the volume, puts its
+# shims ahead of the image's binaries, checks Pi's Node requirement, and then
+# runs the command. Every start goes through it, including the debug shell.
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/safe-pi-entrypoint
 
 ENV HOME=/home/${USERNAME}
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
+
+ENTRYPOINT ["/usr/local/bin/safe-pi-entrypoint"]
 
 # Smoke test: running the image without arguments prints the baked Pi version.
 CMD ["pi", "--version"]

@@ -484,6 +484,13 @@ for name in HOME USER LANG LC_ALL LC_CTYPE TERM TZ; do
 	assert_log "--env $name"
 done
 assert_log "--env MISE_DATA_DIR=$contract_home/.local/share/mise"
+# Mise's cache lives inside the toolchain volume, so per-start convergence
+# does not re-resolve `latest` pins from a cold cache.
+assert_log "--env MISE_CACHE_DIR=$contract_home/.local/share/mise/cache"
+# Mise's state (incomplete-install tracking, trust) is persisted in the same
+# volume: state kept in a throwaway container would let an interrupted install
+# look complete on the next start.
+assert_log "--env MISE_STATE_DIR=$contract_home/.local/share/mise/state"
 encoded_invoked="${invoked#/}"
 encoded_invoked="--${encoded_invoked//[\/\\:]/-}--"
 assert_log "--env PI_CODING_AGENT_SESSION_DIR=/run/safe-pi/sessions/$encoded_invoked"
@@ -530,5 +537,56 @@ SAFE_PI_TEST_HOME="$dry_home" \
 	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
 	run_safe_pi --dry-run -c >/dev/null || fail "dry run failed"
 [[ ! -e "$dry_home/.pi" ]] || fail "dry run created \$HOME/.pi on the host"
+
+# --- Prepare converges the declared toolchain and never starts Pi -------------
+
+reset_stubs
+FAKE_IMAGES="$current_tag"
+run_safe_pi --prepare || fail "prepare run failed"
+assert_log "docker run --rm"
+assert_log "$current_tag --prepare"
+assert_no_log " pi"
+assert_no_log " bash"
+[[ ! -s "$NPM_LOG" ]] || fail "prepare must not query npm"
+
+# A failed convergence surfaces as the exit status.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_RUN_STATUS=1
+status="$(status_of run_safe_pi --prepare)"
+[[ "$status" == "1" ]] || fail "prepare must pass a convergence failure through, got $status"
+
+# Prepare takes no Pi arguments and is not a shell.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+set +e
+prepare_args_stderr="$(run_safe_pi --prepare -c 2>&1 >/dev/null)"
+prepare_args_status=$?
+set -e
+[[ "$prepare_args_status" == "2" ]] || fail "prepare with Pi arguments should exit 2, got $prepare_args_status"
+case "$prepare_args_stderr" in
+*"--prepare"*) ;;
+*) fail "prepare-with-arguments message not actionable: $prepare_args_stderr" ;;
+esac
+assert_no_log "docker run"
+
+reset_stubs
+FAKE_IMAGES="$current_tag"
+set +e
+run_safe_pi --prepare --shell >/dev/null 2>&1
+prepare_shell_status=$?
+set -e
+[[ "$prepare_shell_status" == "2" ]] || fail "prepare with --shell should exit 2, got $prepare_shell_status"
+assert_no_log "docker run"
+
+# A dry run shows the prepare invocation without touching Docker.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+prepare_dry="$(run_safe_pi --dry-run --prepare)" || fail "prepare dry run failed"
+[[ ! -s "$DOCKER_LOG" ]] || fail "prepare dry run must not invoke docker"
+case "$prepare_dry" in
+*"$current_tag --prepare"*) ;;
+*) fail "prepare dry run output missing the prepare invocation: $prepare_dry" ;;
+esac
 
 printf 'safe-pi wrapper tests passed\n'
