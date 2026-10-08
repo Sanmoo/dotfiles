@@ -2,8 +2,9 @@
 #
 # tests/run — the single entry point for this repository's test suite.
 #
-#   tests/run          Fast gate: every fast-tier unit.
-#   tests/run --full   Full gate: both tiers, then the FULL GATE: verdict line.
+#   tests/run              Fast gate: every fast-tier unit.
+#   tests/run --full       Full gate: both tiers, then the FULL GATE: verdict line.
+#   tests/run --jobs N     use N workers (default: the machine's CPU count)
 #
 # Discovery covers three groups:
 #
@@ -41,6 +42,18 @@
 # runner works from any current directory. Every unit is executed from the
 # repository root.
 #
+# Units run concurrently. The worker count defaults to the machine's available
+# CPUs (`nproc`, falling back to `getconf _NPROCESSORS_ONLN`, then to 1) and is
+# overridable with `--jobs N`. A non-positive or non-integer `--jobs` value is a
+# RUNNER ERROR. The Bun suite is a single unit and is never split, so `pi/tests`
+# costs one worker however many CPUs exist. Units are already isolated by
+# construction (each uses its own `mktemp -d`, fixture HOME and stubbed
+# binaries); the runner introduces no shared mutable state between them, there
+# is no serialisation around a unit that cannot run beside its peers, and every
+# unit's captured output goes to its own index-named file. A unit's verdict is
+# printed the moment it finishes, in finish order, so the run does not buffer
+# everything to the end.
+#
 # Output: each unit reports its tier, name and duration as it finishes; a
 # failing unit also prints its captured output. The run ends with a summary and
 # the total wall clock. A `--full` run prints one final line, after the wall
@@ -55,7 +68,8 @@
 # Exit status:
 #   0   every unit passed
 #   1   at least one unit failed (a red suite)
-#   2   the runner itself failed (bad usage, bad tier marker, missing tool, ...)
+#   2   the runner itself failed (bad usage including a bad `--jobs`, bad tier
+#       marker, missing tool, ...)
 #
 # A broken environment is not a red suite: a runner error prints the
 # distinguishable `tests/run: RUNNER ERROR:` message and exits 2, and it never
@@ -93,16 +107,63 @@ cd -- "$ROOT_DIR" || runner_error "cannot enter $ROOT_DIR"
 # ---------------------------------------------------------------------------
 
 MODE=fast
-case $# in
-0) ;;
-1)
+JOBS=''
+JOBS_GIVEN=0
+while (( $# > 0 )); do
 	case $1 in
-	--full) MODE=full ;;
-	*) runner_error "unknown argument '$1' (usage: tests/run [--full])" ;;
+	--full)
+		MODE=full
+		shift
+		;;
+	--jobs)
+		shift
+		(( $# > 0 )) || runner_error "'--jobs' requires a value (usage: tests/run [--full] [--jobs N])"
+		JOBS=$1
+		JOBS_GIVEN=1
+		shift
+		;;
+	--jobs=*)
+		JOBS=${1#--jobs=}
+		JOBS_GIVEN=1
+		shift
+		;;
+	*)
+		runner_error "unknown argument '$1' (usage: tests/run [--full] [--jobs N])"
+		;;
 	esac
-	;;
-*) runner_error "too many arguments (usage: tests/run [--full])" ;;
-esac
+done
+
+# Portable "available CPUs": `nproc` first, then `getconf`, then a single
+# worker. Nothing fancy is required; the point is a sane default with no extra
+# dependency.
+detect_cpus() {
+	local n=''
+	if command -v nproc >/dev/null 2>&1; then
+		n=$(nproc 2>/dev/null || true)
+		if [[ $n =~ ^[0-9]+$ ]] && (( n > 0 )); then
+			printf '%s' "$n"
+			return
+		fi
+	fi
+	if command -v getconf >/dev/null 2>&1; then
+		n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+		if [[ $n =~ ^[0-9]+$ ]] && (( n > 0 )); then
+			printf '%s' "$n"
+			return
+		fi
+	fi
+	printf '1'
+}
+
+if (( JOBS_GIVEN )); then
+	# A caller-supplied worker count must be a positive integer: `0`, a negative
+	# number, an empty value or a word is a runner error, not a silent default.
+	if ! [[ $JOBS =~ ^[0-9]+$ ]] || ! (( JOBS > 0 )); then
+		runner_error "'--jobs $JOBS' is not a positive integer (usage: tests/run [--full] [--jobs N])"
+	fi
+else
+	JOBS=$(detect_cpus)
+fi
 
 # ---------------------------------------------------------------------------
 # Clock
@@ -230,75 +291,153 @@ TOTAL_UNITS=$(( ${#FILES[@]} + 1 ))
 # ---------------------------------------------------------------------------
 
 TMP_DIR=$(mktemp -d) || runner_error 'cannot create a temporary directory'
-trap 'rm -rf -- "$TMP_DIR"' EXIT
 
-RESULTS_FILE="$TMP_DIR/results"
-: >"$RESULTS_FILE"
-UNIT_INDEX=0
+# Completion channel: a worker writes its unit index to this FIFO the moment it
+# is done, so the parent reports a unit as it finishes (in finish order) instead
+# of buffering every unit's output to the end of the run. The parent holds the
+# FIFO open read-write so `read` never sees a spurious EOF between workers.
+COMPLETION_FIFO="$TMP_DIR/completion"
+mkfifo -- "$COMPLETION_FIFO" || runner_error 'cannot create the completion FIFO'
 
-# run_unit <tier> <label> <command...>
-# Runs one unit with stdin closed and a hard timeout, prints its tier, label and
-# verdict, and records it in RESULTS_FILE. A failing unit's captured output is
-# printed; a passing unit reports only its duration.
-run_unit() {
-	local tier=$1 label=$2
-	shift 2
-	UNIT_INDEX=$((UNIT_INDEX + 1))
+# Invoked indirectly by the EXIT trap below, so shellcheck cannot see a call.
+# shellcheck disable=SC2329
+cleanup() {
+	local pid
+	for pid in $(jobs -p 2>/dev/null); do
+		kill "$pid" 2>/dev/null || true
+	done
+	rm -rf -- "$TMP_DIR"
+}
+trap cleanup EXIT
 
-	local outfile="$TMP_DIR/unit.$UNIT_INDEX.out"
-	local start end rc status duration
+RESULTS_DIR="$TMP_DIR/results"
+mkdir -- "$RESULTS_DIR" || runner_error 'cannot create the results directory'
+
+# run_unit_worker <index> <tier> <label> <command...>
+# Background worker for one unit: runs it with stdin closed and a hard timeout,
+# then records its tier, duration, exit status and captured output under its own
+# index-named files — unique even when many workers run at once — and finally
+# announces completion on the FIFO. It prints nothing itself; the parent owns
+# all output, so verdicts never interleave.
+run_unit_worker() {
+	local index=$1 tier=$2 label=$3
+	shift 3
+
+	local outfile="$TMP_DIR/unit.$index.out"
+	local start='' end='' rc=0 status=PASS duration=''
 
 	set_now
 	start=$NOW
-	rc=0
 	"$TIMEOUT_BIN" "$UNIT_TIMEOUT" "$@" >"$outfile" 2>&1 </dev/null || rc=$?
 	set_now
 	end=$NOW
 	duration=$(format_duration "$start" "$end")
+	(( rc == 0 )) || status=FAIL
 
-	if (( rc == 0 )); then
-		status=PASS
+	printf '%s\t%s\t%s\t%s\t%s\n' "$status" "$tier" "$duration" "$rc" "$label" >"$TMP_DIR/unit.$index.meta"
+	printf '%s\n' "$index" >"$COMPLETION_FIFO"
+}
+
+# report_unit <index>
+# Prints a finished unit's verdict: a passing unit reports only its duration; a
+# failing unit also shows its captured output. The verdict is recorded for the
+# summary, filed by unit index so the summary is independent of finish order.
+report_unit() {
+	local index=$1
+	local status='' tier='' duration='' rc='' label=''
+	IFS=$'\t' read -r status tier duration rc label <"$TMP_DIR/unit.$index.meta"
+
+	if [[ $status == PASS ]]; then
 		printf 'PASS %s [%s] (%ss)\n' "$label" "$tier" "$duration"
 	else
-		status=FAIL
-		printf 'FAIL %s [%s] (%ss, exit %d)\n' "$label" "$tier" "$duration" "$rc"
+		printf 'FAIL %s [%s] (%ss, exit %s)\n' "$label" "$tier" "$duration" "$rc"
 		printf '%s\n' '----- output -----'
-		cat -- "$outfile"
+		cat -- "$TMP_DIR/unit.$index.out"
 		# Keep the end marker on its own line even when the captured output does
 		# not end with a newline (`tail -c 1` yields the final byte; command
 		# substitution strips it when it is a newline).
-		if [[ -s $outfile && -n $(tail -c 1 -- "$outfile") ]]; then
+		if [[ -s $TMP_DIR/unit.$index.out && -n $(tail -c 1 -- "$TMP_DIR/unit.$index.out") ]]; then
 			printf '\n'
 		fi
 		printf '%s\n' '--- end output ---'
 		printf '\n'
 	fi
 
-	printf '%s\t%s\t%s\t%s\t%s\n' "$status" "$tier" "$duration" "$outfile" "$label" >>"$RESULTS_FILE"
+	printf '%s\t%s\t%s\t%s\n' "$status" "$tier" "$duration" "$label" >"$RESULTS_DIR/result.$index"
+}
+
+# The unit list mirrors the launch order: fast files, then (only in a Full gate)
+# the slow files, then the Bun suite as one unit. TOTAL_UNITS includes the Bun
+# unit, so the list length proves no unit was lost.
+UNIT_TIERS=()
+UNIT_LABELS=()
+UNIT_FILES=()
+for f in "${FAST_FILES[@]}"; do
+	UNIT_TIERS+=("fast")
+	UNIT_LABELS+=("$f")
+	UNIT_FILES+=("$f")
+done
+if [[ $MODE == full ]]; then
+	for f in "${SLOW_FILES[@]}"; do
+		UNIT_TIERS+=("slow")
+		UNIT_LABELS+=("$f")
+		UNIT_FILES+=("$f")
+	done
+fi
+UNIT_TIERS+=("fast")
+UNIT_LABELS+=('pi/tests (bun test)')
+UNIT_FILES+=('')
+
+(( ${#UNIT_LABELS[@]} == TOTAL_UNITS )) ||
+	runner_error 'internal error: the unit list does not match the discovered test count'
+
+# start_unit <index>; the Bun unit (empty file) is a single `bun test` process.
+start_unit() {
+	local i=$1
+	if [[ -z ${UNIT_FILES[$i]} ]]; then
+		run_unit_worker "$i" "${UNIT_TIERS[$i]}" "${UNIT_LABELS[$i]}" "$BUN_BIN" test pi/tests &
+	else
+		run_unit_worker "$i" "${UNIT_TIERS[$i]}" "${UNIT_LABELS[$i]}" bash "${UNIT_FILES[$i]}" &
+	fi
 }
 
 if [[ $MODE == full ]]; then
-	printf 'tests/run: running %d units from %s (fast tier: %d files, slow tier: %d files)\n\n' \
-		"$TOTAL_UNITS" "$ROOT_DIR" "${#FAST_FILES[@]}" "${#SLOW_FILES[@]}"
+	printf 'tests/run: running %d units from %s with %d worker(s) (fast tier: %d files, slow tier: %d files)\n\n' \
+		"$TOTAL_UNITS" "$ROOT_DIR" "$JOBS" "${#FAST_FILES[@]}" "${#SLOW_FILES[@]}"
 else
-	printf 'tests/run: running %d units from %s (fast tier only)\n\n' \
-		"$TOTAL_UNITS" "$ROOT_DIR"
+	printf 'tests/run: running %d units from %s with %d worker(s) (fast tier only)\n\n' \
+		"$TOTAL_UNITS" "$ROOT_DIR" "$JOBS"
 fi
 
 set_now
 TOTAL_START=$NOW
 
-for f in "${FAST_FILES[@]}"; do
-	run_unit fast "$f" bash "$f"
-done
-if [[ $MODE == full ]]; then
-	for f in "${SLOW_FILES[@]}"; do
-		run_unit slow "$f" bash "$f"
-	done
-fi
+# Bounded worker pool: at most $JOBS units run at once. Each completion is read
+# from the FIFO and reported immediately, so output follows real time rather
+# than discovery order. There is no fail-fast: a red unit never stops the pool.
+exec 3<>"$COMPLETION_FIFO"
 
-# The Bun suite is one unit: it is a single `bun test` process over pi/tests.
-run_unit fast 'pi/tests (bun test)' "$BUN_BIN" test pi/tests
+running=0
+next=0
+while (( next < TOTAL_UNITS )); do
+	if (( running >= JOBS )); then
+		IFS= read -r finished <&3
+		report_unit "$finished"
+		running=$(( running - 1 ))
+	fi
+	start_unit "$next"
+	next=$(( next + 1 ))
+	running=$(( running + 1 ))
+done
+
+while (( running > 0 )); do
+	IFS= read -r finished <&3
+	report_unit "$finished"
+	running=$(( running - 1 ))
+done
+
+exec 3>&-
+wait
 
 set_now
 TOTAL_END=$NOW
@@ -311,7 +450,9 @@ passed=0
 failed=0
 failed_labels=()
 recorded=0
-while IFS=$'\t' read -r status tier duration outfile label; do
+for (( i = 0; i < TOTAL_UNITS; i++ )); do
+	[[ -r $RESULTS_DIR/result.$i ]] || runner_error "internal error: unit $i finished without a recorded result"
+	IFS=$'\t' read -r status tier duration label <"$RESULTS_DIR/result.$i"
 	recorded=$((recorded + 1))
 	if [[ $status == PASS ]]; then
 		passed=$((passed + 1))
@@ -319,7 +460,7 @@ while IFS=$'\t' read -r status tier duration outfile label; do
 		failed=$((failed + 1))
 		failed_labels+=("$label")
 	fi
-done <"$RESULTS_FILE"
+done
 
 (( recorded == TOTAL_UNITS )) ||
 	runner_error "recorded $recorded units but discovered $TOTAL_UNITS"

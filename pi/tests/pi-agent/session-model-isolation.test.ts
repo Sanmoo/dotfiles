@@ -41,7 +41,22 @@ function setupExtension() {
 			return "medium";
 		},
 	};
-	sessionModelIsolation(pi as never);
+	// The extension is deliberately inert inside a Pi subagent session
+	// (PI_SUBAGENT_CHILD=1): it registers no handlers at all. These tests assert
+	// the handlers' behaviour, so they must control that ambient variable rather
+	// than inherit whichever session happens to run the suite. Remove it around
+	// registration, then restore whatever was there.
+	const savedSubagentChild = process.env.PI_SUBAGENT_CHILD;
+	delete process.env.PI_SUBAGENT_CHILD;
+	try {
+		sessionModelIsolation(pi as never);
+	} finally {
+		if (savedSubagentChild === undefined) {
+			delete process.env.PI_SUBAGENT_CHILD;
+		} else {
+			process.env.PI_SUBAGENT_CHILD = savedSubagentChild;
+		}
+	}
 	const sessionStart = handlers.get("session_start");
 	const sessionShutdown = handlers.get("session_shutdown");
 	if (!sessionStart || !sessionShutdown) {
