@@ -96,6 +96,15 @@ fi
 # follows the stow symlink into the repository; deriving the directory from
 # BASH_SOURCE alone would point at the installed location.
 resolve_build_context() {
+	local script_real script_dir repo_root
+	script_real="$(readlink -f "${BASH_SOURCE[0]}")"
+	script_dir="$(dirname "$script_real")"
+	repo_root="$(cd "$script_dir/../../.." 2>/dev/null && pwd)" || repo_root=""
+	# The configuration checkout is the repository this script is installed
+	# from. Pi's settings, keybindings, prompts, extensions, and pi-lens
+	# configuration are symlinks into it, so the container needs it mounted.
+	CONFIG_CHECKOUT="${repo_root:-}"
+
 	local override="${SAFE_PI_BUILD_CONTEXT-}"
 	if [[ -n "$override" ]]; then
 		if [[ -f "$override" ]]; then
@@ -110,10 +119,6 @@ resolve_build_context() {
 		return
 	fi
 
-	local script_real script_dir repo_root
-	script_real="$(readlink -f "${BASH_SOURCE[0]}")"
-	script_dir="$(dirname "$script_real")"
-	repo_root="$(cd "$script_dir/../../.." 2>/dev/null && pwd)" || repo_root=""
 	BUILD_CONTEXT="${repo_root:+$repo_root/safe-pi}"
 	DOCKERFILE="${BUILD_CONTEXT:+$BUILD_CONTEXT/Dockerfile}"
 }
@@ -167,6 +172,126 @@ resolve_latest_pi_version() {
 	npm view @earendil-works/pi-coding-agent version 2>/dev/null | tail -n1
 }
 
+# --- Container contract -------------------------------------------------------
+# Mounts and environment the sandbox runs with. Everything hangs off the
+# invoking user's home and the configuration checkout, and is mounted at its
+# host path so absolute paths in prompts, tool output, and repository metadata
+# stay valid. The sessions directory is the one exception: Pi reports it at a
+# container-only path so Herdr's host-side restore cannot start an
+# unsandboxed Pi.
+PI_AGENT_DIR="$HOME/.pi/agent"
+HOST_SESSION_DIR="$PI_AGENT_DIR/sessions"
+SHARED_SKILLS_DIR="$HOME/.agents/skills"
+PI_LENS_DIR="$HOME/.pi-lens"
+MISE_CONFIG_DIR="${CONFIG_CHECKOUT:+$CONFIG_CHECKOUT/mise/.config/mise}"
+HERDR_CONFIG_DIR="$HOME/.config/herdr"
+GIT_CONFIG_FILE="$HOME/.gitconfig"
+
+CONTAINER_SESSION_DIR="/run/safe-pi/sessions"
+CONTAINER_MISE_CONFIG_DIR="$HOME/.config/mise"
+CONTAINER_MISE_DATA_DIR="$HOME/.local/share/mise"
+CONTAINER_SSH_SOCK="/run/safe-pi/ssh-agent.sock"
+
+# Pi groups sessions by working directory. The container-only sessions path
+# mirrors that grouping so a session written in the sandbox lands in the same
+# host subdirectory the host Pi reads, and continues work started on either
+# side. Pi uses the directory it is given verbatim (it does not append the cwd
+# again), so the encoding has to match Pi's own exactly.
+encode_cwd() {
+	local path="${1#/}"
+	path="${path//[\/\\:]/-}"
+	printf -- '--%s--' "$path"
+}
+CONTAINER_PROJECT_SESSION_DIR="$CONTAINER_SESSION_DIR/$(encode_cwd "$PWD")"
+# Keyed to the invoking user: one toolchain volume per user, shared by every
+# repository so per-repository pins are downloaded once.
+TOOLCHAIN_VOLUME="safe-pi-toolchain-u$(id -u)"
+
+# Pi locks its credential store by creating a file beside the credential file,
+# so the agent directory has to exist and be writable before it starts. The
+# directories are created only when the sandbox is really about to start, so a
+# dry run never touches the host.
+mount_args=()
+contract_paths=() # "container-path:mode" for the debug shell
+missing_paths=()  # contract paths absent on the host
+
+record_mount() { # $1 = host path or volume, $2 = container path, $3 = mode
+	mount_args+=(--volume "$1:$2:$3")
+	contract_paths+=("$2:$3")
+}
+
+add_mount() { # optional bind mount; skipped, and reported, when absent
+	[[ -e "$1" ]] || {
+		missing_paths+=("$2:$3")
+		return 0
+	}
+	record_mount "$1" "$2" "$3"
+}
+
+# The working repository, the agent directory, the sessions directory, and the
+# toolchain volume are the contract's fixed points: always mounted at their host
+# path, whether or not a dry run can see them yet.
+record_mount "$PWD" "$PWD" rw
+record_mount "$PI_AGENT_DIR" "$PI_AGENT_DIR" rw
+record_mount "$HOST_SESSION_DIR" "$CONTAINER_SESSION_DIR" rw
+# The toolchain volume is always mounted, even before anything is installed:
+# its content is the declared environment, not image content.
+record_mount "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
+
+# Installed code is held immutable while agent state stays writable.
+add_mount "$PI_AGENT_DIR/extensions" "$PI_AGENT_DIR/extensions" ro
+add_mount "$PI_AGENT_DIR/npm" "$PI_AGENT_DIR/npm" ro
+add_mount "$SHARED_SKILLS_DIR" "$SHARED_SKILLS_DIR" ro
+# The checkout is read-only unless the working directory *is* the checkout; a
+# working directory inside it keeps its read-write mount, because Docker orders
+# nested mounts by depth and the deeper working-directory mount wins.
+if [[ -n "$CONFIG_CHECKOUT" && "$PWD" != "$CONFIG_CHECKOUT" ]]; then
+	add_mount "$CONFIG_CHECKOUT" "$CONFIG_CHECKOUT" ro
+fi
+add_mount "$PI_LENS_DIR" "$PI_LENS_DIR" rw
+add_mount "$MISE_CONFIG_DIR" "$CONTAINER_MISE_CONFIG_DIR" ro
+add_mount "$HERDR_CONFIG_DIR" "$HERDR_CONFIG_DIR" ro
+add_mount "$GIT_CONFIG_FILE" "$GIT_CONFIG_FILE" ro
+
+# Environment: identity and terminal variables Pi and its tools need, the
+# container-only paths, and the Herdr variables forwarded only when the host
+# sets them. `--env NAME` forwards the value from this process's environment.
+forward_env() { # names to forward from this process's environment
+	local name
+	for name in "$@"; do
+		[[ -n "${!name-}" ]] || continue
+		env_args+=(--env "$name")
+	done
+}
+
+env_args=(--env "$SANDBOX_MARKER=1")
+forward_env HOME USER LANG LC_ALL LC_CTYPE TERM TZ
+env_args+=(--env "MISE_DATA_DIR=$CONTAINER_MISE_DATA_DIR")
+env_args+=(--env "PI_CODING_AGENT_SESSION_DIR=$CONTAINER_PROJECT_SESSION_DIR")
+forward_env HERDR_ENV HERDR_SOCKET_PATH HERDR_PANE_ID
+# The SSH agent socket is mounted only when the host provides one.
+if [[ -n "${SSH_AUTH_SOCK-}" && -S "${SSH_AUTH_SOCK}" ]]; then
+	add_mount "$SSH_AUTH_SOCK" "$CONTAINER_SSH_SOCK" rw
+	env_args+=(--env "SSH_AUTH_SOCK=$CONTAINER_SSH_SOCK")
+fi
+
+# A debug shell prints the contract it landed in before handing over a shell.
+build_shell_banner() {
+	local script entry path mode
+	# The generated script is expanded inside the sandbox, not here.
+	# shellcheck disable=SC2016
+	script+='printf "safe-pi sandbox\n"; id; printf "cwd: %s\n" "$PWD"; '
+	# shellcheck disable=SC2016
+	script+='report() { if [ -e "$1" ]; then printf "  present  %s  (%s)\n" "$1" "$2"; else printf "  MISSING  %s  (%s)\n" "$1" "$2"; fi; }; '
+	for entry in "${contract_paths[@]}" "${missing_paths[@]}"; do
+		path="${entry%:*}"
+		mode="${entry##*:}"
+		script+="report $(printf '%q' "$path") $(printf '%q' "$mode"); "
+	done
+	script+='exec bash'
+	SHELL_BANNER="$script"
+}
+
 # --- Resolve the Docker invocation before touching Docker ---------------------
 run_args=(
 	run
@@ -175,14 +300,15 @@ run_args=(
 if [[ -t 0 && -t 1 ]]; then
 	run_args+=(--interactive --tty)
 fi
-run_args+=(
-	--workdir "$PWD"
-	--volume "$PWD:$PWD"
-	--env "$SANDBOX_MARKER=1"
-	"$CURRENT_TAG"
-)
+run_args+=(--workdir "$PWD")
+run_args+=("${mount_args[@]}")
+# The temporary directory is writable but thrown away with the container.
+run_args+=(--tmpfs /tmp)
+run_args+=("${env_args[@]}")
+run_args+=("$CURRENT_TAG")
 if [[ "$MODE" == "shell" ]]; then
-	run_args+=(bash)
+	build_shell_banner
+	run_args+=(bash -c "$SHELL_BANNER")
 else
 	run_args+=(pi)
 fi
@@ -244,6 +370,11 @@ warn_on_version_drift() {
 	fi
 }
 
-# --- Run Pi in the container --------------------------------------------------
+# --- Ensure required host mount points exist ----------------------------------
+# Docker creates a missing bind source as a root-owned directory on the host,
+# so the agent and sessions directories are created as the invoking user first.
+mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR"
+
+# --- Run Pi in the sandbox ----------------------------------------------------
 warn_on_version_drift
 docker "${run_args[@]}"

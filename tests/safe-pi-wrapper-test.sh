@@ -121,6 +121,15 @@ run_safe_pi() {
 	done
 	(
 		cd "$cwd"
+		export HOME="${SAFE_PI_TEST_HOME:-$HOME}"
+		case "${SAFE_PI_TEST_SSH-}" in
+		set) export SSH_AUTH_SOCK="${SAFE_PI_TEST_SSH_SOCK-}" ;;
+		unset) unset SSH_AUTH_SOCK ;;
+		esac
+		case "${SAFE_PI_TEST_HERDR-}" in
+		set) export HERDR_ENV=1 HERDR_SOCKET_PATH=/tmp/safe-pi-test-herdr.sock HERDR_PANE_ID=wtest:p1 ;;
+		unset) unset HERDR_ENV HERDR_SOCKET_PATH HERDR_PANE_ID ;;
+		esac
 		if [[ -n "${SAFE_PI_TEST_PATH-}" ]]; then
 			path="$SAFE_PI_TEST_PATH"
 		else
@@ -348,7 +357,7 @@ assert_no_log "docker"
 
 nobin="$tmpdir/nobin"
 mkdir -p "$nobin"
-for tool in id readlink dirname; do
+for tool in id readlink dirname mkdir; do
 	ln -s "$(command -v "$tool")" "$nobin/$tool"
 done
 reset_stubs
@@ -423,5 +432,103 @@ run_safe_pi -- --rebuild --shell --dry-run || fail "pass-through run failed"
 assert_log " pi --rebuild --shell --dry-run"
 assert_log "docker run --rm"
 assert_no_log "docker build"
+
+# --- Container contract: mounts and environment --------------------------------
+# A fixture home stands in for the invoking user, so the contract paths are
+# asserted without depending on this machine's real Pi setup.
+contract_home="$tmpdir/contract-home"
+invoked="$tmpdir/contract-invoked"
+mkdir -p \
+	"$contract_home/.pi/agent/extensions" \
+	"$contract_home/.pi/agent/npm" \
+	"$contract_home/.pi/agent/sessions" \
+	"$contract_home/.agents/skills" \
+	"$contract_home/.pi-lens" \
+	"$contract_home/.config/herdr" \
+	"$invoked"
+touch "$contract_home/.gitconfig"
+ssh_sock="$tmpdir/agent.sock"
+python3 - "$ssh_sock" <<'PY'
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+PY
+
+reset_stubs
+FAKE_IMAGES="$current_tag"
+(
+	export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 TERM=xterm-256color TZ=UTC
+	SAFE_PI_TEST_HOME="$contract_home" \
+		SAFE_PI_TEST_SSH=set SAFE_PI_TEST_SSH_SOCK="$ssh_sock" \
+		SAFE_PI_TEST_HERDR=set \
+		run_safe_pi --cwd "$invoked" -c
+) || fail "contract run failed"
+
+assert_log "--workdir $invoked"
+assert_log "--volume $invoked:$invoked:rw"
+assert_log "--volume $contract_home/.pi/agent:$contract_home/.pi/agent:rw"
+assert_log "--volume $contract_home/.pi/agent/extensions:$contract_home/.pi/agent/extensions:ro"
+assert_log "--volume $contract_home/.pi/agent/npm:$contract_home/.pi/agent/npm:ro"
+assert_log "--volume $contract_home/.pi/agent/sessions:/run/safe-pi/sessions:rw"
+assert_log "--volume $contract_home/.agents/skills:$contract_home/.agents/skills:ro"
+assert_log "--volume $repo_root:$repo_root:ro"
+assert_log "--volume $contract_home/.pi-lens:$contract_home/.pi-lens:rw"
+assert_log "--volume $repo_root/mise/.config/mise:$contract_home/.config/mise:ro"
+assert_log "--volume $contract_home/.config/herdr:$contract_home/.config/herdr:ro"
+assert_log "--volume $contract_home/.gitconfig:$contract_home/.gitconfig:ro"
+assert_log "--volume $ssh_sock:/run/safe-pi/ssh-agent.sock:rw"
+assert_log "--volume safe-pi-toolchain-u$uid:$contract_home/.local/share/mise:rw"
+assert_log "--tmpfs /tmp"
+assert_log "--env SAFE_PI_SANDBOX=1"
+for name in HOME USER LANG LC_ALL LC_CTYPE TERM TZ; do
+	assert_log "--env $name"
+done
+assert_log "--env MISE_DATA_DIR=$contract_home/.local/share/mise"
+encoded_invoked="${invoked#/}"
+encoded_invoked="--${encoded_invoked//[\/\\:]/-}--"
+assert_log "--env PI_CODING_AGENT_SESSION_DIR=/run/safe-pi/sessions/$encoded_invoked"
+assert_log "--env SSH_AUTH_SOCK=/run/safe-pi/ssh-agent.sock"
+assert_log "--env HERDR_ENV"
+assert_log "--env HERDR_SOCKET_PATH"
+assert_log "--env HERDR_PANE_ID"
+assert_no_log "docker.sock"
+
+# The Herdr and SSH variables are forwarded only when the host sets them.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$contract_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$invoked" -c || fail "contract run without Herdr or SSH failed"
+assert_no_log "--env HERDR_"
+assert_no_log "SSH_AUTH_SOCK"
+assert_no_log "ssh-agent.sock"
+
+# The checkout is not mounted read-only over itself when it is the working repo.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$contract_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$repo_root" -c || fail "checkout working-directory run failed"
+assert_log "--volume $repo_root:$repo_root:rw"
+assert_no_log "--volume $repo_root:$repo_root:ro"
+
+# A working directory inside the checkout still gets the read-only checkout
+# mount; the deeper read-write working-directory mount wins inside it.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$contract_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$repo_root/pi" -c || fail "checkout subdirectory run failed"
+assert_log "--volume $repo_root:$repo_root:ro"
+assert_log "--volume $repo_root/pi:$repo_root/pi:rw"
+
+# A dry run prints the invocation without touching the host.
+dry_home="$tmpdir/dry-home"
+mkdir -p "$dry_home"
+reset_stubs
+SAFE_PI_TEST_HOME="$dry_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --dry-run -c >/dev/null || fail "dry run failed"
+[[ ! -e "$dry_home/.pi" ]] || fail "dry run created \$HOME/.pi on the host"
 
 printf 'safe-pi wrapper tests passed\n'

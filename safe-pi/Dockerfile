@@ -87,6 +87,17 @@ RUN set -eux; \
         useradd --create-home --uid "${UID}" --gid "${GID}" --shell /bin/bash "${USERNAME}"; \
     fi
 
+# Mount points the wrapper binds at run time. The SSH agent socket must exist
+# as a file so Docker binds the host socket over a file instead of creating a
+# directory; the sessions directory is the container-only path Pi reports.
+# The mise data directory is seeded (empty, user-owned) so a fresh toolchain
+# volume inherits the right ownership on first use.
+RUN set -eux; \
+    install -d -o "${USERNAME}" -g "${USERNAME}" \
+        /run/safe-pi /run/safe-pi/sessions \
+        "/home/${USERNAME}/.local/share/mise"; \
+    install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/ssh-agent.sock
+
 ENV HOME=/home/${USERNAME}
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
