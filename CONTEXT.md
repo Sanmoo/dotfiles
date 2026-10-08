@@ -87,3 +87,25 @@ _Avoid_: mapping, link (when meaning this relationship)
 **Service deep-link**:
 The positional service argument (`ecs`, `lambda`, …) that lands the federated console session directly on that service's console page.
 _Avoid_: service URL (when meaning the argument), destination
+
+## Quality gateway
+
+**Quality gateway**:
+This repository's automated validation of a change, taken as a whole. It runs in two phases with different cost and different obligations; anything that runs only part of it is not the gateway.
+_Avoid_: CI (there is none), test suite (when meaning the gateway), pipeline
+
+**Test suite**:
+Every test this repository owns, in all the places they live — the shell tests, the `general/bin` tests, and the Pi agent tests. Not a synonym for the `tests/` directory, which holds only some of them.
+_Avoid_: tests folder, the tests (when meaning the suite)
+
+**Fast gate**:
+The phase of the Quality gateway run while working on a change, kept cheap enough to re-run freely by running only tests that are fast individually and by running them in parallel. A green Fast gate is necessary but never sufficient to finish a task.
+_Avoid_: fast suite, quick tests, smoke tests (when meaning this phase)
+
+**Full gate**:
+The phase of the Quality gateway that every test belongs to, and that must pass before a task is considered finished. It is the Fast gate's set plus the slow-tier tests, and it ends with an explicit verdict line rather than an inferred one.
+_Avoid_: slow suite, full test run (when meaning this phase), nightly
+
+**Slow tier**:
+The tests excluded from the Fast gate because they alone cost about as much as the whole Fast gate budget. A slow-tier test is marked as such in its own file and is still a required test, not an optional extra.
+_Avoid_: slow test, e2e test (when meaning this tier), flaky test
