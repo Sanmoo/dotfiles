@@ -32,11 +32,14 @@ mkdir -p "$home"
 # a machine with external skills installed locally has gitignored absolute
 # symlinks under agents/.agents/skills/ in the live checkout. Build a fixture
 # containing only the repository's tracked content and apply from that, so the
-# apply steps never see machine-local entries. The assertion at the end still
+# apply steps never see machine-local entries. The package-distribution checks
+# below also read the fixture for the same reason: a live checkout can carry
+# machine-local leftovers (for example an empty skills/<name>/ directory tree)
+# that the package itself does not distribute. The assertion at the end still
 # inspects the live checkout.
 fixture="$TMPDIR/fixture-checkout"
 mkdir -p "$fixture"
-git -C "$ROOT_DIR" archive HEAD agents | tar -x -C "$fixture"
+git -C "$ROOT_DIR" archive HEAD agents opencode | tar -x -C "$fixture"
 
 # Applying the package to a new home creates a real shared directory and only
 # links the repository-owned file into it.
@@ -284,7 +287,7 @@ assert_equals 'jira-issue-formatting' "$(find "$ROOT_DIR/agents/.agents/skills" 
 [[ ! -e "$ROOT_DIR/agents/.agents/.skill-lock.json" ]] || { echo 'FAIL: tracked installation lock remains' >&2; exit 1; }
 
 for dependency in article-summarizer coding-guidelines docx ppt-master skill-architect; do
-	path="$ROOT_DIR/opencode/.config/opencode/skills/$dependency"
+	path="$fixture/opencode/.config/opencode/skills/$dependency"
 	[[ ! -e "$path" && ! -L "$path" ]] || { echo "FAIL: OpenCode still distributes $dependency" >&2; exit 1; }
 done
 
