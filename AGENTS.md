@@ -9,6 +9,11 @@ worktree:
   `## Comments`
 - ADRs and glossary terms that came out of planning
 
+When `main` advances while an implementation branch is open (task-management
+commits landing on `main` are the usual cause), rebase the implementation branch
+onto `main` in its worktree, then integrate with `git merge --ff-only` from the
+main checkout. That recovery is the default; no confirmation is needed.
+
 A branch and worktree are created only when implementation starts, from `main`,
 and carry only the implementation: code, tests, and the documentation that ships
 with the behavior. `.scratch/**` is never edited inside a worktree. See

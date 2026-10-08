@@ -29,7 +29,9 @@ draft, for example), make that change on `main` at the boundary like any other
 task-management edit.
 
 A task-management commit landing on `main` while an implementation branch is open
-makes the required `--ff-only` integration impossible, so keep the two apart.
+makes a plain `--ff-only` integration impossible. Rebase the implementation branch
+onto `main` in its worktree, then fast-forward from the main checkout; that
+recovery is the default, so the two do not have to be kept apart.
 
 ## When a skill says "publish to the issue tracker"
 

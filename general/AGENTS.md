@@ -34,7 +34,12 @@ complete the following without waiting for a separate integration request:
 2. Return to the recorded checkout, verify that the original branch is checked
    out, and run `git merge --ff-only <task-branch>` there. The destination is the
    branch the task started from, not necessarily `main`. Preserve unrelated local
-   changes; if they block integration, stop and report the blocker.
+   changes; if unrelated local changes block integration, stop and report the
+   blocker.
+   If the destination advanced while the task branch was open (a
+   task-management commit on `main` is the usual cause), first rebase the task
+   branch onto the destination in its own worktree, then fast-forward there.
+   That recovery is the default; do not ask for confirmation.
 3. Confirm that the task branch's tip is an ancestor of the destination branch
    and that the task worktree has no uncommitted or untracked work. From outside
    that worktree, remove it with `git worktree remove <task-worktree>`, then delete
@@ -49,6 +54,8 @@ complete the following without waiting for a separate integration request:
    cleanup status. If anything remains, include its branch and worktree path.
 
 If fast-forward integration or safe cleanup is not possible, preserve the
-remaining resources and ask how to proceed. Do not substitute a merge commit,
-rebase, reset, or forced deletion — the only exception being the content-verified
+remaining resources and ask how to proceed. Do not rewrite, reset, or force-push
+the destination branch and do not use a merge commit; integrating the task branch
+by rebasing it onto the destination and then fast-forwarding is expected, not a
+forbidden substitute. The only forced operation permitted is the content-verified
 `git branch -D` in step 3. Integration is local; push only when requested.
