@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tier: slow
 # Tests for general/bin/aws-console. Runs the real script as a subprocess with
 # AWS, federation, and the browser stubbed at the process boundary via
 # environment: STS through AWS_ENDPOINT_URL_STS against a local HTTP stub,

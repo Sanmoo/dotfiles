@@ -2,24 +2,64 @@
 #
 # tests/run — the single entry point for this repository's test suite.
 #
-# One invocation discovers and runs every test group:
+#   tests/run          Fast gate: every fast-tier unit.
+#   tests/run --full   Full gate: both tiers, then the FULL GATE: verdict line.
+#
+# Discovery covers three groups:
 #
 #   tests/*-test.sh        shell tests
 #   general/bin/*.test     bash tests
 #   pi/tests               the Bun suite, run as one unit (`bun test pi/tests`)
 #
+# Tier classification lives in the test file, not in this runner: the runner
+# keeps no list of slow file names. A test is slow-tier when it carries the
+# marker line
+#
+#   # tier: slow
+#
+# as a comment beginning at the start of a line, conventionally on the line
+# next to the shebang. The marker is read from anywhere in the file, so a
+# marker placed below the header is honoured rather than silently ignored.
+# The `tier` keyword is matched case-insensitively, so a typo like `# Tier:` is
+# reported rather than silently ignored; the value must be exactly `slow` or
+# `fast`. The accepted values are:
+#
+#   # tier: slow   slow tier: excluded from the Fast gate, included by --full
+#   # tier: fast   fast tier: an explicit statement of the default below
+#   (no marker)    fast tier
+#
+# Any other value (`# tier: sloww`), a marker with no value (`# tier:`), or two
+# conflicting tier markers in one file is a RUNNER ERROR: the runner prints a
+# message naming the file, the line and the offending value, and exits 2. A
+# malformed marker is never silently treated as fast.
+#
+# `--full` runs the union of both tiers: the slow files are appended to the
+# fast file list discovered in the same pass, so the Full gate's file set is a
+# strict superset of the Fast gate's by construction.
+#
 # The repository root is resolved from this script's own location, so the
 # runner works from any current directory. Every unit is executed from the
 # repository root.
 #
-# Output: each unit reports its name and duration as it finishes; a failing
-# unit also prints its captured output. The run ends with a summary and the
-# total wall clock. There is no fail-fast: one run reports every failure.
+# Output: each unit reports its tier, name and duration as it finishes; a
+# failing unit also prints its captured output. The run ends with a summary and
+# the total wall clock. A `--full` run prints one final line, after the wall
+# clock and nothing else, exactly
+#
+#   FULL GATE: PASS
+#   FULL GATE: FAIL
+#
+# so the verdict is always the last line of a Full gate run. There is no
+# fail-fast: one run reports every failure.
 #
 # Exit status:
 #   0   every unit passed
 #   1   at least one unit failed (a red suite)
-#   2   the runner itself failed (missing tool, unreadable file, ...)
+#   2   the runner itself failed (bad usage, bad tier marker, missing tool, ...)
+#
+# A broken environment is not a red suite: a runner error prints the
+# distinguishable `tests/run: RUNNER ERROR:` message and exits 2, and it never
+# prints `FULL GATE: PASS`.
 #
 # Every unit runs with stdin closed and a hard per-unit timeout: several tests
 # in this repository block forever when stdin is left open. The runner never
@@ -47,6 +87,22 @@ ROOT_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd) ||
 	runner_error "cannot resolve the repository root from $SCRIPT_DIR"
 
 cd -- "$ROOT_DIR" || runner_error "cannot enter $ROOT_DIR"
+
+# ---------------------------------------------------------------------------
+# Usage
+# ---------------------------------------------------------------------------
+
+MODE=fast
+case $# in
+0) ;;
+1)
+	case $1 in
+	--full) MODE=full ;;
+	*) runner_error "unknown argument '$1' (usage: tests/run [--full])" ;;
+	esac
+	;;
+*) runner_error "too many arguments (usage: tests/run [--full])" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Clock
@@ -113,7 +169,61 @@ for f in "${SHELL_TESTS[@]}" "${BIN_TESTS[@]}"; do
 	[[ -r $f ]] || runner_error "test file is not readable: $f"
 done
 
-TOTAL_UNITS=$(( ${#SHELL_TESTS[@]} + ${#BIN_TESTS[@]} + 1 ))
+# ---------------------------------------------------------------------------
+# Tier classification
+# ---------------------------------------------------------------------------
+
+# The marker is a column-start comment `# tier: VALUE`. FILE_TIER is set by
+# tier_of rather than printed, so that a malformed marker can abort the whole
+# run (a runner_error inside a command substitution would only exit the
+# subshell and silently degrade to the fast tier).
+FILE_TIER=fast
+tier_of() { # <file> -> sets FILE_TIER; a malformed marker is a runner error
+	local file=$1
+	local marker lineno text value tier=''
+	while IFS= read -r marker; do
+		[[ -n $marker ]] || continue
+		lineno=${marker%%:*}
+		text=${marker#*:}
+		value=${text#*:}
+		value=${value#"${value%%[![:space:]]*}"}
+		value=${value%"${value##*[![:space:]]}"}
+		case $value in
+		slow | fast) ;;
+		'') runner_error "$file:$lineno: tier marker has no value ('# tier:'); use '# tier: slow' or '# tier: fast'" ;;
+		*) runner_error "$file:$lineno: unrecognised tier marker value '$value'; use '# tier: slow' or '# tier: fast' (or no marker for the fast tier)" ;;
+		esac
+		if [[ -n $tier && $tier != "$value" ]]; then
+			runner_error "$file:$lineno: conflicting tier markers ('$tier' and '$value')"
+		fi
+		tier=$value
+	done < <(grep -n -E '^#[[:space:]]*[Tt][Ii][Ee][Rr][[:space:]]*:' -- "$file" || true)
+	FILE_TIER=${tier:-fast}
+}
+
+FAST_FILES=()
+SLOW_FILES=()
+for f in "${SHELL_TESTS[@]}" "${BIN_TESTS[@]}"; do
+	tier_of "$f"
+	if [[ $FILE_TIER == slow ]]; then
+		SLOW_FILES+=("$f")
+	else
+		FAST_FILES+=("$f")
+	fi
+done
+
+# Every discovered file belongs to exactly one tier, so `--full` runs the fast
+# set plus the slow set: a strict superset of the bare invocation's file set.
+(( ${#FAST_FILES[@]} + ${#SLOW_FILES[@]} == ${#SHELL_TESTS[@]} + ${#BIN_TESTS[@]} )) ||
+	runner_error 'internal error: the tier partition lost a discovered test file'
+
+if [[ $MODE == full ]]; then
+	FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
+else
+	FILES=("${FAST_FILES[@]}")
+fi
+
+TOTAL_UNITS=$(( ${#FILES[@]} + 1 ))
 
 # ---------------------------------------------------------------------------
 # Execution
@@ -126,13 +236,13 @@ RESULTS_FILE="$TMP_DIR/results"
 : >"$RESULTS_FILE"
 UNIT_INDEX=0
 
-# run_unit <label> <command...>
-# Runs one unit with stdin closed and a hard timeout, prints its verdict, and
-# records it in RESULTS_FILE. A failing unit's captured output is printed; a
-# passing unit reports only its duration.
+# run_unit <tier> <label> <command...>
+# Runs one unit with stdin closed and a hard timeout, prints its tier, label and
+# verdict, and records it in RESULTS_FILE. A failing unit's captured output is
+# printed; a passing unit reports only its duration.
 run_unit() {
-	local label=$1
-	shift
+	local tier=$1 label=$2
+	shift 2
 	UNIT_INDEX=$((UNIT_INDEX + 1))
 
 	local outfile="$TMP_DIR/unit.$UNIT_INDEX.out"
@@ -148,10 +258,10 @@ run_unit() {
 
 	if (( rc == 0 )); then
 		status=PASS
-		printf 'PASS %s (%ss)\n' "$label" "$duration"
+		printf 'PASS %s [%s] (%ss)\n' "$label" "$tier" "$duration"
 	else
 		status=FAIL
-		printf 'FAIL %s (%ss, exit %d)\n' "$label" "$duration" "$rc"
+		printf 'FAIL %s [%s] (%ss, exit %d)\n' "$label" "$tier" "$duration" "$rc"
 		printf '%s\n' '----- output -----'
 		cat -- "$outfile"
 		# Keep the end marker on its own line even when the captured output does
@@ -164,23 +274,31 @@ run_unit() {
 		printf '\n'
 	fi
 
-	printf '%s\t%s\t%s\t%s\n' "$status" "$duration" "$outfile" "$label" >>"$RESULTS_FILE"
+	printf '%s\t%s\t%s\t%s\t%s\n' "$status" "$tier" "$duration" "$outfile" "$label" >>"$RESULTS_FILE"
 }
 
-printf 'tests/run: running %d units from %s\n\n' "$TOTAL_UNITS" "$ROOT_DIR"
+if [[ $MODE == full ]]; then
+	printf 'tests/run: running %d units from %s (fast tier: %d files, slow tier: %d files)\n\n' \
+		"$TOTAL_UNITS" "$ROOT_DIR" "${#FAST_FILES[@]}" "${#SLOW_FILES[@]}"
+else
+	printf 'tests/run: running %d units from %s (fast tier only)\n\n' \
+		"$TOTAL_UNITS" "$ROOT_DIR"
+fi
 
 set_now
 TOTAL_START=$NOW
 
-for f in "${SHELL_TESTS[@]}"; do
-	run_unit "$f" bash "$f"
+for f in "${FAST_FILES[@]}"; do
+	run_unit fast "$f" bash "$f"
 done
-for f in "${BIN_TESTS[@]}"; do
-	run_unit "$f" bash "$f"
-done
+if [[ $MODE == full ]]; then
+	for f in "${SLOW_FILES[@]}"; do
+		run_unit slow "$f" bash "$f"
+	done
+fi
 
 # The Bun suite is one unit: it is a single `bun test` process over pi/tests.
-run_unit 'pi/tests (bun test)' "$BUN_BIN" test pi/tests
+run_unit fast 'pi/tests (bun test)' "$BUN_BIN" test pi/tests
 
 set_now
 TOTAL_END=$NOW
@@ -193,7 +311,7 @@ passed=0
 failed=0
 failed_labels=()
 recorded=0
-while IFS=$'\t' read -r status duration outfile label; do
+while IFS=$'\t' read -r status tier duration outfile label; do
 	recorded=$((recorded + 1))
 	if [[ $status == PASS ]]; then
 		passed=$((passed + 1))
@@ -219,7 +337,19 @@ else
 fi
 printf 'total wall clock: %ss\n' "$total"
 
+# The verdict is the last line of a Full gate run, printed after the wall
+# clock so that nothing follows it. A bare (Fast gate) run prints no verdict:
+# a green Fast gate is not the completion signal.
+exit_status=0
 if (( failed > 0 )); then
-	exit 1
+	exit_status=1
 fi
-exit 0
+if [[ $MODE == full ]]; then
+	if (( exit_status == 0 )); then
+		printf 'FULL GATE: PASS\n'
+	else
+		printf 'FULL GATE: FAIL\n'
+	fi
+fi
+
+exit "$exit_status"
