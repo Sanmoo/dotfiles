@@ -198,6 +198,39 @@ run() {
   HOME="$TMP/home" PATH="$TMP/bin:$PATH" HTTP_OC_TEST_ENV=inherited "$SCRIPT" oc --no-interactive -c demo "$@"
 }
 
+# The production default is pinned in-process, so the unset branch is asserted
+# without waiting out a busy-loop: with HTTP_OC_SCRIPT_TIMEOUT_SECONDS unset or
+# empty the limit is the production 10 seconds, and a set value is honoured.
+# The timeout scenarios below drive the limit down explicitly, so this is the
+# only place the unset default is exercised.
+assert_default_script_timeout() {
+  python3 - "$SCRIPT" <<'PY'
+import importlib.machinery
+import importlib.util
+import os
+import sys
+
+script = sys.argv[1]
+loader = importlib.machinery.SourceFileLoader('http_cli', script)
+spec = importlib.util.spec_from_loader(loader.name, loader)
+module = importlib.util.module_from_spec(spec)
+loader.exec_module(module)
+
+def expect(actual, expected, message):
+    if actual != expected:
+        print(f'FAIL: {message}: expected {expected}, got {actual}', file=sys.stderr)
+        sys.exit(1)
+
+os.environ.pop('HTTP_OC_SCRIPT_TIMEOUT_SECONDS', None)
+expect(module.post_response_script_timeout_seconds(), 10, 'unset must default to 10 seconds')
+os.environ['HTTP_OC_SCRIPT_TIMEOUT_SECONDS'] = ''
+expect(module.post_response_script_timeout_seconds(), 10, 'empty must default to 10 seconds')
+os.environ['HTTP_OC_SCRIPT_TIMEOUT_SECONDS'] = '3'
+expect(module.post_response_script_timeout_seconds(), 3, 'a set value must be honoured')
+PY
+}
+assert_default_script_timeout
+
 # Authorization is checked before curl is invoked.
 set +e
 run inspect >"$TMP/out" 2>"$TMP/err"
