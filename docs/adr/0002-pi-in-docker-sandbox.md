@@ -1,0 +1,21 @@
+# Pi runs in a plain Docker sandbox with the declared environment installed inside it
+
+Pi had the run of the home directory: every command the agent ran could read or modify other repositories, the dotfiles checkout, and the credentials in the Pi agent directory. The decision is to run Pi through a `safe-pi` wrapper in a throwaway Docker container that mounts the working repository read-write at its host path, mounts the Pi agent directory, the configuration checkout, the shared skills directory, the Herdr socket directory, git and SSH material (extensions and Pi packages held read-only), mounts a named volume holding a toolchain installed inside the container from the repository's tracked mise configuration, and mounts nothing else — no host toolchain, no Docker socket. Herdr keeps working because the host integration extension reports state over the mounted socket, and Herdr's automatic session resume is left to fail closed: the sandbox reports its session at a container-only path, so a restored pane comes back as a shell instead of as an unsandboxed Pi.
+
+## Considered Options
+
+- **Mount the host toolchain** (the mise installs and `~/.local/bin`) instead of installing a toolchain inside the container. Rejected after measuring: several core host binaries fail in a Debian-based image (Node without `libatomic`, `fd`, `jq`), and making them work requires matching the host distribution, which couples the sandbox to host upgrades and blurs the very boundary the sandbox exists to draw.
+- **Bake the whole toolchain into the image.** Rejected because the declaration is full of `latest` pins: they would freeze at image build, and a repository pin that differs from the declaration would re-download on every run, since a `--rm` container discards what was installed at runtime.
+- **Docker Sandboxes, OpenShell, or Gondolin** instead of plain Docker. Rejected for a single-user workstation: they add proxy, policy, and (for Gondolin) VM machinery whose credential-handling benefits this setup does not need, while making the Herdr-facing behavior harder to reason about.
+- **Mount the agent directory read-only**, keeping only credentials and sessions writable. Rejected because it does not work: Pi creates a lock file next to the credential file, so a read-only agent directory fails credential loading outright.
+- **Full read-write parity for the agent directory**, without read-only sub-mounts. Rejected so that a bad turn cannot persist code changes (extensions, Pi packages) into the host setup.
+- **Shadow `pi` on `PATH`** so Herdr's resume command re-enters the sandbox automatically. Rejected for now: it changes every `pi` invocation on the host (Herdr's agent start, the WorkQ launcher, one-shot print runs) and requires adopting an unmanaged wrapper file, and its failure mode is the worst one — a broken restore path. A container-side integration that reports its own resume command is the follow-up worth spiking instead.
+
+## Consequences
+
+- Sandboxed panes lose Herdr's automatic session resume; recovering costs one command (`safe-pi -c`), and the trade is never starting an unsandboxed Pi by surprise.
+- The sessions directory is visible twice inside the container (under the agent directory and at the container-only report path). Pi uses the latter.
+- The sandbox is a filesystem boundary, not a credential boundary: it reads every credential and session in the mounted agent directory.
+- Starting a sandbox depends on the network for toolchain convergence; the failure is a warning, not a block, unless the strict prepare mode is used.
+- Pi updates are explicit (`safe-pi --update`), so the image's Pi can lag the host's; the wrapper warns when the versions differ.
+- `pi install` and `pi update` do not work inside the sandbox by design; the host stays the place where Pi packages are managed.

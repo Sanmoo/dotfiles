@@ -54,6 +54,9 @@ The development environment is declared once, in the repository's tracked mise c
 38. As a developer, I want to be warned when the Pi inside the image and the Pi on my host differ, so that version drift is visible instead of confusing.
 39. As the machine owner, I want to run `safe-pi` from any directory, so that the sandbox follows the repository I am currently in.
 40. As a maintainer, I want the shared behavior (mounts, environment, tagging) covered by a test that stubs the `docker` boundary, so that regressions are caught without a Docker daemon.
+41. As the sandbox user, I want a succinct usage guide in the repository README, so that I can work day to day without re-reading the spec.
+42. As the sandbox user, I want the guide to lead with the recipes I actually repeat (continue, one-shot, debug shell, prepare, update), so that the common flows are one lookup away.
+43. As the sandbox user, I want the guide to name the surprising behaviors and their symptoms, so that I recognise fail-closed restore, read-only extensions, and fail-open convergence instead of debugging them.
 
 ## Implementation Decisions
 
@@ -127,7 +130,14 @@ The development environment is declared once, in the repository's tracked mise c
 
 - The domain glossary gains the new vocabulary introduced here.
 - An architecture decision record captures the isolation boundary, the declared-environment decision, and the restore trade-off, including the alternatives that were rejected.
-- The repository's usage documentation gains a section describing `safe-pi`, its flags, and the accepted limitations (no Docker socket, no credential boundary, no automatic Herdr session resume).
+- The repository README gains the usage guide (see Documentation below), including the accepted limitations (no Docker socket, no credential boundary, no automatic Herdr session resume).
+
+### Documentation
+
+- The deliverable includes a succinct usage guide written for day-to-day use, not a reference manual: a first-run description, the recipes that cover everyday flows, the script-owned flag table, a plain-language summary of what the sandbox does and does not see, the behaviors that surprise people, where the artifacts live, and a symptom-to-cause troubleshooting table.
+- The guide is a section of the repository's existing `How to` README, following its prose style, and is cross-referenced from the Herdr section, so there is exactly one place to read.
+- While the command does not exist yet, the guide's draft lives beside this spec as a planning artifact. Implementation moves it into the README and deletes the draft.
+- Writing the guide is part of the work, not a follow-up: it is the acceptance surface for the command's interface, and a recipe that reads badly in the guide is a signal to change the flag.
 
 ## Testing Decisions
 

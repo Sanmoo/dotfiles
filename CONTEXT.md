@@ -48,6 +48,28 @@ _Avoid_: environment variable (when meaning a temporary script value)
 An explicit mapping from a script-produced runtime variable to an exported variable in the calling shell session, available to subsequent commands in that session.
 _Avoid_: Environment update, collection variable (when meaning a shell export)
 
+## safe-pi
+
+**Sandbox**:
+The throwaway container Pi runs in when started through `safe-pi`.
+_Avoid_: container (when meaning the isolation boundary), devcontainer
+
+**Declared environment**:
+The set of tool versions the sandbox installs, read from the repository's tracked mise configuration instead of from the host's installed toolchain.
+_Avoid_: dev environment, toolchain (when meaning the declaration)
+
+**Toolchain volume**:
+The named Docker volume that keeps the declared environment's installed tools across sandbox runs, distinct from the image itself.
+_Avoid_: cache volume, mise volume
+
+**Host path parity**:
+Mounting a host directory into the sandbox at the same absolute path, so absolute paths and symlinks keep resolving.
+_Avoid_: mount mapping, path mapping
+
+**Fail-closed restore**:
+Herdr behavior where a sandboxed pane's session reference cannot be resumed on the host, so a restored pane returns as a shell instead of as an unsandboxed agent.
+_Avoid_: disabled restore, broken restore
+
 ## aws-console
 
 **AWS profile**:
