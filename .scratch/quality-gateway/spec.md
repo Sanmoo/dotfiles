@@ -1,33 +1,33 @@
 # Quality gateway: a Fast gate and a Full gate
 
-Status: needs-triage
+Status: ready-for-agent (tickets 01–10 under `issues/`)
 Design: approved
-Implementation authorization: withheld — specification recording only
+Implementation authorization: granted for tickets 01–10 only (owner, 2026-10-08)
 
 The contract below was settled in a grilling session on 2026-10-08, against
 measurements taken on the main checkout that day. The user approved the design
-and asked for the complete specification first; the ticket breakdown is the next
-step. This document is not permission to implement, to delete or weaken any
-test, or to change the validation obligation of any other repository.
+and asked for the complete specification first, then approved its breakdown into
+tickets under `issues/`. Implementation is authorized through those tickets only.
+This document is not permission to delete or weaken any test, or to change the
+validation obligation of any other repository.
 
 ## Problem Statement
 
 The repository owns tests in three places:
 
-- `tests/*-test.sh` — 17 shell tests (HTTP/`oc` CLI, OAuth helpers, Herdr, Nvim,
+- `tests/*-test.sh` — 18 shell tests (HTTP/`oc` CLI, OAuth helpers, Herdr, Nvim,
   `workq`, external skill installation);
 - `general/bin/*.test` — 2 bash tests (`aws-console`, `ecs-logs`);
-- `pi/tests` — 26 Bun tests in 2 files.
+- `pi/tests` — 30 Bun tests in 3 files.
 
-There is no runner. The convention recorded in `docs/superpowers/plans/` is a
-bare loop:
+There is no runner. The current convention is a bare loop:
 
 ```sh
 for t in tests/*-test.sh; do bash "$t"; done
 ```
 
-That loop has three defects. It misses eight tests entirely (the two
-`general/bin/*.test` files and the Bun suite). It reports nothing about
+That loop has three defects. It misses every test outside `tests/*-test.sh`: the two
+`general/bin/*.test` files and the three Bun files. It reports nothing about
 duration, so no one can tell whether it is slow without measuring by hand. And
 it provides no fast path, so the only way to validate a change is to pay the
 whole cost — which for this repository is dominated by two files that exist
@@ -48,10 +48,11 @@ sequential, stdin closed, 300s timeout per file:
 | `tests/auth-code-token-test.sh` | 1 | 0.1 | |
 | `tests/herdr-notification-target-test.sh` | 1 | 0.0 | |
 | `general/bin/ecs-logs.test` | 0 | 0.0 | |
-| `pi/tests` (`bun test`) | 0 | 0.1 | 26 pass |
-| 8 remaining `tests/*-test.sh` | 0 | ≤0.3 each | |
+| `pi/tests` (`bun test`) | 0 | 0.1 | 30 pass |
+| 10 remaining `tests/*-test.sh` | 0 | ≤0.3 each | |
 
-Total sequential ≈ 45s. Running everything with `xargs -P8` today measures 24.3s
+Total sequential ≈ 45s. Later commits modified `tests/safe-pi-wrapper-test.sh`, so
+ticket 10 re-measures at the current commit. Running everything with `xargs -P8` today measures 24.3s
 of wall clock — no cross-test interference was observed, and the wall is bound
 by the slowest file, not by the sum.
 
@@ -129,8 +130,7 @@ in this repository's `AGENTS.md`.
   at ~3.0s stays fast-tier deliberately, which is what keeps the Full gate
   meaningful as a gate rather than a formality.
 - Test file paths stay where they are. `tests/http-oc-test.sh` keeps its name
-  and location, because `docs/superpowers/plans/` and `README.md` refer to it
-  by path.
+  and location, so that path references to it stay valid.
 
 ### 3. Parallel execution
 
@@ -291,7 +291,8 @@ preserved the signal.
 
 ## Out of Scope
 
-Three findings are deferred, and the ticket breakdown is expected to carry them:
+Three findings are deferred and tracked as tickets in
+`.scratch/quality-gateway-followups/issues/`:
 
 1. **`apply-agent-config` aborts on checkouts with local skill installs.** The
    script runs `stow --no-folding --simulate/real --dir="$checkout" --target="$home" agents`.
