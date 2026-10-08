@@ -23,6 +23,28 @@ branch. If integration or cleanup is blocked, it preserves the remaining work
 and asks how to proceed. Explicit user instructions or workflow rules in a
 repository-specific `AGENTS.md` take precedence.
 
+## Run the tests
+
+The Quality gateway runs from this checkout with `tests/run`, the single entry
+point for the repository's tests:
+
+```sh
+tests/run          # Fast gate: fast-tier tests, cheap enough to re-run while working
+tests/run --full   # Full gate: both tiers, ending with the FULL GATE: verdict line
+```
+
+A bare `tests/run` runs the Fast gate only: the fast-tier files from `tests/`,
+`general/bin`, and the Bun suite under `pi/tests`. `tests/run --full` runs the
+Full gate — the Fast gate's files plus the slow-tier tests — and its last line is
+`FULL GATE: PASS` or `FULL GATE: FAIL`. A green Fast gate is necessary but never
+sufficient: a task is not finished until `tests/run --full` reports
+`FULL GATE: PASS`.
+
+Both commands work from any directory, bound every test with a timeout, and stop
+with a runner error (exit 2) when a required tool such as `bun` or `timeout` is
+missing. The individual tests below remain useful on their own; the runner is
+what makes them the Quality gateway.
+
 ## Agent skills
 
 The shared `~/.agents` and `~/.agents/skills` directories are real directories

@@ -19,6 +19,24 @@ and carry only the implementation: code, tests, and the documentation that ships
 with the behavior. `.scratch/**` is never edited inside a worktree. See
 `docs/agents/issue-tracker.md` for the operational detail.
 
+## Completion requires a green Full gate
+
+The Quality gateway is this repository's automated validation, taken as a whole.
+It runs in two phases. `tests/run` is the single entry point: it runs the
+Fast gate, the tests cheap enough to re-run freely while working.
+`tests/run --full` runs the Full gate — the Fast gate's files plus the slow tier
+— and ends with the explicit verdict line `FULL GATE: PASS` (`FULL GATE: FAIL`
+otherwise).
+
+A task is not finished until `tests/run --full` has passed. The evidence is that
+final verdict line: quote `FULL GATE: PASS` in the completion report. A green
+Fast gate is necessary but never sufficient — a bare `tests/run` prints no
+verdict, so a green Fast gate only means the next Full gate is worth running.
+
+The Full gate is a precondition of the completion protocol (commit the task's
+changes, integrate with `git merge --ff-only`, remove the worktree and branch),
+not a replacement for it.
+
 ## Agent skills
 
 ### Issue tracker
