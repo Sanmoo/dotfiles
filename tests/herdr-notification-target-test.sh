@@ -15,20 +15,26 @@ if ! grep -Eq '^delivery = "herdr"' "$CONFIG"; then
 fi
 
 if ! awk '
-	/^\[\[keys\.command\]\]$/ { in_command = 1; block = $0 ORS; next }
-	in_command && /^\[\[/ { if (block ~ /key = "prefix\+o"/) found = 1; in_command = 0 }
+	function flush() {
+		if (in_command && block ~ /key = "prefix\+o"/) found = 1
+		in_command = 0
+	}
+	/^\[\[?[^]]/ { flush(); if ($0 == "[[keys.command]]") { in_command = 1; block = $0 ORS } next }
 	in_command { block = block $0 ORS }
-	END { if (in_command && block ~ /key = "prefix\+o"/) found = 1; exit found ? 0 : 1 }
+	END { flush(); exit found ? 0 : 1 }
 ' "$CONFIG"; then
 	printf 'Expected custom keys.command binding for prefix+o\n' >&2
 	exit 1
 fi
 
 if ! awk '
-	/^\[\[keys\.command\]\]$/ { in_command = 1; block = $0 ORS; next }
-	in_command && /^\[\[/ { if (block ~ /focus-next-actionable-agent\.sh/) found = 1; in_command = 0 }
+	function flush() {
+		if (in_command && block ~ /focus-next-actionable-agent\.sh/) found = 1
+		in_command = 0
+	}
+	/^\[\[?[^]]/ { flush(); if ($0 == "[[keys.command]]") { in_command = 1; block = $0 ORS } next }
 	in_command { block = block $0 ORS }
-	END { if (in_command && block ~ /focus-next-actionable-agent\.sh/) found = 1; exit found ? 0 : 1 }
+	END { flush(); exit found ? 0 : 1 }
 ' "$CONFIG"; then
 	printf 'Expected prefix+o command to run focus-next-actionable-agent.sh\n' >&2
 	exit 1
