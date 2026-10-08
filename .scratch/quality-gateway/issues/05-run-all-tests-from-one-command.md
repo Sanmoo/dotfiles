@@ -6,11 +6,17 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `tests/run` discovers and runs all three groups.
-- [ ] Each file's name and duration are printed, followed by the total wall clock.
-- [ ] A failing test's captured output is shown; passing tests report only their duration.
-- [ ] No fail-fast: a red run reports every failure.
-- [ ] The runner exits 0 only when every test passed, and non-zero for a failed test or a runner error.
-- [ ] The runner works when invoked from a directory other than the repository root.
+- [x] `tests/run` discovers and runs all three groups.
+- [x] Each file's name and duration are printed, followed by the total wall clock.
+- [x] A failing test's captured output is shown; passing tests report only their duration.
+- [x] No fail-fast: a red run reports every failure.
+- [x] The runner exits 0 only when every test passed, and non-zero for a failed test or a runner error.
+- [x] The runner works when invoked from a directory other than the repository root.
+
+## Comments
+
+Implemented by `tests/run` (commit 05), a tracked executable that resolves the repository root from its own location and works from any cwd. It discovers `tests/*-test.sh`, `general/bin/*.test`, and the Bun suite as a single unit, prints each file's name, tier and duration as it finishes, shows a failing file's captured output while passing files report only their duration, and ends with the summary and the total wall clock. There is no fail-fast: exit 0 (all passed) / 1 (at least one test failed) / 2 (runner error), with distinguishable messages.
+
+Every unit runs with stdin closed and is bounded by `timeout 300`; the runner never sets or removes TMPDIR/TMP/TEMP, because the Bun tests create their scratch directories with `mkdtempSync(tmpdir(), ...)`.

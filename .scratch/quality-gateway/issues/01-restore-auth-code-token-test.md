@@ -6,8 +6,14 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `tests/auth-code-token-test.sh` passes on `main`.
-- [ ] The stub accepts the TLS context keyword and ignores it.
-- [ ] Existing assertions are unchanged: stdout carries only the access token, the `--json` shape, the `--force-login` and `--auth-param` query behaviour, and the reserved-parameter rejections.
+- [x] `tests/auth-code-token-test.sh` passes on `main`.
+- [x] The stub accepts the TLS context keyword and ignores it.
+- [x] Existing assertions are unchanged: stdout carries only the access token, the `--json` shape, the `--force-login` and `--auth-param` query behaviour, and the reserved-parameter rejections.
+
+## Comments
+
+Implemented in `tests/auth-code-token-test.sh` (commit 01). The in-process Python stub now reads `lambda url, data, ssl_context=None` and ignores the keyword argument that `general/bin/auth-code-token` passes; every existing assertion is unchanged (stdout carries only the access token, `--json` shape, `--force-login`/`--auth-param` query behaviour, reserved-parameter rejections).
+
+Verified: `bash tests/auth-code-token-test.sh` passes; breaking the stub's return value makes it fail, so the pass is not vacuous.

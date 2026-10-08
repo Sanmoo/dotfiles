@@ -1,6 +1,7 @@
 # Quality gateway: a Fast gate and a Full gate
 
-Status: ready-for-agent (tickets 01–10 under `issues/`)
+Status: implemented (tickets 01–10 resolved; measured budgets and two knowingly unmet
+acceptance boxes are recorded in `issues/06` and `issues/10`)
 Design: approved
 Implementation authorization: granted for tickets 01–10 only (owner, 2026-10-08)
 

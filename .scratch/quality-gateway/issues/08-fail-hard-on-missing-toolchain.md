@@ -6,9 +6,15 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With `bun` unavailable, `tests/run` exits non-zero.
-- [ ] Its message names `bun` and the `pi/tests` group it blocks.
-- [ ] The group is not reported as skipped.
-- [ ] A missing dependency produces a message distinguishable from a failed test.
+- [x] With `bun` unavailable, `tests/run` exits non-zero.
+- [x] Its message names `bun` and the `pi/tests` group it blocks.
+- [x] The group is not reported as skipped.
+- [x] A missing dependency produces a message distinguishable from a failed test.
+
+## Comments
+
+No code change was required: ticket 05's `tests/run` already implements this behaviour, and the review confirmed it.
+
+Independently verified on `main`: with `PATH=/usr/bin:/bin` (so `bun` is unavailable) `tests/run` exits 2 with `tests/run: RUNNER ERROR: the 'bun' tool is required to run the pi/tests group and was not found on PATH`. The message names `bun` and the `pi/tests` group it blocks, nothing is reported as skipped (`grep -in skip tests/run` is empty), and the runner-error path (exit 2, `RUNNER ERROR:` prefix) is distinguishable from a failed test (exit 1, red suite). A missing `timeout` is likewise a hard runner error.
