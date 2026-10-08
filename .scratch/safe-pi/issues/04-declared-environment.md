@@ -67,3 +67,13 @@ Not verified: the full declaration's first-run time (the erlang and elixir
 installs may build from source, so this is a long run for the manual
 measurement), and Herdr behaviour, which belongs to ticket 05. The
 `latest`-from-cache claim is checked offline here but not by a test.
+
+### Correction from ticket 05
+
+The full declaration does not converge in the image. `erlang@latest` fails to
+build from source (`configure: error: No curses library functions found`; the
+image also lacks `autoconf` and `libssl-dev`), and `elixir@latest` is skipped as
+a failed dependency. `safe-pi --prepare` exits non-zero, and because the
+entrypoint probes before installing, **every** normal start re-attempts the
+failing build (~30 s) before failing open. The "steady start is silent in about
+0.3 s" claim holds only for a declaration whose tools all install.

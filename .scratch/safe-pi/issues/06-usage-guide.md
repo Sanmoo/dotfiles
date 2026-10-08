@@ -13,3 +13,13 @@
 - [ ] The Herdr section cross-references the guide.
 
 ## Comments
+
+The draft guide is wrong about Herdr reporting. Ticket 05 found that a
+sandboxed pane is never attributed to Pi (Herdr 0.9.3 drops the mounted managed
+integration's reports because the pane's foreground process is `docker`), so
+"Herdr's socket, so the pane still reports `working`, `blocked`, and `idle`" is
+not true as built. The troubleshooting row "Herdr shows the pane as a plain
+terminal" is also closer to the normal case than the exception. The guide's
+first-run timing likewise needs the erlang/elixir failure captured: the declared
+toolchain does not converge in the image, so starts are not "about a second".
+See ticket 05 for evidence.

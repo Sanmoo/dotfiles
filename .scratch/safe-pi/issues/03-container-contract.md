@@ -69,3 +69,15 @@ checkout stays read-only. `shellcheck` is clean and
 `tests/safe-pi-wrapper-test.sh` passes; the full `tests/*.sh` sweep is 16/18,
 with the two failures (`auth-code-token-test.sh`,
 `herdr-notification-target-test.sh`) reproducing on the pre-change `main`.
+
+### Reopened by ticket 05
+
+The Herdr-attribution claim does not hold. In a real sandboxed pane,
+`safe-pi` runs Pi but Herdr reports `agent_status: unknown` and never lists the
+pane as an agent: the mounted Herdr-managed integration (source `herdr:pi`) is
+acknowledged and then ignored, because Herdr 0.9.3 only applies that source to
+a pane whose detected agent is Pi, and the sandbox's foreground process is
+`docker`. A report from the same container under a custom source is applied
+immediately. Full evidence and controls in ticket 05. The socket and environment
+forwarding are correct; the advertised-as-Pi mechanism named in the spec is not
+implemented.
