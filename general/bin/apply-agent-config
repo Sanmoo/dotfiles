@@ -17,5 +17,33 @@ for directory in "$home/.agents" "$home/.agents/skills"; do
 		exit 1
 	fi
 done
-stow --no-folding --simulate --dir="$checkout" --target="$home" agents
-stow --no-folding --dir="$checkout" --target="$home" agents
+
+# Publish only content tracked by the checkout. Machine-local skill installs
+# are untracked entries under the package, often gitignored absolute symlinks,
+# and Stow aborts when it meets one. Ask Git for every untracked path under the
+# package and ignore each one, so the tracked index is the single source of
+# truth for what the package distributes.
+if ! prefix=$(git -C "$checkout" rev-parse --show-prefix 2>/dev/null); then
+	printf 'Checkout is not a Git work tree: %s\n' "$checkout" >&2
+	exit 1
+fi
+if [[ -z "$(git -C "$checkout" ls-files -- agents)" ]]; then
+	printf 'Checkout tracks no agents package content: %s\n' "$checkout" >&2
+	exit 1
+fi
+
+ignore_args=()
+while IFS= read -r -d '' path; do
+	path=${path#"$prefix"}
+	path=${path#agents/}
+	path=${path%/}
+	[[ -n "$path" ]] || continue
+	escaped=$(printf '%s' "$path" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
+	ignore_args+=(--ignore="^${escaped}$")
+done < <(
+	git -C "$checkout" ls-files --others --directory -z -- agents
+	git -C "$checkout" ls-files --others --ignored --exclude-standard --directory -z -- agents
+)
+
+stow --no-folding --simulate --dir="$checkout" --target="$home" "${ignore_args[@]}" agents
+stow --no-folding --dir="$checkout" --target="$home" "${ignore_args[@]}" agents

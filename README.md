@@ -55,8 +55,9 @@ not make it your own: maintain adaptations in the corresponding fork.
 
 `agents/.agents/skills/` is reserved for skills authored by the user, maintained
 independently, and containing no company-specific content. Currently that is
-`jira-issue-formatting`. Add your own skills there; Stow links their files
-individually, without owning the shared directory or replacing local entries.
+`jira-issue-formatting`. Add your own skills there and commit them; Stow links
+their files individually, without owning the shared directory or replacing
+local entries.
 
 ### Apply configuration on a new or migrated machine
 
@@ -67,7 +68,12 @@ general/bin/apply-agent-config "$PWD"
 ```
 
 This command refuses symlinked shared directories, checks for conflicts first,
-and applies `stow --no-folding agents`. It does not download, update, select, or
+and applies `stow --no-folding agents`. It publishes only content tracked by the
+checkout: machine-local entries under the package — external skill installs,
+their source links, and installation metadata — are left out, so applying works
+even when such installs exist. The checkout must be a Git work tree, and an
+authored skill must be committed before it is applied; use `stow agents` by hand
+to link work in progress. The command does not download, update, select, or
 install dependencies. Use this guarded command for the agents package; ordinary
 `stow agents` can fold the directory into a checkout link on a fresh home.
 Apply other packages separately using the platform commands below.

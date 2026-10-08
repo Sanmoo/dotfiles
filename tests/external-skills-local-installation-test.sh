@@ -25,6 +25,10 @@ assert_not_symlink() {
 	[[ ! -L "$1" ]] || { printf 'FAIL: expected real directory %s\n' "$1" >&2; exit 1; }
 }
 
+assert_absent() {
+	[[ ! -e "$1" && ! -L "$1" ]] || { printf 'FAIL: expected no %s\n' "$1" >&2; exit 1; }
+}
+
 home="$TMPDIR/home"
 mkdir -p "$home"
 
@@ -40,12 +44,23 @@ mkdir -p "$home"
 fixture="$TMPDIR/fixture-checkout"
 mkdir -p "$fixture"
 git -C "$ROOT_DIR" archive HEAD agents opencode | tar -x -C "$fixture"
+# Reproduce a checkout that carries a machine-local external skill install: an
+# untracked absolute symlink named by the package's own .gitignore. Real Stow
+# aborts on it unless the apply step publishes tracked content only.
+ln -s "$TMPDIR/machine-local-skill" "$fixture/agents/.agents/skills/omarchy"
+git -C "$fixture" -c init.templateDir= init -q -b main
+git -C "$fixture" config user.name 'Fixture User'
+git -C "$fixture" config user.email fixture@example.invalid
+git -C "$fixture" add -A
+git -C "$fixture" commit -qm 'tracked fixture'
 
 # Applying the package to a new home creates a real shared directory and only
 # links the repository-owned file into it.
 "$APPLY" "$fixture" "$home"
 assert_not_symlink "$home/.agents"
 assert_file "$home/.agents/README.md"
+# The machine-local install is not part of the package and is not published.
+assert_absent "$home/.agents/skills/omarchy"
 
 # A dependency installed outside the repository survives reapplication and is
 # not replaced by the package.
