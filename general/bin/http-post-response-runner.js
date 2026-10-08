@@ -69,12 +69,13 @@ const context = vm.createContext({
 });
 
 const scripts = Array.isArray(input.scripts) ? input.scripts : [input.code];
-const deadline = Date.now() + 10000;
+const timeoutSeconds = Number(input.timeoutSeconds) > 0 ? Number(input.timeoutSeconds) : 10;
+const deadline = Date.now() + timeoutSeconds * 1000;
 try {
   for (const code of scripts) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new Error("post-response script sequence exceeded the 10-second execution limit");
+      throw new Error(`post-response script sequence exceeded the ${timeoutSeconds}-second execution limit`);
     }
     vm.runInContext(code, context, { timeout: remaining, displayErrors: true });
   }

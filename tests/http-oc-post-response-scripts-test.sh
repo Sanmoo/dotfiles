@@ -340,12 +340,14 @@ runtime:
         { const started = Date.now();
           while (Date.now() - started < 6000) {} }
 YAML
+# The execution limit is driven down to one second here so the bounded
+# failure is asserted quickly; the busy-loop fixture is unchanged.
 set +e
-run --allow-scripts timeout >"$TMP/out" 2>"$TMP/err"
+HTTP_OC_SCRIPT_TIMEOUT_SECONDS=1 run --allow-scripts timeout >"$TMP/out" 2>"$TMP/err"
 status=$?
 set -e
 [[ $status -ne 0 ]]
-assert_contains "$TMP/err" "10-second execution limit" "timeout should fail clearly"
+assert_contains "$TMP/err" "1-second execution limit" "timeout should fail clearly"
 # --export requires the separately loaded zsh integration and does not
 # authorize scripts by itself.
 : >"$TMP/calls"
@@ -388,11 +390,11 @@ assert_contains "$TMP/err" "selected once" "duplicate export destinations should
 export ZSH_INTEGRATION="$PWD/zsh/.http-oc.zsh"
 export PATH="$TMP/bin:$(dirname "$SCRIPT"):$PATH"
 set +e
-HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; export ACCOUNT=old-account; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=account multiple-timeout >/dev/null 2>"$2"' 'zsh-test' "$ZSH_INTEGRATION" "$TMP/err"
+HTTP_OC_SCRIPT_TIMEOUT_SECONDS=1 HOME="$TMP/home" zsh -fc 'source "$1"; export TOKEN=old-token; export ACCOUNT=old-account; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token --export ACCOUNT=account multiple-timeout >/dev/null 2>"$2"' 'zsh-test' "$ZSH_INTEGRATION" "$TMP/err"
 status=$?
 set -e
 [[ $status -ne 0 ]]
-assert_contains "$TMP/err" "10-second execution limit" "multi-export timeout should fail clearly"
+assert_contains "$TMP/err" "1-second execution limit" "multi-export timeout should fail clearly"
 rm -f /tmp/http-oc-export-pwned
 HOME="$TMP/home" zsh -fc 'source "$1"; http oc --no-interactive -c demo --allow-scripts --export TOKEN=token export >/dev/null; sh -c '\''printf "%s" "$TOKEN"'\''' 'zsh-test' "$ZSH_INTEGRATION" >"$TMP/exported" 2>"$TMP/err"
 expected=$'line one\nquote \' and "$(touch /tmp/http-oc-export-pwned)'

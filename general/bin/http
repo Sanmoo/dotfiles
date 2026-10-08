@@ -1373,9 +1373,22 @@ def write_export_transfer(transfer_path, shell_name, value):
         raise
 
 
+DEFAULT_SCRIPT_TIMEOUT_SECONDS = 10
+
+
+def post_response_script_timeout_seconds():
+    """Return the post-response script execution limit in seconds."""
+    raw = os.environ.get("HTTP_OC_SCRIPT_TIMEOUT_SECONDS", "").strip()
+    return int(raw) if raw else DEFAULT_SCRIPT_TIMEOUT_SECONDS
+
+
 def run_post_response_scripts(scripts, body, status, headers, variables, export_mappings=None):
     """Run ordered scripts in one Node vm with one shared temporary runtime."""
     runner = Path(__file__).with_name("http-post-response-runner.js")
+    timeout_seconds = post_response_script_timeout_seconds()
+    execution_limit_message = (
+        f"post-response script sequence exceeded the {timeout_seconds}-second execution limit"
+    )
     payload = json.dumps({
         "scripts": scripts,
         "body": body,
@@ -1384,20 +1397,21 @@ def run_post_response_scripts(scripts, body, status, headers, variables, export_
         "variables": variables,
         "processEnv": dict(os.environ),
         "exportSources": [runtime_name for _shell_name, runtime_name in (export_mappings or [])],
+        "timeoutSeconds": timeout_seconds,
     })
     try:
         result = subprocess.run(
             ["node", str(runner)], input=payload, text=True, capture_output=True,
-            timeout=11,
+            timeout=timeout_seconds + 1,
         )
     except subprocess.TimeoutExpired:
-        print("error: post-response script sequence exceeded the 10-second execution limit", file=sys.stderr)
+        print(f"error: {execution_limit_message}", file=sys.stderr)
         return 1
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
     if result.returncode != 0:
         if "timed out" in result.stderr.lower() or "execution limit" in result.stderr.lower():
-            print("error: post-response script sequence exceeded the 10-second execution limit", file=sys.stderr)
+            print(f"error: {execution_limit_message}", file=sys.stderr)
         else:
             print("error: post-response script failed", file=sys.stderr)
         return result.returncode
