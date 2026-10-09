@@ -8,7 +8,7 @@
 
 **Type:** prototype
 
-- [ ] The sandbox reporter (ticket 08) attaches a `resume_argv` such as `safe-pi -c` to its reports under its own source, with the Herdr-managed integration inactive.
+- [ ] The sandbox reporter (ticket 08) attaches a `resume_argv` such as `safe-pi -c` to its reports under its own source, with the Herdr-managed integration inactive. (Exact-session targeting, so a restart reopens the same conversation rather than the newest one in the directory, is ticket 10.)
 - [ ] A Herdr server restart is exercised, and the observed outcome — conversation resumed inside a sandbox, or pane returned as a shell — is recorded explicitly.
 - [ ] The answer states whether Herdr accepts a `resume_argv` from a custom source on the pane, and how it behaves when more than one source or report carries one.
 - [ ] If the mechanism works, a follow-up ticket is proposed; if it does not, the ADR's fail-closed decision is recorded as still standing.
@@ -42,4 +42,6 @@ is why ticket 05 saw it stay `null` for a custom source. That gate is
 intentional; the `resume_argv` path is what answers this spike.
 
 So the spike is answerable now, and ticket 08's reporter is the place to attach
-`["safe-pi", "-c"]`.
+the resume command. The first form to test is `["safe-pi", "-c"]`; ticket 10
+carries the requirement (and open questions) for naming the exact session
+instead of the newest one in the directory.
