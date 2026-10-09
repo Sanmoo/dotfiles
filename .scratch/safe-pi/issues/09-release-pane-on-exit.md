@@ -16,6 +16,7 @@
 - Herdr accepts a per-source `pane.report_metadata` `display_agent` with no authority requirement, and the sidebar/border label prefers `display_agent` over the agent label, so a custom agent label can still display as `Pi`. `herdr agent list` prints raw JSON, so it shows `"agent": "safe-pi"` alongside `"display_agent": "Pi"`.
 - Re-entry needs no code: Herdr's `clear_self_reported_agent` ignores a shell-return signal older than the current authority, so a fresh report after `safe-pi -c` survives a late safety-net clear.
 - The host wrapper knows the pane id after `docker run` returns but is deliberately not used: it would be a second writer on the same source, needing `seq` coordination, and only the reporter knows the difference between quitting and switching sessions.
+- The reporter ships in the image (`COPY`ed by the Dockerfile) and the wrapper rebuilds a cached image only when the `safe-pi.entrypoint` label changes, so this change bumps the label: ticket 08 flagged that ticket 10 shipped a new reporter without bumping it, leaving a cached image serving the superseded one.
 
 ## Acceptance criteria
 
@@ -26,7 +27,7 @@
 - [ ] Reproduction on a real pane: Ctrl-C twice in `safe-pi`, then `herdr agent list` no longer lists the pane, without closing it.
 - [ ] A sandbox that dies without a shutdown event (SIGKILL/OOM/daemon stop) also clears, via Herdr's idle-shell safety net, about a second after the pane's shell returns.
 - [ ] Re-entry (`safe-pi -c`) still re-attributes the pane.
-- [ ] The host wrapper is untouched; the reporter is the only writer on the `safe-pi` source.
+- [ ] The host wrapper gains no release logic: the reporter stays the only writer on the `safe-pi` source. The image's `safe-pi.entrypoint` label is bumped so a cached image rebuilds with the new reporter.
 - [ ] `pi/tests/pi-agent/herdr-reporter.test.ts` covers the release trigger, the non-triggers, the bounded await, and the agent-label constant; `tests/run --full` ends in `FULL GATE: PASS`.
 
 ## Comments
