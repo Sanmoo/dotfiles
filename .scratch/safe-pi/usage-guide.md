@@ -57,7 +57,10 @@ in about a second.
 - Your Pi configuration, credentials, sessions, skills, prompts, agents,
   extensions, and packages, shared with the host Pi. Extensions and packages are
   read-only inside the sandbox.
-- Herdr's socket, so the pane still reports `working`, `blocked`, and `idle`.
+- Herdr's socket, plus a sandbox-owned reporter that reports the pane as
+  `working`, `blocked`, and `idle`. Herdr's own Pi integration is disabled
+  inside the sandbox, because Herdr ignores it for a pane whose foreground
+  process is `docker`.
 - A toolchain installed inside the container from the declared mise
   configuration, kept in a named volume.
 - Not your host toolchain, not other repositories, not the rest of your home
@@ -79,6 +82,11 @@ in about a second.
   immediately.
 - The sandbox is a filesystem boundary, not a credential boundary: it can read
   the credentials Pi uses.
+- Herdr 0.9.3 records no session reference for a sandboxed pane: a custom
+  integration's session reference is accepted but not stored, so the pane
+  reports state while restore stays fail-closed. A Herdr that accepts
+  custom-source session references (documented as 0.10.0 or later) is needed
+  before the reference can appear.
 - A warning that the image's Pi differs from the host's Pi is expected until you
   run `safe-pi --update`.
 
@@ -98,6 +106,6 @@ in about a second.
 | Cannot find the build context | The script was copied instead of installed by stow; point the override at the Dockerfile |
 | The first run takes minutes | The image build or the toolchain convergence is running; it reports which one |
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
-| Herdr shows the pane as a plain terminal | Herdr's socket is not reachable from the container, or the integration extension is missing |
-| Blocked prompts never appear in Herdr | The approval extension is missing from the mounted configuration |
+| Herdr shows the pane as a plain terminal | You are not inside a Herdr pane (no `HERDR_ENV`), or Herdr's socket is not reachable from the container |
+| Blocked prompts never appear in Herdr | The `permission-gate` extension is missing from the mounted configuration, so nothing emits the blocked event the sandbox reporter consumes |
 | Warning about differing Pi versions | The image's Pi is older than the host's; run `safe-pi --update` |

@@ -4,15 +4,15 @@
 
 **Blocked by:** None (can start immediately; the socket mount from 03 is already in place)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] In a sandboxed pane, `herdr agent list` lists the pane and it shows `working` during a turn and `idle` once it settles.
 - [ ] A dangerous command gated by `permission-gate` shows the pane as `blocked` until it is answered, and clears when it is.
-- [ ] The reporter uses its own source (not `herdr:pi`), and the Herdr-managed integration does not report for the pane, so exactly one source holds it.
-- [ ] Reports are best-effort: an unreachable socket or a failed report never blocks, slows, or breaks Pi.
-- [ ] The reporter reports the session reference at the container-only sessions path. The installed Herdr 0.9.3 stores none for a custom source, so the limitation is documented (pending a Herdr that accepts custom-source session references, ≥ 0.10.0); this does not block the state attribution that is this ticket's deliverable.
-- [ ] The reporter ships with the sandbox (in the image or on a container-only mount) without writing into the host Pi agent directory, which is mounted read-only inside the sandbox.
-- [ ] A test at the docker/entrypoint seam asserts the reporter is loaded and the managed integration is not; the contract and guide (03/06) are updated to the real behaviour.
+- [x] The reporter uses its own source (not `herdr:pi`), and the Herdr-managed integration does not report for the pane, so exactly one source holds it.
+- [x] Reports are best-effort: an unreachable socket or a failed report never blocks, slows, or breaks Pi.
+- [x] The reporter reports the session reference at the container-only sessions path. The installed Herdr 0.9.3 stores none for a custom source, so the limitation is documented (pending a Herdr that accepts custom-source session references, ≥ 0.10.0); this does not block the state attribution that is this ticket's deliverable.
+- [x] The reporter ships with the sandbox (in the image or on a container-only mount) without writing into the host Pi agent directory, which is mounted read-only inside the sandbox.
+- [x] A test at the docker/entrypoint seam asserts the reporter is loaded and the managed integration is not; the contract and guide (03/06) are updated to the real behaviour.
 
 ## Comments
 
@@ -29,3 +29,51 @@
 - Disabling the managed integration: the host `~/.pi/agent/extensions` is mounted read-only and contains `herdr-agent-state.ts`. Decide how to keep it from loading in the sandbox (for example a container-only extensions view) without losing the approval and other host extensions the sandbox needs.
 - Relationship to ticket 07: the same reporter is the natural place to declare a resume command once Herdr ≥ 0.10.0 accepts one from a custom source. 07 answers whether that works; this ticket does not depend on it.
 - ADR 0002 records "Herdr keeps working because the host integration extension reports state over the mounted socket", which ticket 05 disproved. Revisit that decision record when this lands.
+
+### Implementation (agent-side)
+
+Implemented and validated at the seams; the two end-to-end criteria (a real
+sandboxed pane showing `working`/`idle`, and `blocked` while the gate is open)
+still need a human run under Herdr.
+
+Ships in the image at `/usr/local/share/safe-pi/herdr-reporter.ts`
+(`safe-pi/herdr-reporter.ts`, `COPY`ed by the Dockerfile). It reports over the
+mounted socket under source `safe-pi` with `agent: pi`, mapping the same events
+the managed integration does: `working` on `agent_start`, `idle` on
+`agent_settled`, `blocked` with the gate's message while `herdr:blocked` is
+active, and the session reference from `ctx.sessionManager.getSessionFile()`
+(the container-only `/run/safe-pi/sessions/...`). Every request is
+fire-and-forget with a 500 ms unref'd timeout, so a dead socket never delays Pi.
+
+Disabling the managed integration uses the container-only extensions view. The
+wrapper mounts the host extensions read-only at `/run/safe-pi/host-extensions`
+and a tmpfs over `$HOME/.pi/agent/extensions`; before Pi starts, the entrypoint
+symlinks every host extension except `herdr-agent-state.{ts,js}` into that view
+and adds the reporter. Host extensions stay immutable (the view is a tmpfs over
+the ro source) and exactly one source holds the pane. Building the view is
+best-effort: if it fails, the command still runs.
+
+Evidence:
+
+- `tests/safe-pi-wrapper-test.sh` asserts the ro host-extensions mount at the
+  container-only path and the tmpfs over the discovered extensions path.
+- `tests/safe-pi-entrypoint-test.sh` runs the real entrypoint against a fixture
+  host-extensions directory and asserts the view contains the reporter and
+  every host extension but neither `herdr-agent-state.ts` nor `.js`; it also
+  checks the image context ships the reporter, that a reporter-only view works,
+  that a direct image run does not build the view, and that an unusable view
+  still runs Pi. All pass.
+- `pi/tests/pi-agent/herdr-reporter.test.ts` drives the reporter over a real
+  unix socket and asserts source/agent/pane, `idle`/`working`/`blocked`
+  transitions, the container-only `agent_session_path`, state deduplication,
+  non-TUI suppression, and that an unreachable socket neither throws nor
+  slows the handlers. All pass.
+- `shellcheck` is clean on the wrapper, entrypoint, and both shell tests.
+
+The session-reference limitation is documented: the reporter carries
+`agent_session_path`, but Herdr 0.9.3 stores nothing for a custom source (only
+`herdr:*` sources do), pending a Herdr that accepts custom-source session
+references (≥ 0.10.0). The reporter deliberately does not declare a resume
+command; that is ticket 07's follow-up. ADR 0002 and the `safe-pi` glossary were
+updated, and the 03/06 ticket notes and the draft guide now describe the
+sandbox reporter instead of the managed integration.

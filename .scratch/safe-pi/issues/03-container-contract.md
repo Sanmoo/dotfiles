@@ -81,3 +81,23 @@ a pane whose detected agent is Pi, and the sandbox's foreground process is
 immediately. Full evidence and controls in ticket 05. The socket and environment
 forwarding are correct; the advertised-as-Pi mechanism named in the spec is not
 implemented.
+
+### Corrected by ticket 08
+
+The Herdr-attribution contract changed. The host extensions are no longer
+mounted over `~/.pi/agent/extensions`; they are mounted read-only at the
+container-only path `/run/safe-pi/host-extensions`, and a tmpfs is mounted at
+`$HOME/.pi/agent/extensions`. Before Pi starts, the entrypoint builds a
+container-only extensions view there from the host extensions, omitting
+`herdr-agent-state.{ts,js}` and adding the reporter baked into the image at
+`/usr/local/share/safe-pi/herdr-reporter.ts`. The reporter reports over the
+mounted socket under source `safe-pi`, which Herdr applies to the pane even
+though its foreground process is `docker`.
+
+The earlier claim in this ticket — "the wrapper's advertised agent identity is
+visible to Herdr for the pane" via the mounted `herdr-agent-state.ts` — is
+therefore replaced: the managed integration is deliberately not loaded inside
+the sandbox, and exactly one source (`safe-pi`) owns the pane. The Herdr
+variables (`HERDR_ENV`, `HERDR_SOCKET_PATH`, `HERDR_PANE_ID`) are still forwarded
+only when the host sets them, now consumed by the reporter. No Docker socket,
+no other mount, and no environment variable changed.
