@@ -155,7 +155,7 @@ describe("herdr-reporter", () => {
 			agent: "pi",
 			pane_id: PANE_ID,
 			agent_session_path: SESSION_FILE,
-			resume_argv: ["safe-pi", "-c"],
+			resume_argv: ["safe-pi", "--session", "session-id"],
 			session_start_source: "startup",
 		});
 		expect(state?.params).toMatchObject({
@@ -164,7 +164,7 @@ describe("herdr-reporter", () => {
 			pane_id: PANE_ID,
 			state: "idle",
 			agent_session_path: SESSION_FILE,
-			resume_argv: ["safe-pi", "-c"],
+			resume_argv: ["safe-pi", "--session", "session-id"],
 		});
 	});
 
@@ -213,8 +213,75 @@ describe("herdr-reporter", () => {
 		const session = requests.find((request) => request.method === "pane.report_agent_session");
 		expect(session?.params).toMatchObject({
 			agent_session_path: otherSession,
-			resume_argv: ["safe-pi", "-c"],
+			resume_argv: ["safe-pi", "--session", "other-id"],
 		});
+	});
+
+	it("names the exact session so a restart cannot reopen another one in the directory", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!(
+			{},
+			makeContext({
+				sessionManager: {
+					getSessionFile: () => SESSION_FILE,
+					getSessionId: () => "019e20f0-6c1b-7b3d-9a5e-2f4c8d7e1a90",
+				},
+			}),
+		);
+		await waitForRequests(requests, 2);
+
+		for (const request of requests) {
+			expect(request.params?.resume_argv).toEqual([
+				"safe-pi",
+				"--session",
+				"019e20f0-6c1b-7b3d-9a5e-2f4c8d7e1a90",
+			]);
+		}
+	});
+
+	it("falls back to the most recent conversation when Pi reports no session id", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!(
+			{},
+			makeContext({
+				sessionManager: { getSessionFile: () => SESSION_FILE, getSessionId: () => undefined },
+			}),
+		);
+		await waitForRequests(requests, 2);
+
+		expect(requests[0]?.params?.resume_argv).toEqual(["safe-pi", "-c"]);
+	});
+
+	it("refuses a reported id that is not a plain token", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!(
+			{},
+			makeContext({
+				sessionManager: {
+					getSessionFile: () => undefined,
+					getSessionId: () => "-c && rm -rf /",
+				},
+			}),
+		);
+		await waitFor(() => statesOf(requests).length >= 1, "idle state");
+
+		// The id reaches neither the resume command nor the stored session
+		// reference: one rule governs both.
+		expect(requests.some((request) => request.method === "pane.report_agent_session")).toBe(false);
+		expect(requests[0]?.params?.agent_session_id).toBeUndefined();
+		expect(requests[0]?.params?.resume_argv).toEqual(["safe-pi", "-c"]);
 	});
 
 	it("reports working during a turn and idle once it settles", async () => {

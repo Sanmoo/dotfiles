@@ -311,9 +311,10 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 - A repository's own `.mise.toml` pins are installed on first use and stay in the
   toolchain volume, so switching repositories does not re-download them.
 - After a Herdr server restart, a sandboxed pane comes back inside the sandbox:
-  the reporter has declared `safe-pi -c` as the pane's self-reported resume
-  command, and Herdr types it into the restored pane's shell in the saved
-  working directory.
+  the reporter has declared `safe-pi --session <id>` as the pane's self-reported
+  resume command, naming the session that was running rather than the newest
+  one in the directory, and Herdr types it into the restored pane's shell in
+  the saved working directory.
 - `pi install` inside the sandbox fails on purpose, because extensions and
   packages are read-only. Install on the host; the sandbox picks it up
   immediately.

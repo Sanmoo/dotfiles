@@ -24,13 +24,15 @@
  * stores the native `agent_session` reference only for its official `herdr:*`
  * sources, so a custom source never populates it. Automatic restore therefore
  * comes from the self-reported resume command this reporter attaches to every
- * report (`RESUME_ARGV`): Herdr has accepted `resume_argv` from a custom source
+ * report (`resumeArgv`): Herdr has accepted `resume_argv` from a custom source
  * since 0.9.2 and persists it with the pane. After a Herdr server restart the
  * restored pane's shell gets that command typed into it in the saved working
  * directory, so the pane comes back inside a fresh sandbox rather than as a
- * plain shell or an unsandboxed Pi. Because the command rides on every report,
- * a changed session re-states it. If no report ever reaches Herdr, the pane has
- * no stored command and still fails closed to a shell.
+ * plain shell or an unsandboxed Pi. The command names the session id, so a
+ * restart cannot reopen a different conversation in the same directory. Because
+ * the command rides on every report, a changed session re-states it. If no
+ * report ever reaches Herdr, the pane has no stored command and still fails
+ * closed to a shell.
  */
 
 import net from "node:net";
@@ -41,14 +43,31 @@ const AGENT = "pi";
 const REPORT_TIMEOUT_MS = 500;
 
 /**
- * The resume command Herdr stores with the pane: re-enter the sandbox with the
- * most recent conversation in the pane's directory. It has to satisfy Herdr's
- * rules for a self-reported command — a bare first token resolved on the pane
- * shell's `PATH` (`safe-pi` resolves at `~/.local/bin`), at most 64 arguments
- * and 8 KiB, no apostrophes or control characters — because it runs on the host
- * in the pane's saved working directory, not inside the container.
+ * Pi's session ids are UUIDs (alphanumerics plus `-`, `_`, `.`). Anything else
+ * is refused before it can reach the resume command Herdr runs on the host or
+ * the session reference the reporter stores, so a hand-edited session header
+ * cannot smuggle a flag or a quote into either.
  */
-const RESUME_ARGV = ["safe-pi", "-c"];
+function isSessionId(value: unknown): value is string {
+	return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
+}
+
+/**
+ * The resume command Herdr stores with the pane: re-enter the sandbox in the
+ * conversation that was running, named by its session id. `-c` alone would be
+ * enough only while the pane's directory holds a single session; naming the id
+ * is what keeps a restart from reopening another one, and `safe-pi` forwards
+ * `--session <id>` to a Pi that resolves it against the container-only project
+ * session directory. With no id to name, it falls back to the most recent
+ * conversation in that directory. The rules such a command has to satisfy are
+ * stated in the module header, beside Herdr's other requirements.
+ */
+function resumeArgv(sessionId: string | undefined): string[] {
+	if (sessionId) {
+		return ["safe-pi", "--session", sessionId];
+	}
+	return ["safe-pi", "-c"];
+}
 
 interface SessionManager {
 	getSessionFile?: () => string | undefined;
@@ -159,7 +178,7 @@ export default function (pi: ExtensionAPI): void {
 
 		try {
 			const id = ctx?.sessionManager?.getSessionId?.();
-			sessionId = typeof id === "string" && id.length > 0 ? id : undefined;
+			sessionId = isSessionId(id) ? id : undefined;
 		} catch {
 			sessionId = undefined;
 		}
@@ -181,7 +200,7 @@ export default function (pi: ExtensionAPI): void {
 			source: SOURCE,
 			agent: AGENT,
 			seq: nextReportSeq(),
-			resume_argv: RESUME_ARGV,
+			resume_argv: resumeArgv(sessionId),
 			...sessionRef(),
 		};
 	}

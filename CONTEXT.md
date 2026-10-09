@@ -83,7 +83,7 @@ Mounting a host directory into the sandbox at the same absolute path, so absolut
 _Avoid_: mount mapping, path mapping
 
 **Self-reported resume command**:
-The `resume_argv` a sandboxed pane's reporter attaches to its Herdr reports (`safe-pi -c`): Herdr persists it with the pane and, after a server restart, types it into the restored pane's shell in the saved working directory, so the pane comes back inside a fresh sandbox. Herdr consults it before its built-in official resume table, and it is the sandbox's substitute for the native `agent_session` reference, which is stored only for official `herdr:*` sources.
+The `resume_argv` a sandboxed pane's reporter attaches to its Herdr reports (`safe-pi --session <id>`, naming the session that was running, with `safe-pi -c` as the fallback): Herdr persists it with the pane and, after a server restart, types it into the restored pane's shell in the saved working directory, so the pane comes back inside a fresh sandbox in the same conversation. Herdr consults it before its built-in official resume table, and it is the sandbox's substitute for the native `agent_session` reference, which is stored only for official `herdr:*` sources.
 _Avoid_: resume hook, restore command, resume path
 
 **Sandbox reporter**:
