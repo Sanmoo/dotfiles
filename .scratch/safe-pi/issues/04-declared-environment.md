@@ -77,3 +77,10 @@ a failed dependency. `safe-pi --prepare` exits non-zero, and because the
 entrypoint probes before installing, **every** normal start re-attempts the
 failing build (~30 s) before failing open. The "steady start is silent in about
 0.3 s" claim holds only for a declaration whose tools all install.
+
+### Follow-up opened: 11
+
+The erlang/elixir convergence failure has its own `needs-info` ticket, `11 —
+Erlang/Elixir in the declaration break a steady safe-pi start`, because the fix
+may be a declaration change, extra image packages, or a precompiled OTP rather
+than a convergence tweak.
