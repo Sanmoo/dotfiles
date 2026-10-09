@@ -33,6 +33,9 @@ Measured inside `safe-pi:current-u1000` (`node:26-bookworm-slim`, glibc 2.36):
   under `LC_ALL=C.UTF-8` and `latin1` under the forwarded `en_US.UTF-8` and
   under POSIX. The Elixir warning tracks the encoding, and
   `ELIXIR_ERL_OPTIONS=+fnu` does silence it under POSIX.
+- glibc rescues no name by itself: on the host, which does have `en_US.utf8`,
+  `LC_ALL=en_US.UTF-8@euro locale charmap` still answers `ANSI_X3.4-1968`.
+  A name the image cannot resolve is exactly what it looks like.
 - `locales` costs 4.6 MB of archives / 20.7 MB installed, and
   `localedef -i en_US -f UTF-8 en_US.UTF-8` compiles that one locale into a
   2.9 MB `/usr/lib/locale/locale-archive`, after which `LANG=en_US.UTF-8 locale
@@ -52,10 +55,12 @@ Decisions:
   installs `locales`, generates `en_US.UTF-8`, and defaults `LANG` to glibc's
   built-in `C.UTF-8` for a direct image run. The wrapper keeps forwarding
   `LANG`/`LC_ALL`/`LC_CTYPE` unchanged — forwarding host identity is its
-  documented job — and the entrypoint replaces any of the three the image does
-  not ship with `C.UTF-8` before convergence. The entrypoint owns it because
-  the container can answer the availability question itself: no Docker query is
-  added to the start path, and a direct image run gets the same guarantee.
+  documented job — and the entrypoint replaces any of the three the image
+  cannot run UTF-8 under with `C.UTF-8` before convergence: one it does not
+  ship, or one whose name carries no UTF-8 codeset like `C`. The entrypoint owns
+  it because the container can answer the availability question itself: no
+  Docker query is added to the start path, and a direct image run gets the same
+  guarantee.
 - **`ELIXIR_ERL_OPTIONS=+fnu` is not the fix.** It silences Elixir alone,
   leaves every other tool on the POSIX charmap, and asks the VM for UTF-8
   filenames whatever the filesystem's locale is — the patch over the locale

@@ -75,7 +75,7 @@ The operating-system release whose precompiled Erlang/OTP build the sandbox inst
 _Avoid_: binary build, prebuilt Erlang, ubuntu build
 
 **Sandbox locale**:
-The locale a sandbox start runs under: the host's forwarded `LANG`/`LC_ALL`/`LC_CTYPE` when the image ships that locale, and glibc's built-in `C.UTF-8` when it does not, so the sandbox is never silently non-UTF-8. The image generates `en_US.UTF-8`, which is the locale the host forwards today.
+The locale a sandbox start runs under: the host's forwarded `LANG`/`LC_ALL`/`LC_CTYPE` when the image can run UTF-8 under them, and glibc's built-in `C.UTF-8` otherwise. The image generates `en_US.UTF-8`, the locale the host forwards today; a locale the image does not ship, or a name carrying no UTF-8 codeset at all (`C`, `POSIX`), becomes `C.UTF-8` rather than the POSIX fallback glibc would otherwise take.
 _Avoid_: container locale, image locale
 
 **Host path parity**:
