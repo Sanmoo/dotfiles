@@ -1,0 +1,10 @@
+# harness-eval carries an 836-character description that would otherwise enter
+# the system prompt of every session. This flag keeps it out of automatic
+# selection while leaving it available as /skill:harness-eval.
+#
+# `npx skills add|update` rewrites SKILL.md and drops this line: the CLI compares
+# the upstream hash with the manifest's, never with the installed file. That is
+# why skills-sync reapplies this patch after every install.
+#
+# One frontmatter line per line, inserted into the skill's YAML frontmatter.
+disable-model-invocation: true

@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# Keep ~/.agents/skills in sync with this machine's manifest.
+#
+# The manifest is a Stow package: skills-personal/ or skills-corporate/ provides
+# ~/skills-lock.json on whichever machine stows it, the same variant pattern the
+# repository uses for pi-linux and pi-mac. The Skills CLI rewrites the manifest
+# through the symlink, so the tracked copy is what you review and commit.
+#
+# This script never runs the bootstrap and never selects a source: it only
+# replays the local manifest, which the machine chose by stowing its profile.
+set -euo pipefail
+
+MANIFEST="$HOME/skills-lock.json"
+SKILLS_DIR="$HOME/.agents/skills"
+PATCH_DIR="$HOME/.agents/skills-patches"
+SKILLS_CLI=${SKILLS_CLI:-skills} # pin with SKILLS_CLI=skills@1.2.3
+SKILLS_AGENT=${SKILLS_AGENT:-pi} # universal agents share ~/.agents/skills
+
+info() { printf '==> %s\n' "$*"; }
+warn() { printf 'skills-sync: %s\n' "$*" >&2; }
+die() {
+	printf 'skills-sync: %s\n' "$*" >&2
+	exit 1
+}
+
+usage() {
+	cat <<'EOF'
+Usage: skills-sync [COMMAND] [ARGS]
+
+  sync                   Reinstall every skill the manifest declares, from the
+                         upstream HEAD (default). Heals deleted or changed
+                         skills and prunes files the upstream dropped.
+  update                 Update only what changed upstream (cheaper).
+  add SOURCE -s SKILL... Install skill(s) and record them in the manifest.
+  remove SKILL...        Uninstall and drop from the manifest.
+  patches                Reapply the local patches under ~/.agents/skills-patches.
+  sources                Print the manifest grouped by source, without installing.
+  diff                   Compare this profile's manifest with its sibling
+                         profiles; exits 1 when they differ.
+  list                   Print what the CLI sees as installed.
+
+Options:
+  -h, --help             This message.
+
+Environment:
+  SKILLS_CLI             CLI to run (default: skills).
+  SKILLS_AGENT           Agent to install for (default: pi). Universal agents
+                         share ~/.agents/skills, so one target is enough.
+EOF
+}
+
+require_manifest() {
+	if [[ ! -f "$MANIFEST" ]]; then
+		die "no manifest at $MANIFEST; stow skills-personal or skills-corporate first"
+	fi
+	if [[ ! -L "$MANIFEST" ]]; then
+		warn "$MANIFEST is not a symlink: this manifest is machine-local, not tracked"
+	fi
+}
+
+require_tools() {
+	command -v npx >/dev/null || die "npx is required (Node.js >= 22)"
+	command -v python3 >/dev/null || die "python3 is required for the manifest"
+}
+
+# Print "<source>\t<skill> <skill> ..." per source, both sorted, so the replay
+# order and the diff output are deterministic.
+manifest_sources() {
+	python3 - "$MANIFEST" <<'PY'
+import json
+import sys
+from collections import OrderedDict
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    skills = json.load(handle).get("skills", {})
+
+groups = OrderedDict()
+for name in sorted(skills):
+    source = skills[name].get("source")
+    if not source:
+        print(f"skills-sync: manifest entry without a source: {name}", file=sys.stderr)
+        continue
+    groups.setdefault(source, []).append(name)
+
+for source in sorted(groups):
+    print(f"{source}\t{' '.join(sorted(groups[source]))}")
+PY
+}
+
+# The CLI resolves the manifest and the install target relative to the current
+# directory, so every command that installs runs from $HOME.
+install_all() {
+	local source skills
+	require_manifest
+	cd "$HOME" || die "cannot enter $HOME"
+	while IFS=$'\t' read -r source skills; do
+		[[ -n "$source" ]] || continue
+		info "installing from $source"
+		# </dev/null matters: without it npx drains the loop's stdin and every
+		# source after the first is silently skipped.
+		# shellcheck disable=SC2086 # the skill list is space-separated by design
+		npx --yes "$SKILLS_CLI" add "$source" -s $skills -a "$SKILLS_AGENT" -y </dev/null
+	done < <(manifest_sources)
+}
+
+# Print the file with <line> inserted into its YAML frontmatter, or unchanged
+# when the frontmatter already carries it or there is none.
+insert_frontmatter_line() { # <file> <line>
+	awk -v line="$2" '
+		BEGIN { opened = 0; closed = 0; present = 0 }
+		/^---[[:space:]]*$/ {
+			if (!opened) { opened = 1; print; next }
+			if (!closed) { if (!present) print line; closed = 1; print; next }
+		}
+		opened && !closed && $0 == line { present = 1 }
+		{ print }
+	' "$1"
+}
+
+frontmatter_has_line() { # <file> <line>
+	awk -v line="$2" '
+		BEGIN { opened = 0; closed = 0; found = 0 }
+		/^---[[:space:]]*$/ {
+			if (!opened) { opened = 1; next }
+			if (!closed) { closed = 1 }
+		}
+		opened && !closed && $0 == line { found = 1 }
+		END { exit(found ? 0 : 1) }
+	' "$1"
+}
+
+# Reapply the local tweaks the CLI overwrites on every install. A patch file is
+# named after its skill and holds one frontmatter line per line.
+apply_patches() {
+	[[ -d "$PATCH_DIR" ]] || return 0
+	local patch skill target line tmp applied=0
+	for patch in "$PATCH_DIR"/*.txt; do
+		[[ -e "$patch" ]] || continue
+		skill=$(basename "$patch" .txt)
+		target="$SKILLS_DIR/$skill/SKILL.md"
+		if [[ ! -f "$target" ]]; then
+			warn "skipping patch, skill not installed: $skill"
+			continue
+		fi
+		target=$(readlink -f "$target")
+		while IFS= read -r line; do
+			[[ -n "${line//[[:space:]]/}" ]] || continue
+			[[ "$line" == \#* ]] && continue
+			frontmatter_has_line "$target" "$line" && continue
+			tmp=$(mktemp "$(dirname "$target")/.skills-sync.XXXXXX")
+			insert_frontmatter_line "$target" "$line" >"$tmp"
+			if cmp -s "$target" "$tmp"; then
+				rm -f "$tmp"
+				warn "patch not applied to $skill: no YAML frontmatter"
+				continue
+			fi
+			# Write through the destination so its mode and any symlink stay.
+			cat "$tmp" >"$target"
+			rm -f "$tmp"
+			info "patched $skill: $line"
+			applied=$((applied + 1))
+		done <"$patch"
+	done
+	((applied > 0)) || info "patches already applied"
+}
+
+# Compare this machine's manifest with the sibling profiles in the same
+# checkout, which is how the personal and corporate selections stay honest.
+cmd_diff() {
+	[[ -L "$MANIFEST" ]] || die "diff needs an applied profile package (a symlink), but $MANIFEST is a plain file"
+	python3 - "$(readlink -f "$MANIFEST")" <<'PY'
+import glob
+import json
+import os
+import sys
+
+primary = os.path.realpath(sys.argv[1])
+siblings = [
+    path
+    for path in sorted(glob.glob(os.path.join(os.path.dirname(primary), os.pardir, "skills-*", "skills-lock.json")))
+    if os.path.realpath(path) != primary
+]
+if not siblings:
+    print("skills-sync: no sibling profile manifest found next to " + primary, file=sys.stderr)
+    sys.exit(1)
+
+
+def load(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle).get("skills", {})
+
+
+def label(path):
+    return os.path.basename(os.path.dirname(path))
+
+
+mine = load(primary)
+print(f"{label(primary):<28} {len(mine):>3} skills  {primary}")
+
+different = False
+for path in siblings:
+    theirs = load(path)
+    print(f"{label(path):<28} {len(theirs):>3} skills  {path}")
+    only_here = sorted(set(mine) - set(theirs))
+    only_there = sorted(set(theirs) - set(mine))
+    sources = sorted(
+        name
+        for name in set(mine) & set(theirs)
+        if mine[name].get("source") != theirs[name].get("source")
+    )
+    print()
+    print(f"only in {label(primary)} ({len(only_here)}): {' '.join(only_here) or '-'}")
+    print(f"only in {label(path)} ({len(only_there)}): {' '.join(only_there) or '-'}")
+    for name in sources:
+        print(f"different source: {name}: {mine[name].get('source')} != {theirs[name].get('source')}")
+    if not sources:
+        print("different source (0): -")
+    if only_here or only_there or sources:
+        different = True
+
+sys.exit(1 if different else 0)
+PY
+}
+
+cmd_add() {
+	local arg
+	(($# > 0)) || die "usage: skills-sync add SOURCE [-s SKILL...]"
+	for arg in "$@"; do
+		case "$arg" in
+		-g | --global)
+			die "add without -g: a global install does not enter the tracked manifest"
+			;;
+		esac
+	done
+	require_manifest
+	cd "$HOME" || die "cannot enter $HOME"
+	npx --yes "$SKILLS_CLI" add "$@" -a "$SKILLS_AGENT" -y </dev/null
+	apply_patches
+}
+
+cmd_remove() {
+	(($# > 0)) || die "usage: skills-sync remove SKILL..."
+	require_manifest
+	cd "$HOME" || die "cannot enter $HOME"
+	npx --yes "$SKILLS_CLI" remove "$@" -a "$SKILLS_AGENT" -y </dev/null
+	apply_patches
+}
+
+cmd_update() {
+	require_manifest
+	require_tools
+	cd "$HOME" || die "cannot enter $HOME"
+	info "updating what changed upstream"
+	npx --yes "$SKILLS_CLI" update -y </dev/null
+	apply_patches
+}
+
+cmd_list() {
+	require_manifest
+	require_tools
+	cd "$HOME" || die "cannot enter $HOME"
+	npx --yes "$SKILLS_CLI" list
+}
+
+case "${1:-sync}" in
+sync)
+	require_tools
+	install_all
+	apply_patches
+	;;
+update) cmd_update ;;
+add)
+	shift
+	require_tools
+	cmd_add "$@"
+	;;
+remove)
+	shift
+	require_tools
+	cmd_remove "$@"
+	;;
+patches) apply_patches ;;
+sources)
+	require_tools
+	require_manifest
+	manifest_sources
+	;;
+diff) cmd_diff ;;
+list) cmd_list ;;
+-h | --help | help)
+	usage
+	;;
+*)
+	usage >&2
+	printf 'skills-sync: unknown command: %s\n' "$1" >&2
+	exit 2
+	;;
+esac

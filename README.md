@@ -48,10 +48,27 @@ what makes them the Quality gateway.
 ## Agent skills
 
 The shared `~/.agents` and `~/.agents/skills` directories are real directories
-outside this checkout. External skills, third-party adaptations, their source
-links, and installation metadata such as `.skill-lock.json` are machine-local.
-They are not distributed by these dotfiles. Editing a third-party skill does
-not make it your own: maintain adaptations in the corresponding fork.
+outside this checkout. Skill *content* installed from a third party stays
+machine-local: the checkout distributes neither external skills nor the global
+installation metadata (`.skill-lock.json`) that `skills update -g` maintains.
+Editing a third-party skill does not make it your own: maintain adaptations in
+the corresponding fork.
+
+What the checkout does track is the **per-machine manifest**, `skills-lock.json`
+— the file the Skills CLI reads and rewrites in project scope. Each machine
+stows exactly one profile package, the same variant pattern used for `pi-linux`
+and `pi-mac`:
+
+| Package | Provides | Machine |
+| --- | --- | --- |
+| `skills-personal` | `~/skills-lock.json` | personal Linux laptop, upstream sources |
+| `skills-corporate` | `~/skills-lock.json` | corporate macOS laptop, fork sources |
+
+Both packages provide the same path, so exactly one is stowed per machine; never
+both. `general/bin/skills-sync` replays that manifest through the CLI and
+reapplies the local patches published from `agents/.agents/skills-patches/`. See
+[Manage external skills from the manifest](#manage-external-skills-from-the-manifest)
+and `skills-sync --help`.
 
 `agents/.agents/skills/` is reserved for skills authored by the user, maintained
 independently, and containing no company-specific content. Currently that is
@@ -78,23 +95,36 @@ install dependencies. Use this guarded command for the agents package; ordinary
 `stow agents` can fold the directory into a checkout link on a fresh home.
 Apply other packages separately using the platform commands below.
 
-### Install external dependencies separately
+### Manage external skills from the manifest
 
-Choose the source and installation tool locally for each machine. For example,
-on a personal machine using the existing Skills CLI:
+Dependencies are managed separately from the bootstrap, on the machine that owns
+the choice of source. With the profile package stowed:
 
 ```sh
-cd "$HOME"
-npx skills add mattpocock/skills -g
+skills-sync                  # reinstall and repair everything the manifest declares
+skills-sync update           # refresh only what changed upstream
+skills-sync add tech-leads-club/agent-skills -s harness-eval
+skills-sync remove harness-eval
+skills-sync diff             # compare this profile with the other one
 ```
 
-Other public sources can be installed the same way, such as `anthropics/skills`,
-`vercel-labs/skills`, and `openai/skills`. Review the selection before installing.
-An alternative is an individual link under `~/.agents/skills` to a separately
-maintained checkout. Keep non-public sources and source selections local; there
-is no employer profile or fork configuration in this repository. Updates belong
-to the chosen tool/source, not to Stow or the bootstrap. Existing dependencies
-remain untouched when applying configuration.
+Run the CLI without `-g`. A global install is recorded in the machine-local
+`~/.agents/.skill-lock.json`, not in the tracked manifest, so the machine would
+not be reproducible from this checkout; `skills-sync add` refuses `-g` for that
+reason. Other public sources such as `anthropics/skills`, `vercel-labs/skills`
+and `openai/skills` work the same way.
+
+Because the CLI rewrites the manifest through the Stow symlink, the tracked copy
+changes as skills are added or updated. Review it with `git diff` and commit it
+like a lockfile. The two profiles drift independently by design — a skill added
+on one machine is not added to the other — and `skills-sync diff` is how the gap
+is spotted; the command exits 1 when the profiles differ.
+
+An alternative for a dependency that ships no usable manifest is an individual
+link under `~/.agents/skills` to a separately maintained checkout. Updates belong
+to the chosen tool or source, not to Stow or the bootstrap. The bootstrap never
+installs, updates or selects a dependency, and applying configuration leaves
+existing installations untouched.
 
 ### Migrate a legacy checkout before integrating removals
 
@@ -197,7 +227,7 @@ order, and installation of a new dependency without checkout changes.
 
 ## For `Omarchy`
 
-`stow general git hypr nvim tasks tmux zsh pi pi-linux`
+`stow general git hypr nvim tasks tmux zsh pi pi-linux skills-personal`
 
 ### Disable automatic suspend
 
@@ -254,4 +284,4 @@ The package contract is covered by `bash tests/herdr-stow-package-test.sh`.
 
 ## For MacOS
 
-`stow aerospace general ghostty git nvim tasks tmux zsh pi pi-mac`
+`stow aerospace general ghostty git nvim tasks tmux zsh pi pi-mac skills-corporate`
