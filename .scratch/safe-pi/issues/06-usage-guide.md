@@ -4,13 +4,13 @@
 
 **Blocked by:** 04 — Declared environment installed inside the container
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The README section replaces the draft, and the draft file no longer exists.
-- [ ] Every recipe in the guide works as written: each flag is accepted and produces the described effect.
-- [ ] The limitations the guide names are the ones that exist: fail-closed restore, read-only extensions and packages, convergence that fails open, and the credential caveat.
-- [ ] Each troubleshooting row corresponds to a behaviour observed while verifying tickets 01–05.
-- [ ] The Herdr section cross-references the guide.
+- [x] The README section replaces the draft, and the draft file no longer exists.
+- [x] Every recipe in the guide works as written: each flag is accepted and produces the described effect.
+- [x] The limitations the guide names are the ones that exist: fail-closed restore, read-only extensions and packages, convergence that fails open, and the credential caveat.
+- [x] Each troubleshooting row corresponds to a behaviour observed while verifying tickets 01–05.
+- [x] The Herdr section cross-references the guide.
 
 ## Comments
 
@@ -59,3 +59,40 @@ other tool stays `latest`. The sandbox installs them from Bob's precompiled
 Ubuntu 22.04 build and refuses a source build, so a converged start never
 compiles OTP. The "`latest` pins follow new releases the way they do on the
 host" bullet still holds for the rest of the declaration.
+
+### Implemented (2026-10-09)
+
+The guide is now the `Run Pi in the sandbox (`safe-pi`)` section of `README.md`,
+written in that document's prose style, with the draft deleted in the same
+boundary commit. The implementation landed as `5a825c0`; `FULL GATE: PASS`
+(23 of 23 units) in the worktree that carried it.
+
+Every recipe was exercised against the built command (image
+`safe-pi:current-u1000`, converged volume `safe-pi-toolchain-u1000`):
+
+- `safe-pi -c` and `safe-pi --session <id>` each resumed the prior conversation
+  non-interactively (`-c` again after a `-p` run; `--session 01a11fa8` by id).
+- `safe-pi -p "…"` printed `pong`; `safe-pi --model opencode-go/deepseek-v4-flash
+  -p …` printed `model`; `--no-lens` was accepted alongside both.
+- `safe-pi --prepare` was silent and exited 0 in 0.38 s (matches ticket 11);
+  `safe-pi --version` printed `1.1.0` in 2.2 s (the guide's "about three
+  seconds").
+- `safe-pi --shell` reported uid/gid `1000(sanmoo)`, host-path cwd, every
+  contract path, declared `jq`/`node` shims ahead of the image's, and no
+  `/var/run/docker.sock`; writes to `~/.pi/agent/extensions` and
+  `~/.pi/agent/npm` failed `Read-only file system` while `~/.pi/agent` stayed
+  writable.
+- `safe-pi --update` and `safe-pi --rebuild` both exited 0; `--dry-run` printed
+  the invocation for every recipe without touching Docker; `help` printed the
+  script's own usage.
+
+Corrections carried into the section: ticket 11's measured first-run and
+steady-start numbers replace "several minutes"/"about a second"; `erlang`
+`29.0.4` and `elixir` `1.20.2-otp-29` are named as the declaration's two pinned
+exceptions with their precompiled provenance; the Herdr rows point at Herdr
+reachability and the mounted `permission-gate` extension (no `HERDR_ENV`, which
+ticket 08 stopped forwarding); and the toolchain volume is
+`safe-pi-toolchain-u<uid>`, not the draft's `safe-pi-mise`. Two-axis review of
+the branch tightened the vocabulary to CONTEXT.md's "declared environment" and
+"sandbox reporter", removed two duplicated passages, and fixed the stale
+first-run troubleshooting row.
