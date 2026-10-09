@@ -4,7 +4,7 @@
 
 **Blocked by:** 08 — Container-side Herdr integration for the sandbox (resolved)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 ## What is known
 
@@ -20,15 +20,19 @@
 
 ## Acceptance criteria
 
-- [ ] On `session_shutdown` with `reason === "quit"`, and only when the reporter holds the pane (TUI mode), the reporter sends `pane.release_agent` for source `safe-pi` and its agent label, and the report reaches Herdr before `process.exit(0)`.
-- [ ] The reporter never releases on `reload`, `resume`, `new`, or `fork`; those are session replacements where the new session reports instead.
-- [ ] The reported agent label is one Herdr does not recognize (`safe-pi`), and `pane.report_metadata` sets `display_agent: "Pi"`, so the sidebar and border still read `Pi`.
-- [ ] The release is best-effort: an unreachable socket is swallowed and costs at most 250 ms at quit; it never throws, never blocks longer, and never breaks Pi.
+- [x] On `session_shutdown` with `reason === "quit"`, and only when the reporter holds the pane (TUI mode), the reporter sends `pane.release_agent` for source `safe-pi` and its agent label, and the report reaches Herdr before `process.exit(0)`.
+- [x] The reporter never releases on `reload`, `resume`, `new`, or `fork`; those are session replacements where the new session reports instead.
+- [x] The reported agent label is one Herdr does not recognize (`safe-pi`), and `pane.report_metadata` sets `display_agent: "Pi"`, so the sidebar and border still read `Pi`.
+- [x] The release is best-effort: an unreachable socket is swallowed and costs at most 250 ms at quit; it never throws, never blocks longer, and never breaks Pi.
 - [ ] Reproduction on a real pane: Ctrl-C twice in `safe-pi`, then `herdr agent list` no longer lists the pane, without closing it.
 - [ ] A sandbox that dies without a shutdown event (SIGKILL/OOM/daemon stop) also clears, via Herdr's idle-shell safety net, about a second after the pane's shell returns.
 - [ ] Re-entry (`safe-pi -c`) still re-attributes the pane.
-- [ ] The host wrapper gains no release logic: the reporter stays the only writer on the `safe-pi` source. The image's `safe-pi.entrypoint` label is bumped so a cached image rebuilds with the new reporter.
-- [ ] `pi/tests/pi-agent/herdr-reporter.test.ts` covers the release trigger, the non-triggers, the bounded await, and the agent-label constant; `tests/run --full` ends in `FULL GATE: PASS`.
+- [x] The host wrapper gains no release logic: the reporter stays the only writer on the `safe-pi` source. The image's `safe-pi.entrypoint` label is bumped so a cached image rebuilds with the new reporter.
+- [x] `pi/tests/pi-agent/herdr-reporter.test.ts` covers the release trigger, the non-triggers, the bounded await, and the agent-label constant; `tests/run --full` ends in `FULL GATE: PASS`.
+
+The three unticked boxes need a live Herdr pane: two are the end-to-end
+reproduction, and re-entry is Herdr's own newer-claim guard rather than
+reporter code.
 
 ## Comments
 
@@ -54,3 +58,29 @@ source, and the design was settled:
 
 Recorded in ADR 0004 and the `CONTEXT.md` terms "Pane release", "Idle-shell
 safety net", and the updated "Sandbox reporter".
+
+### Implementation (agent, commit 15f794d)
+
+The reporter now sends `pane.release_agent` from a `session_shutdown` handler
+that releases only on `reason === "quit"` and only for a TUI root session, and
+awaits the send with a 250 ms cap (`sendRequestAndWait`); the release shares the
+`authorityParams()` helper with the state and metadata reports, and one `send()`
+backs both the fire-and-forget and awaited paths. It reports agent label
+`safe-pi` with `pane.report_metadata` `display_agent: "Pi"` so Herdr's
+idle-shell safety net stays armed. The image's `safe-pi.entrypoint` label went
+to `5` (Dockerfile, wrapper comparison, wrapper-test stub) so a cached image
+rebuilds with the new reporter.
+
+Evidence: `pi/tests/pi-agent/herdr-reporter.test.ts` grew to 17 tests (release
+on quit, the four non-triggers, headless, the bounded deadline against a silent
+server, the label and display metadata); `tests/run --full` ended in
+`FULL GATE: PASS` (23/23 units); `shellcheck` is clean on the wrapper, the
+entrypoint, and the wrapper test.
+
+The two-axis review found no spec gaps and no hard standards breach; its
+judgement calls (the duplicated socket send, the hand-built params, `release`
+renamed to `releasePane`, a tighter deadline assertion) were applied in commit
+15f794d.
+
+Remaining: the live-pane reproduction and the SIGKILL safety-net check, plus
+re-entry, which need a real Herdr pane and are left for a human.
