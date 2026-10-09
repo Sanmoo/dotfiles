@@ -89,7 +89,12 @@ só podem ser gravadas na máquina que tem acesso a elas.
 - Manifesto: 27 skills, todas de `bancojohndeere/enablers-product-engineering-skills`; zero entradas `mattpocock` (`skills-sync sources` e checagem do JSON).
 - `skills-sync diff` → `only in skills-personal (1): harness-eval` e as 27 fontes divergentes do upstream: exatamente a diferença por máquina pretendida (exit 1).
 - `skills-sync` (sync) replay: idempotente, manifesto byte-idêntico antes/depois; `SKILL.md` presente nas 27 e conteúdo igual ao clone local do fork.
-- `tests/run --full` → `ALL PASSED: 23 of 23 units`, `FULL GATE: PASS` (31.35s).
+- `tests/run --full` → `ALL PASSED: 23 of 23 units`, `FULL GATE: PASS` (31.35s)
+  no worktree limpo desta máquina. No checkout principal o gate fica vermelho em
+  `tests/herdr-stow-package-test.sh` por um defeito **pré-existente** do pacote
+  `herdr`, sem relação com este ticket: `~/.config/herdr` é um symlink dobrado
+  para o checkout e o runtime do Herdr é escrito dentro do pacote, então o Stow
+  aborta no `herdr.sock.agent`. Registrado no ticket `05`.
 - `bash tests/skills-sync-live.sh` → `PASS: skills-sync live (28 skills, 2 sources)` no perfil pessoal, HOME isolado.
 
 ## Comments
