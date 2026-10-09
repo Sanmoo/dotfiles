@@ -4,10 +4,10 @@
 
 **Blocked by:** 13 — Wire the self-reported resume command into the sandbox reporter (the mechanism 10 refines)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With two sessions in the same directory, a Herdr restart reopens the one that was running, not just the newest.
-- [ ] The resume command still satisfies Herdr's `resume_argv` rules (plain first command name, `safe-pi`; at most 64 args / 8 KiB; no apostrophes or control characters).
+- [x] With two sessions in the same directory, a Herdr restart reopens the one that was running, not just the newest.
+- [x] The resume command still satisfies Herdr's `resume_argv` rules (plain first command name, `safe-pi`; at most 64 args / 8 KiB; no apostrophes or control characters).
 
 ## What is known
 
@@ -26,8 +26,8 @@ All four are answered in the Pi source below; the criteria stand.
 
 ## Acceptance criteria
 
-- [ ] A restored sandboxed pane reopens exactly the session that ran before the restart, proven with two sessions in the same directory.
-- [ ] The command works when the pane's saved cwd is the directory that started the session.
+- [x] A restored sandboxed pane reopens exactly the session that ran before the restart, proven with two sessions in the same directory.
+- [x] The command works when the pane's saved cwd is the directory that started the session.
 
 ## Comments
 
@@ -95,3 +95,43 @@ four open questions resolve in favour of `safe-pi --session <uuid>`:
 
 Decision: the reporter attaches `["safe-pi", "--session", <uuid>]`, falling
 back to `["safe-pi", "-c"]` only when it has no session id to name.
+
+### Implemented (2026-10-10)
+
+Integrated as `e4cf2e7` on `main`. `safe-pi/herdr-reporter.ts` replaced the
+constant `RESUME_ARGV` with `resumeArgv(sessionId)`, which returns
+`["safe-pi", "--session", <id>]` for a token-safe id and `["safe-pi", "-c"]`
+otherwise; one `isSessionId` guard now gates both that command and the reported
+`agent_session_id`, so a hand-edited header cannot reach either the command
+Herdr runs or the reference it stores. The guide, ADR 0002, and the glossary
+name the exact-session command and keep `-c` as the fallback.
+
+Evidence:
+
+- `pi/tests/pi-agent/herdr-reporter.test.ts` (13 pass) asserts
+  `["safe-pi", "--session", <id>]` on both request kinds, its re-statement when
+  the session changes, Herdr's rules on every report, and the `-c` fallback with
+  no id or a non-token id (which is also withheld from `agent_session_id`).
+- Two sessions in one directory (host Pi sessions for a scratch cwd, ids
+  `01a11fd6-…` older and `01a11fd7-…` newer): `safe-pi --session 01a11fd6-… -p
+  "…"` appended to the older file (81,282 → 82,127 bytes) and left the newer one
+  untouched at 81,304; the transcript reads `one → three`.
+- Isolated named Herdr session (`herdr --session sp10`, never the live server): a
+  `pane.report-agent` under source `safe-pi` persisted `"agent_resume":
+  {"source": "safe-pi", "agent": "pi", "argv": ["safe-pi", "--session",
+  "01a11fd6-…"]}`. After `herdr session stop sp10` and a headless restart, the
+  pane's process tree was `bash /home/sanmoo/.local/bin/safe-pi --session
+  01a11fd6-… → docker run … safe-pi:current-u1000 pi -e
+  /usr/local/share/safe-pi/herdr-reporter.ts --session 01a11fd6-…`, and a prompt
+  typed into the restored pane appended to the older session (82,127 → 83,266)
+  while the newer one stayed at 81,304. The isolated session, its container, and
+  the scratch sessions directory were removed afterwards.
+
+Full gate: `tests/run --full` printed `FULL GATE: PASS` (23 of 23 units) on
+`e4cf2e7`.
+
+Two-axis review of the branch (Standards and Spec, in parallel) found no hard
+violations and both soft findings were fixed before integration: the id rule
+lives in one `isSessionId` guard used by the resume command and the session
+reference, and the `resumeArgv` doc no longer restates the Herdr rules already
+in the module header.
