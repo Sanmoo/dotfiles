@@ -1,6 +1,6 @@
 # 08 — Container-side Herdr integration for the sandbox
 
-**What to build:** A Herdr reporter that runs *inside* the sandbox and reports the sandboxed Pi's state under its own source, so a sandboxed pane is attributed to Pi instead of staying `unknown`. Ticket 05 proved the mounted Herdr-managed integration cannot do this: on Herdr 0.9.3 a `herdr:pi` report is dropped when the pane's foreground process is not a detected Pi, and a sandboxed pane's foreground is `docker`. A report from the same container under a custom source is applied immediately, so the fix is a sandbox-owned reporter, with the Herdr-managed integration neutralised inside the sandbox so the two do not compete.
+**What to build:** A Herdr reporter that runs *inside* the sandbox and reports the sandboxed Pi's state under its own source, so a sandboxed pane is attributed to Pi instead of staying `unknown`. Ticket 05 proved the mounted Herdr-managed integration cannot do this: on Herdr 0.9.3 a `herdr:pi` report is dropped when the pane's foreground process is not a detected Pi, and a sandboxed pane's foreground is `docker`. A report from the same container under a custom source is applied immediately, so the fix is a sandbox-owned reporter, with the Herdr-managed integration neutralised inside the sandbox so the two do not compete. **No Herdr upgrade is needed for this ticket:** state attribution from a custom source works on the installed 0.9.3. The session reference is the one part gated on a future Herdr (≥ 0.10.0) and is documented, not required here.
 
 **Blocked by:** None (can start immediately; the socket mount from 03 is already in place)
 
@@ -10,7 +10,7 @@
 - [ ] A dangerous command gated by `permission-gate` shows the pane as `blocked` until it is answered, and clears when it is.
 - [ ] The reporter uses its own source (not `herdr:pi`), and the Herdr-managed integration does not report for the pane, so exactly one source holds it.
 - [ ] Reports are best-effort: an unreachable socket or a failed report never blocks, slows, or breaks Pi.
-- [ ] The reporter reports the session reference at the container-only sessions path. On Herdr ≥ 0.10.0 it appears in `agent_session`; on 0.9.3 custom sources store no session reference, and that limitation is documented rather than papered over.
+- [ ] The reporter reports the session reference at the container-only sessions path. The installed Herdr 0.9.3 stores none for a custom source, so the limitation is documented (pending a Herdr that accepts custom-source session references, ≥ 0.10.0); this does not block the state attribution that is this ticket's deliverable.
 - [ ] The reporter ships with the sandbox (in the image or on a container-only mount) without writing into the host Pi agent directory, which is mounted read-only inside the sandbox.
 - [ ] A test at the docker/entrypoint seam asserts the reporter is loaded and the managed integration is not; the contract and guide (03/06) are updated to the real behaviour.
 

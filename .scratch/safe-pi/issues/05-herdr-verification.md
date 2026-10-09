@@ -106,3 +106,15 @@ Run by the maintainer after the agent-side checks, in a sandboxed pane
 No deviation from the guide was observed for items 4–6. The items 1–3
 deviations above stand: the ticket's first three acceptance criteria are not
 met, so the ticket as a whole is not satisfied yet.
+
+### Item 3 is future-gated on Herdr
+
+Item 3 (Herdr records a session reference pointing at the container-only
+sessions path) cannot pass on the installed Herdr 0.9.3. A custom source
+attributes the pane and reports state, but Herdr stores no `agent_session` for
+it — only official `herdr:*` integrations do — and 0.9.3 is the newest release.
+The session reference becomes achievable with a Herdr that accepts custom-source
+session references (documented as ≥ 0.10.0), which does not exist yet. This
+does not block ticket 08: state attribution (items 1–2) is fixable now. Decide
+whether to keep item 3 as an open criterion pending that release or record it as
+an accepted limitation.
