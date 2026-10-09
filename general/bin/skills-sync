@@ -177,7 +177,12 @@ import sys
 primary = os.path.realpath(sys.argv[1])
 siblings = [
     path
-    for path in sorted(glob.glob(os.path.join(os.path.dirname(primary), os.pardir, "skills-*", "skills-lock.json")))
+    for path in (
+        os.path.normpath(candidate)
+        for candidate in sorted(
+            glob.glob(os.path.join(os.path.dirname(primary), os.pardir, "skills-*", "skills-lock.json"))
+        )
+    )
     if os.path.realpath(path) != primary
 ]
 if not siblings:
