@@ -358,6 +358,98 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 | Warning about differing Pi versions | The image's Pi is older than the host's; run `safe-pi --update` |
 | `setlocale: LC_ALL: cannot change locale (...)` on every start | Your shell exports an `LC_ALL` the image does not ship; the sandbox runs `C.UTF-8` instead, and the notice comes from the shell that reads the locale before the sandbox can replace it |
 
+## Use a second GitHub Copilot account (`pi-deere`)
+
+`pi-deere` runs Pi with a second profile whose GitHub Copilot login is separate
+from `pi`. Use it to spend the franchise of a second subscription. `stow pi`
+installs it at `~/.local/bin/pi-deere`, next to `pi` and `safe-pi`. `pi` keeps
+its logins and behaviour; `pi-deere` is the only command that uses the second
+account. You choose the account by the command you start: there is no switching
+inside one running instance and no balancing between accounts.
+
+### What is shared and what is private
+
+- **Private** (`~/.pi-deere/agent`): `auth.json`, so the second account's
+  login never touches the original's. Nothing is copied from `~/.pi/agent`
+  except the shared resources below, and no other provider is logged in.
+- **Shared** (symlinks into `~/.pi/agent`, which stays the maintained source):
+  `settings.json`, `extensions/`, `skills/`, `prompts/`, `themes/`, `agents/`,
+  `tools/`, `bin/`, `npm/` and `git/` (installed packages and their
+  dependencies), `AGENTS.md`, `keybindings.json`, `models.json`,
+  `models-store.json`, `mcp-adapter.json`, `trust.json`, and `sessions/`.
+  Edit these in the original; the next run of either command uses the change.
+- **Sessions** are the same store as `pi`, with the native layout grouped by
+  project. Sessions are not copied or migrated.
+- **New conversations** start on GitHub Copilot. `pi-deere` passes
+  `--models github-copilot/*` unless you pass `--models` yourself, so the
+  original default provider in `settings.json` is not changed.
+- **Environment**: `COPILOT_GITHUB_TOKEN` is removed for `pi-deere`, so a
+  token inherited from the shell never becomes the second account.
+
+### First login (a manual step)
+
+1. Run `pi-deere`. If the second profile has no Copilot login, it prints
+   `GitHub Copilot is not logged in for this profile` and still opens Pi.
+2. Inside Pi, run `/login`, choose GitHub Copilot, and sign in with the
+   second GitHub account.
+3. Confirm the profile: `PI_CODING_AGENT_DIR=~/.pi-deere/agent pi auth check --provider github-copilot`
+   prints `"status":"ready"`.
+
+The login is stored once in the profile; later runs reuse it. Logging out or
+replacing the login in one profile does not change the other.
+
+### Switch accounts in a conversation
+
+A session must have one writer at a time. To continue a conversation with the
+other account:
+
+1. Exit the running instance (`/quit`, or Ctrl+C) so it stops writing.
+2. Open the same session with the other command:
+   - `pi-deere --session <id-or-path>` for the exact session (a unique id prefix
+     also works);
+   - `pi-deere --resume` for Pi's session picker;
+   - `pi --session <id-or-path>` to return to the original account.
+3. Messages added in either profile appear in the other when you reopen the
+   session there.
+
+Two instances can run at the same time only when they use different sessions.
+No lock coordinates two instances on the same session; keep that rule yourself.
+
+An unknown reference fails with `No session found matching '<ref>'` and creates
+nothing. `pi-deere` does not use `--session-id`, which creates a missing session.
+
+### Recover from a conflict
+
+If the profile has a file or link that is not the shared one, `pi-deere` stops
+before changing anything and prints `conflict: <path> ...`. Move that path aside
+(for example a `models-store.json` Pi wrote before the link existed), then run
+`pi-deere` again. Removing a file you do not recognise is never automatic. If the
+original agent directory is missing, set `PI_CODING_AGENT_DIR` to it.
+
+### Limits
+
+- Separate accounts are a selection and persistence boundary, not a security
+  sandbox: shared extensions run with your user permissions.
+- When a resumed session used a model the second profile cannot use, Pi falls
+  back to a Copilot model and shows a warning in the interactive UI. Choose the
+  model you want with `/model`.
+- Model or thinking changes you make in `pi-deere` are written to the shared
+  `settings.json`; the `session-model-isolation` extension restores the default
+  model fields, as it does for `pi`.
+- Only GitHub Copilot is logged in for the second profile. Use `pi` for other
+  providers.
+
+### Verify
+
+- `bash tests/pi-deere-test.sh` checks the launcher's contract with a stubbed `pi`.
+- `bash tests/pi-deere-real-pi-test.sh` runs the real `pi` offline, with fake
+  credentials: shared resources, the Copilot default, exact session resume, the
+  two-way session round trip, and credential isolation.
+- Both run in `tests/run` and `tests/run --full`.
+
+A smoke test with the two real accounts is a manual step and is not automated:
+it needs your GitHub logins, and this repository never stores tokens.
+
 ## For `Omarchy`
 
 `stow general git hypr nvim tasks tmux zsh pi pi-linux skills-personal`
