@@ -115,6 +115,14 @@ before=$(cat "$HOME/.agents/skills/alpha/SKILL.md")
 "$SYNC" patches >/dev/null
 assert_equals "$before" "$(cat "$HOME/.agents/skills/alpha/SKILL.md")" 'patches are idempotent'
 
+# patches: GNU Stow folds an absent ~/bin into a directory symlink, so the
+# script path itself is not a link. The checkout still has to be found, which
+# is the shape the corporate macOS machine has.
+ln -s "$profile_dir/general/bin" "$TMPDIR/folded-bin"
+run_capture "$TMPDIR/folded-bin/skills-sync" patches
+assert_equals '0' "$STATUS" 'a folded bin directory does not fail'
+assert_contains "$OUT" 'patches already applied' 'the checkout is resolved through a folded bin directory'
+
 # patches: a missing skill and a file without frontmatter are both survivable.
 printf 'disable-model-invocation: true\n' >"$profile_dir/skills-patches/absent.txt"
 run_capture "$SYNC" patches

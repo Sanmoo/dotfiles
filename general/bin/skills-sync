@@ -129,16 +129,20 @@ frontmatter_has_line() { # <file> <line>
 }
 
 # Resolve the checkout holding this script. Stow links ~/bin/skills-sync to
-# general/bin/skills-sync, so follow the link chain before climbing to the root;
-# readlink -f is not portable to the BSD userland the corporate machine has.
+# general/bin/skills-sync — or, when ~/bin did not exist, folds the whole bin
+# directory into a symlink, leaving the script a plain file. Resolve the
+# containing directory with each hop so both shapes reach the root.
 checkout_root() {
-	local self=$1 dir
-	while [[ -L "$self" ]]; do
+	local self=$1 dir target
+	while :; do
 		dir=$(cd -- "$(dirname -- "$self")" && pwd -P)
-		self=$(readlink "$self")
-		[[ "$self" == /* ]] || self="$dir/$self"
+		self="$dir/${self##*/}"
+		[[ -L "$self" ]] || break
+		target=$(readlink "$self")
+		[[ "$target" == /* ]] || target="$dir/$target"
+		self="$target"
 	done
-	cd -- "$(dirname -- "$self")/../.." && pwd -P
+	cd -- "$dir/../.." && pwd -P
 }
 
 # Reapply the local tweaks the CLI overwrites on every install. A patch file is
