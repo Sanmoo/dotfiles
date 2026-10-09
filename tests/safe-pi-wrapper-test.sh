@@ -111,7 +111,7 @@ reset_stubs() {
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
-	FAKE_ENTRYPOINT="4"
+	FAKE_ENTRYPOINT="5"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]

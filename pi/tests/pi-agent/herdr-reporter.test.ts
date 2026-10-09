@@ -146,13 +146,14 @@ describe("herdr-reporter", () => {
 		const { handlers } = setupPi();
 
 		await handlers.get("session_start")!({ reason: "startup" }, makeContext());
-		await waitForRequests(requests, 2);
+		await waitForRequests(requests, 3);
 
 		const session = requests.find((request) => request.method === "pane.report_agent_session");
 		const state = requests.find((request) => request.method === "pane.report_agent");
+		const metadata = requests.find((request) => request.method === "pane.report_metadata");
 		expect(session?.params).toMatchObject({
 			source: "safe-pi",
-			agent: "pi",
+			agent: "safe-pi",
 			pane_id: PANE_ID,
 			agent_session_path: SESSION_FILE,
 			resume_argv: ["safe-pi", "--session", "session-id"],
@@ -160,11 +161,19 @@ describe("herdr-reporter", () => {
 		});
 		expect(state?.params).toMatchObject({
 			source: "safe-pi",
-			agent: "pi",
+			agent: "safe-pi",
 			pane_id: PANE_ID,
 			state: "idle",
 			agent_session_path: SESSION_FILE,
 			resume_argv: ["safe-pi", "--session", "session-id"],
+		});
+		// The agent label is one Herdr does not recognize by process, so its
+		// idle-shell safety net stays armed; display_agent keeps the visible name.
+		expect(metadata?.params).toMatchObject({
+			source: "safe-pi",
+			agent: "safe-pi",
+			pane_id: PANE_ID,
+			display_agent: "Pi",
 		});
 	});
 
@@ -179,6 +188,9 @@ describe("herdr-reporter", () => {
 		await waitForRequests(requests, 3);
 
 		for (const request of requests) {
+			if (request.method === "pane.report_metadata") {
+				continue;
+			}
 			const argv = request.params?.resume_argv as string[] | undefined;
 			expect(Array.isArray(argv)).toBe(true);
 			expect(argv![0]).toBe("safe-pi");
@@ -235,6 +247,9 @@ describe("herdr-reporter", () => {
 		await waitForRequests(requests, 2);
 
 		for (const request of requests) {
+			if (request.method === "pane.report_metadata") {
+				continue;
+			}
 			expect(request.params?.resume_argv).toEqual([
 				"safe-pi",
 				"--session",
@@ -257,7 +272,8 @@ describe("herdr-reporter", () => {
 		);
 		await waitForRequests(requests, 2);
 
-		expect(requests[0]?.params?.resume_argv).toEqual(["safe-pi", "-c"]);
+		const state = requests.find((request) => request.method === "pane.report_agent");
+		expect(state?.params?.resume_argv).toEqual(["safe-pi", "-c"]);
 	});
 
 	it("refuses a reported id that is not a plain token", async () => {
@@ -280,8 +296,9 @@ describe("herdr-reporter", () => {
 		// The id reaches neither the resume command nor the stored session
 		// reference: one rule governs both.
 		expect(requests.some((request) => request.method === "pane.report_agent_session")).toBe(false);
-		expect(requests[0]?.params?.agent_session_id).toBeUndefined();
-		expect(requests[0]?.params?.resume_argv).toEqual(["safe-pi", "-c"]);
+		const state = requests.find((request) => request.method === "pane.report_agent");
+		expect(state?.params?.agent_session_id).toBeUndefined();
+		expect(state?.params?.resume_argv).toEqual(["safe-pi", "-c"]);
 	});
 
 	it("reports working during a turn and idle once it settles", async () => {
@@ -366,6 +383,86 @@ describe("herdr-reporter", () => {
 		expect(requests.some((request) => request.method === "pane.report_agent_session")).toBe(false);
 		expect(statesOf(requests)).toEqual(["idle"]);
 		expect(requests[0]?.params?.agent_session_path).toBeUndefined();
+	});
+
+	it("releases the pane when the user quits", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!({}, makeContext());
+		await waitForRequests(requests, 3);
+		requests.length = 0;
+
+		// Awaiting the handler must mean the release has been delivered: Pi calls
+		// process.exit(0) the moment it resolves, so a fire-and-forget report here
+		// would never leave the process.
+		await handlers.get("session_shutdown")!({ reason: "quit" }, makeContext());
+
+		const release = requests.find((request) => request.method === "pane.release_agent");
+		expect(release?.params).toMatchObject({
+			source: "safe-pi",
+			agent: "safe-pi",
+			pane_id: PANE_ID,
+		});
+		expect(typeof release?.params?.seq).toBe("number");
+	});
+
+	it("keeps the pane on a session replacement or a reload", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!({}, makeContext());
+		await waitForRequests(requests, 3);
+
+		for (const reason of ["reload", "resume", "new", "fork"]) {
+			requests.length = 0;
+			await handlers.get("session_shutdown")!({ reason }, makeContext());
+			expect(requests.some((request) => request.method === "pane.release_agent")).toBe(false);
+		}
+	});
+
+	it("does not release a headless session that Herdr could not display", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!({}, makeContext({ mode: "json" }));
+		await handlers.get("session_shutdown")!({ reason: "quit" }, makeContext({ mode: "json" }));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(requests).toEqual([]);
+	});
+
+	it("gives up on the release when Herdr accepts but never answers", async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "herdr-silent-"));
+		const socketPath = path.join(dir, "herdr.sock");
+		const server = net.createServer(() => {
+			// Accept and stay silent: the reporter must stop waiting on its own.
+		});
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(socketPath, () => resolve());
+		});
+		cleanups.push(async () => {
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+			fs.rmSync(dir, { recursive: true, force: true });
+		});
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!({}, makeContext());
+
+		const start = Date.now();
+		await handlers.get("session_shutdown")!({ reason: "quit" }, makeContext());
+		const elapsed = Date.now() - start;
+
+		expect(elapsed).toBeGreaterThanOrEqual(200);
+		expect(elapsed).toBeLessThan(600);
 	});
 
 	it("never throws or slows Pi when the socket is unreachable", () => {

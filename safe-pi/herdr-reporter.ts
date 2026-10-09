@@ -20,7 +20,22 @@
  * newest state even when two reports overlap.
  *
  * Every report is best-effort. An unreachable socket, a refused write, or a
- * slow server is swallowed: reporting must never block, slow, or break Pi.
+ * slow server is swallowed: reporting must never break Pi, and only the release
+ * on quit is awaited, bounded by `RELEASE_TIMEOUT_MS`.
+ *
+ * The pane is released when the sandboxed Pi quits: a `session_shutdown` with
+ * reason `quit` (Ctrl-C twice, Ctrl-D, `/quit`, SIGTERM/SIGHUP) sends
+ * `pane.release_agent`, awaited with a short deadline because Pi exits as soon
+ * as the handler resolves. A session replacement (`resume`/`new`/`fork`) and an
+ * extension reload keep the pane and report the new session instead.
+ *
+ * The reporter holds the pane with an agent label Herdr does not recognize
+ * (`safe-pi`) rather than `pi`, and reports `display_agent: "Pi"` so the
+ * sidebar keeps the name. Herdr arms its idle-shell safety net — clearing a
+ * self-reported agent once the pane is back at its shell — only for a label it
+ * cannot resolve to an agent it detects by process, so reporting `pi` would
+ * leave the pane attributed after a container death that sends no shutdown
+ * event.
  *
  * The session reference is reported at the container-only sessions path. Herdr
  * stores the native `agent_session` reference only for its official `herdr:*`
@@ -41,8 +56,23 @@ import net from "node:net";
 import path from "node:path";
 
 const SOURCE = "safe-pi";
-const AGENT = "pi";
+/**
+ * The agent label Herdr stores for this pane. It is deliberately not `pi`:
+ * Herdr's idle-shell safety net is armed only for a self-reported agent whose
+ * label it cannot resolve to an agent it detects by process
+ * (`self_reported_agent_active` tests `parse_agent_label(label).is_none()`), so
+ * reporting `pi` would leave the pane attributed forever when the container
+ * dies without releasing. `DISPLAY_AGENT` keeps the visible name a Pi.
+ */
+const AGENT = "safe-pi";
+const DISPLAY_AGENT = "Pi";
 const REPORT_TIMEOUT_MS = 500;
+/**
+ * The deadline for the release sent on quit. Pi calls `process.exit(0)` as
+ * soon as the shutdown handlers resolve, so the release is awaited; the cap
+ * keeps an unreachable socket from delaying a quit by more than this.
+ */
+const RELEASE_TIMEOUT_MS = 250;
 
 /**
  * Pi's session ids are UUIDs (alphanumerics plus `-`, `_`, `.`). Anything else
@@ -92,7 +122,7 @@ interface ExtensionAPI {
 		on(name: "herdr:blocked", handler: (data: HerdrBlockedEvent | undefined) => void): void;
 	};
 	on(
-		name: "session_start" | "agent_start" | "agent_settled",
+		name: "session_start" | "agent_start" | "agent_settled" | "session_shutdown",
 		handler: (event: { reason?: string } | undefined, ctx: SessionContext) => void,
 	): void;
 }
@@ -154,6 +184,57 @@ function sendRequest(request: unknown): void {
 
 function requestId(kind: string): string {
 	return `${SOURCE}:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Send one request and resolve once Herdr has answered, the connection has
+ * ended, or the deadline passes. The socket is unreferenced so it never keeps
+ * Pi alive, but the deadline timer is not: an awaited report is honoured even
+ * when nothing else would keep the event loop running. Every failure path
+ * resolves, so a report never throws.
+ */
+function sendRequestAndWait(request: unknown, timeoutMs: number): Promise<void> {
+	return new Promise((resolve) => {
+		let socket: net.Socket | undefined;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let done = false;
+		const finish = () => {
+			if (done) {
+				return;
+			}
+			done = true;
+			if (timer) {
+				clearTimeout(timer);
+				timer = undefined;
+			}
+			try {
+				socket?.destroy();
+			} catch {
+				// Best effort.
+			}
+			resolve();
+		};
+
+		try {
+			socket = net.createConnection(process.env.SAFE_PI_HERDR_SOCKET_PATH as string);
+			socket.unref?.();
+			socket.on("error", finish);
+			socket.on("end", finish);
+			socket.on("close", finish);
+			socket.on("data", finish);
+			socket.on("connect", () => {
+				try {
+					socket?.write(`${JSON.stringify(request)}\n`);
+				} catch {
+					finish();
+				}
+			});
+
+			timer = setTimeout(finish, timeoutMs);
+		} catch {
+			finish();
+		}
+	});
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -221,6 +302,48 @@ export default function (pi: ExtensionAPI): void {
 		});
 	}
 
+	/**
+	 * Herdr keeps the visible agent name separate from the authority label, so
+	 * the reporter holds the pane with a label Herdr does not recognize (which
+	 * is what keeps its idle-shell safety net armed) while the sidebar and
+	 * border still read `Pi`.
+	 */
+	function reportMetadata(): void {
+		sendRequest({
+			id: requestId("metadata"),
+			method: "pane.report_metadata",
+			params: {
+				pane_id: process.env.SAFE_PI_HERDR_PANE_ID,
+				source: SOURCE,
+				agent: AGENT,
+				display_agent: DISPLAY_AGENT,
+				seq: nextReportSeq(),
+			},
+		});
+	}
+
+	/**
+	 * Clear the pane's agent attribution — its name, state, and stored resume
+	 * command — because the sandboxed Pi is quitting. Sent only on a real quit,
+	 * never on a session replacement, and awaited with a short deadline so
+	 * `process.exit(0)` cannot drop it.
+	 */
+	async function release(): Promise<void> {
+		await sendRequestAndWait(
+			{
+				id: requestId("release"),
+				method: "pane.release_agent",
+				params: {
+					pane_id: process.env.SAFE_PI_HERDR_PANE_ID,
+					source: SOURCE,
+					agent: AGENT,
+					seq: nextReportSeq(),
+				},
+			},
+			RELEASE_TIMEOUT_MS,
+		);
+	}
+
 	function desiredState(): { state: AgentState; message?: string } {
 		if (blockedCount > 0) {
 			return { state: "blocked", message: blockedMessage };
@@ -278,6 +401,7 @@ export default function (pi: ExtensionAPI): void {
 			reportSession(event?.reason);
 			agentActive = ctx?.isIdle?.() === false;
 			publish();
+			reportMetadata();
 		} catch {
 			// Best effort.
 		}
@@ -306,6 +430,21 @@ export default function (pi: ExtensionAPI): void {
 			publish();
 		} catch {
 			// Best effort.
+		}
+	});
+
+	pi.on("session_shutdown", async (event) => {
+		try {
+			// Only a real quit releases the pane. A session replacement
+			// (resume/new/fork) and an extension reload keep it, and the new
+			// session reports instead.
+			if (!rootSession || event?.reason !== "quit") {
+				return;
+			}
+			rootSession = false;
+			await release();
+		} catch {
+			// Best effort: a failed release never breaks a quit.
 		}
 	});
 }
