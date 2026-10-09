@@ -233,6 +233,120 @@ and a local Git fixture. It exercises conflicts, backup-copy failure via an OS
 write limit, repeatability, link relocation, the complete removal/integration
 order, and installation of a new dependency without checkout changes.
 
+## Run Pi in the sandbox (`safe-pi`)
+
+`safe-pi` runs Pi in a throwaway Docker container that sees the repository you
+are in, your Pi configuration and credentials, and the declared environment
+installed inside the container from the repository's tracked mise
+configuration — and nothing else in your home directory. `stow pi` installs it
+beside `pi` itself.
+
+### First run
+
+```sh
+cd ~/dev/github.com/you/some-repo
+safe-pi
+```
+
+The first run builds the image — about a minute when its layers are cold — and
+installs the declared environment into the per-user toolchain volume
+`safe-pi-toolchain-u<uid>`: about 13 seconds inside mise, 17 seconds of wall
+clock for the whole run. The volume is shared by every repository, so the
+download happens once per user. Later runs start in about three seconds, almost
+all of it container startup.
+
+The declared environment is converged on every start, so `latest` pins follow
+new releases the way they do on the host. Two tools are the exception:
+`erlang` (`29.0.4`) and `elixir` (`1.20.2-otp-29`) are pinned, and the sandbox
+installs them from a precompiled Ubuntu 22.04 OTP build instead of compiling
+OTP. Bump those two pins by hand; the rest keep moving with `latest`.
+
+### Everyday recipes
+
+| What you want | Command |
+| --- | --- |
+| Continue the last conversation in this directory | `safe-pi -c` |
+| Resume a specific session | `safe-pi --session <id-or-path>` |
+| A one-shot prompt | `safe-pi -p "explain this file"` |
+| A specific model | `safe-pi --model opencode-go/deepseek-v4-flash` |
+| Skip the lens analyzers for this session | `safe-pi --no-lens` |
+| A shell inside the sandbox | `safe-pi --shell` |
+| Install the declared environment and exit | `safe-pi --prepare` |
+| Refresh Pi inside the image to the latest release | `safe-pi --update` |
+| Anything else Pi accepts | `safe-pi <any pi flag>` |
+
+### safe-pi's own flags
+
+| Flag | Effect |
+| --- | --- |
+| `--rebuild` | rebuild the image with the version it already has |
+| `--update` | refresh the image with the latest Pi release |
+| `--shell` | start a shell instead of Pi, with the same mounts |
+| `--prepare` | converge the declared environment into the toolchain volume, do not start Pi |
+| `--dry-run` | print the Docker command and exit |
+| `help` | safe-pi's own usage |
+
+`-h`, `--help`, and `--version` are passed to Pi, not consumed by `safe-pi`.
+
+### What the sandbox sees
+
+- Your repository, read-write, at the same absolute path — writes land on the
+  host.
+- Your Pi configuration, credentials, sessions, skills, prompts, agents,
+  extensions, and packages, shared with the host Pi. Extensions and packages are
+  read-only inside the sandbox.
+- Herdr's socket, plus a sandbox reporter that reports the pane as `working`,
+  `blocked`, and `idle`. Herdr's own Pi integration is disabled inside the
+  sandbox, because Herdr ignores it for a pane whose foreground process is
+  `docker`.
+- The declared environment installed inside the container from the repository's
+  tracked mise configuration, kept in the toolchain volume.
+- Not your host toolchain, not other repositories, not the rest of your home
+  directory, not the Docker socket.
+
+### Things worth knowing
+
+- If the network is unavailable when convergence has something to install,
+  `safe-pi` warns and opens Pi anyway; `--prepare` reports the failure instead.
+- A repository's own `.mise.toml` pins are installed on first use and stay in the
+  toolchain volume, so switching repositories does not re-download them.
+- After a Herdr server restart, a sandboxed pane comes back as a plain shell on
+  purpose: Herdr's automatic resume would otherwise start an unsandboxed Pi.
+  Re-enter the conversation with `safe-pi -c`.
+- `pi install` inside the sandbox fails on purpose, because extensions and
+  packages are read-only. Install on the host; the sandbox picks it up
+  immediately.
+- The sandbox is a filesystem boundary, not a credential boundary: it can read
+  the credentials Pi uses.
+- Automatic restore uses a self-reported resume command, which Herdr has
+  accepted from a custom source since 0.9.2. Herdr's native `agent_session` is
+  stored only for official `herdr:*` sources — by design, not by version — and
+  wiring the resume command into the sandbox reporter is a follow-up; until
+  then restore stays fail-closed.
+- A warning that the image's Pi differs from the host's Pi is expected until you
+  run `safe-pi --update`.
+
+### Where things live
+
+- Image: `safe-pi:current-u<uid>`, plus one tag per baked Pi version.
+- Toolchain volume: `safe-pi-toolchain-u<uid>`.
+- Starting over: remove the volume to reinstall the declared environment,
+  remove the image tags to rebuild the image; the next run recreates what is
+  missing.
+
+### Troubleshooting
+
+| Symptom | Cause |
+| --- | --- |
+| Docker not found, or the daemon refuses to answer | Docker is not installed or not reachable by your user |
+| Refuses to run | You are root; file-ownership parity needs your own uid |
+| Cannot find the build context | The script was copied instead of installed by stow; point the override at the Dockerfile |
+| The first run is slower than described above | The image build or the convergence is running; it reports which one |
+| Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
+| Herdr shows the pane as a plain terminal | You are not running inside a Herdr pane, or Herdr's socket is not reachable from the container, so the sandbox reporter cannot attribute the pane |
+| Blocked prompts never appear in Herdr | The `permission-gate` extension is missing from the mounted configuration, so nothing emits the blocked event the sandbox reporter consumes |
+| Warning about differing Pi versions | The image's Pi is older than the host's; run `safe-pi --update` |
+
 ## For `Omarchy`
 
 `stow general git hypr nvim tasks tmux zsh pi pi-linux skills-personal`
@@ -274,6 +388,11 @@ sudo systemctl restart systemd-logind
 `~/.local/share/herdr-recent-navigator/herdr-plugin.toml` are regenerated by
 Herdr and by the plugin installer, so tracking them only produced Stow
 conflicts on every upgrade.
+
+A sandboxed Pi started with `safe-pi` keeps reporting state to Herdr through a
+sandbox reporter instead of Herdr's own Pi integration. See
+[Run Pi in the sandbox](#run-pi-in-the-sandbox-safe-pi) for the mounts, the
+recipes, and the one difference after a server restart.
 
 The navigator bindings live in
 `~/.config/herdr/plugins/config/beyondlex.herdr-recent-navigator/config.toml`
