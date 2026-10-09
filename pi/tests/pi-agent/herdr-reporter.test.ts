@@ -155,6 +155,7 @@ describe("herdr-reporter", () => {
 			agent: "pi",
 			pane_id: PANE_ID,
 			agent_session_path: SESSION_FILE,
+			resume_argv: ["safe-pi", "-c"],
 			session_start_source: "startup",
 		});
 		expect(state?.params).toMatchObject({
@@ -163,6 +164,56 @@ describe("herdr-reporter", () => {
 			pane_id: PANE_ID,
 			state: "idle",
 			agent_session_path: SESSION_FILE,
+			resume_argv: ["safe-pi", "-c"],
+		});
+	});
+
+	it("carries a resume command Herdr will accept on every report", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers, blocked } = setupPi();
+
+		await handlers.get("session_start")!({}, makeContext({ isIdle: () => false }));
+		blocked[0]({ active: true, label: "Aguardando permissão" });
+		await waitForRequests(requests, 3);
+
+		for (const request of requests) {
+			const argv = request.params?.resume_argv as string[] | undefined;
+			expect(Array.isArray(argv)).toBe(true);
+			expect(argv![0]).toBe("safe-pi");
+			expect(argv![0]).not.toContain("/");
+			expect(argv!.length).toBeLessThanOrEqual(64);
+			expect(argv!.reduce((bytes, arg) => bytes + arg.length, 0)).toBeLessThanOrEqual(8 * 1024);
+			for (const arg of argv!) {
+				expect(arg).not.toMatch(/['\u0000-\u001f\u007f]/);
+			}
+		}
+	});
+
+	it("re-states the resume command when the session changes", async () => {
+		const { socketPath, requests, stop } = await startServer();
+		cleanups.push(stop);
+		setHerdrEnv(socketPath);
+		const { handlers } = setupPi();
+
+		await handlers.get("session_start")!({}, makeContext());
+		await waitForRequests(requests, 2);
+		requests.length = 0;
+
+		const otherSession = "/run/safe-pi/sessions/--repo--/2026-01-02T00-00-00.jsonl";
+		await handlers.get("agent_start")!(
+			{},
+			makeContext({
+				sessionManager: { getSessionFile: () => otherSession, getSessionId: () => "other-id" },
+			}),
+		);
+		await waitForRequests(requests, 2);
+
+		const session = requests.find((request) => request.method === "pane.report_agent_session");
+		expect(session?.params).toMatchObject({
+			agent_session_path: otherSession,
+			resume_argv: ["safe-pi", "-c"],
 		});
 	});
 

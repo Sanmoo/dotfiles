@@ -310,19 +310,20 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
   `safe-pi` warns and opens Pi anyway; `--prepare` reports the failure instead.
 - A repository's own `.mise.toml` pins are installed on first use and stay in the
   toolchain volume, so switching repositories does not re-download them.
-- After a Herdr server restart, a sandboxed pane comes back as a plain shell on
-  purpose: Herdr's automatic resume would otherwise start an unsandboxed Pi.
-  Re-enter the conversation with `safe-pi -c`.
+- After a Herdr server restart, a sandboxed pane comes back inside the sandbox:
+  the reporter has declared `safe-pi -c` as the pane's self-reported resume
+  command, and Herdr types it into the restored pane's shell in the saved
+  working directory.
 - `pi install` inside the sandbox fails on purpose, because extensions and
   packages are read-only. Install on the host; the sandbox picks it up
   immediately.
 - The sandbox is a filesystem boundary, not a credential boundary: it can read
   the credentials Pi uses.
-- Automatic restore uses a self-reported resume command, which Herdr has
-  accepted from a custom source since 0.9.2. Herdr's native `agent_session` is
-  stored only for official `herdr:*` sources — by design, not by version — and
-  wiring the resume command into the sandbox reporter is a follow-up; until
-  then restore stays fail-closed.
+- Herdr's native `agent_session` reference is stored only for official
+  `herdr:*` sources — by design, not by version — so the sandbox reporter
+  declares its own resume command, which Herdr has accepted from a custom
+  source since 0.9.2. If no report reaches Herdr before a restart, the pane
+  returns as a plain shell and `safe-pi -c` resumes it by hand.
 - A warning that the image's Pi differs from the host's Pi is expected until you
   run `safe-pi --update`.
 
@@ -344,6 +345,7 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 | The first run is slower than described above | The image build or the convergence is running; it reports which one |
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
 | Herdr shows the pane as a plain terminal | You are not running inside a Herdr pane, or Herdr's socket is not reachable from the container, so the sandbox reporter cannot attribute the pane |
+| A restored pane comes back as a plain shell | No report reached Herdr before the restart, so the pane has no stored resume command; run `safe-pi -c` |
 | Blocked prompts never appear in Herdr | The `permission-gate` extension is missing from the mounted configuration, so nothing emits the blocked event the sandbox reporter consumes |
 | Warning about differing Pi versions | The image's Pi is older than the host's; run `safe-pi --update` |
 
@@ -392,7 +394,7 @@ conflicts on every upgrade.
 A sandboxed Pi started with `safe-pi` keeps reporting state to Herdr through a
 sandbox reporter instead of Herdr's own Pi integration. See
 [Run Pi in the sandbox](#run-pi-in-the-sandbox-safe-pi) for the mounts, the
-recipes, and the one difference after a server restart.
+recipes, and how a server restart restores the sandboxed pane.
 
 The navigator bindings live in
 `~/.config/herdr/plugins/config/beyondlex.herdr-recent-navigator/config.toml`

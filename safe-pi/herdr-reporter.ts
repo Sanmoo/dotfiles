@@ -20,11 +20,17 @@
  * Every report is best-effort. An unreachable socket, a refused write, or a
  * slow server is swallowed: reporting must never block, slow, or break Pi.
  *
- * The session reference is reported at the container-only sessions path. On
- * Herdr 0.9.3 a custom source is accepted but stores no `agent_session`; the
- * reference and a resume command need a Herdr release that accepts them from
- * a custom source (documented as >= 0.10.0). This reporter carries the
- * reference only; the resume command is a follow-up once that release exists.
+ * The session reference is reported at the container-only sessions path. Herdr
+ * stores the native `agent_session` reference only for its official `herdr:*`
+ * sources, so a custom source never populates it. Automatic restore therefore
+ * comes from the self-reported resume command this reporter attaches to every
+ * report (`RESUME_ARGV`): Herdr has accepted `resume_argv` from a custom source
+ * since 0.9.2 and persists it with the pane. After a Herdr server restart the
+ * restored pane's shell gets that command typed into it in the saved working
+ * directory, so the pane comes back inside a fresh sandbox rather than as a
+ * plain shell or an unsandboxed Pi. Because the command rides on every report,
+ * a changed session re-states it. If no report ever reaches Herdr, the pane has
+ * no stored command and still fails closed to a shell.
  */
 
 import net from "node:net";
@@ -33,6 +39,16 @@ import path from "node:path";
 const SOURCE = "safe-pi";
 const AGENT = "pi";
 const REPORT_TIMEOUT_MS = 500;
+
+/**
+ * The resume command Herdr stores with the pane: re-enter the sandbox with the
+ * most recent conversation in the pane's directory. It has to satisfy Herdr's
+ * rules for a self-reported command — a bare first token resolved on the pane
+ * shell's `PATH` (`safe-pi` resolves at `~/.local/bin`), at most 64 arguments
+ * and 8 KiB, no apostrophes or control characters — because it runs on the host
+ * in the pane's saved working directory, not inside the container.
+ */
+const RESUME_ARGV = ["safe-pi", "-c"];
 
 interface SessionManager {
 	getSessionFile?: () => string | undefined;
@@ -165,6 +181,7 @@ export default function (pi: ExtensionAPI): void {
 			source: SOURCE,
 			agent: AGENT,
 			seq: nextReportSeq(),
+			resume_argv: RESUME_ARGV,
 			...sessionRef(),
 		};
 	}
