@@ -55,8 +55,14 @@ best-effort: if it fails, the command still runs.
 
 Evidence:
 
+- An image built by the previous entrypoint (label `safe-pi.entrypoint="1"`)
+  is now stale and rebuilt on next use: running it under the new wrapper would
+  mount the host extensions at the container-only path with no entrypoint to
+  build the view, silently losing every host extension. The label is bumped to
+  `"2"` and `tests/safe-pi-wrapper-test.sh` asserts the v1 image is rebuilt.
 - `tests/safe-pi-wrapper-test.sh` asserts the ro host-extensions mount at the
-  container-only path and the tmpfs over the discovered extensions path.
+  container-only path, the tmpfs over the discovered extensions path, and the
+  forwarded `SAFE_PI_HOST_EXTENSIONS` path the entrypoint builds the view from.
 - `tests/safe-pi-entrypoint-test.sh` runs the real entrypoint against a fixture
   host-extensions directory and asserts the view contains the reporter and
   every host extension but neither `herdr-agent-state.ts` nor `.js`; it also

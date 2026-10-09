@@ -27,7 +27,8 @@ checkout (`CONFIG_CHECKOUT`):
 | --- | --- | --- |
 | `$PWD` | same path | rw |
 | `~/.pi/agent` | same path | rw |
-| `~/.pi/agent/extensions`, `~/.pi/agent/npm` | same path | ro (over the agent dir) |
+| `~/.pi/agent/extensions` | `/run/safe-pi/host-extensions` | ro (container-only path, for the extensions view) |
+| `~/.pi/agent/npm` | same path | ro (over the agent dir) |
 | `~/.pi/agent/sessions` | `/run/safe-pi/sessions` | rw |
 | `~/.agents/skills` | same path | ro |
 | configuration checkout | same path | ro, skipped only when `$PWD` *is* the checkout |
@@ -37,6 +38,7 @@ checkout (`CONFIG_CHECKOUT`):
 | `~/.gitconfig` | same path | ro |
 | `$SSH_AUTH_SOCK` | `/run/safe-pi/ssh-agent.sock` | rw (only when set) |
 | volume `safe-pi-toolchain-u<uid>` | `~/.local/share/mise` | rw |
+| — | `~/.pi/agent/extensions` | tmpfs (the view the entrypoint builds) |
 | — | `/tmp` | tmpfs |
 
 - `PI_CODING_AGENT_SESSION_DIR` points at `<container sessions>/<encoded-cwd>`,
@@ -47,10 +49,11 @@ checkout (`CONFIG_CHECKOUT`):
 - Forwarded variables: `HOME`, `USER`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`,
   `TZ`; `MISE_DATA_DIR` and the session variable at container paths;
   `SSH_AUTH_SOCK` at the container socket path; and `HERDR_ENV`,
-  `HERDR_SOCKET_PATH`, `HERDR_PANE_ID` only when set on the host. The wrapper
-  sets no Pi identity of its own: forwarding the Herdr variables lets the
-  mounted `herdr-agent-state.ts` extension report `agent: "pi"` over the
-  socket, which is what attributes the pane (end-to-end check is ticket 05).
+  `HERDR_SOCKET_PATH`, `HERDR_PANE_ID` only when set on the host, plus
+  `SAFE_PI_HOST_EXTENSIONS` at the container path where the host extensions
+  land. The wrapper sets no Pi identity of its own: forwarding the Herdr
+  variables lets the sandbox reporter own the pane under source `safe-pi`
+  (ticket 08); the Herdr-managed integration is not loaded inside the sandbox.
 - The image creates `/run/safe-pi`, its `sessions` directory, the SSH socket
   placeholder, and an empty user-owned `~/.local/share/mise`, so the socket
   binds over a file and a fresh toolchain volume inherits user ownership. The
