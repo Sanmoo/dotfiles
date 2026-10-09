@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately; the socket mount from 03 is already in place)
 
-**Status:** ready-for-human
+**Status:** resolved
 
-- [ ] In a sandboxed pane, `herdr agent list` lists the pane and it shows `working` during a turn and `idle` once it settles.
-- [ ] A dangerous command gated by `permission-gate` shows the pane as `blocked` until it is answered, and clears when it is.
+- [x] In a sandboxed pane, `herdr agent list` lists the pane and it shows `working` during a turn and `idle` once it settles.
+- [x] A dangerous command gated by `permission-gate` shows the pane as `blocked` until it is answered, and clears when it is.
 - [x] The reporter uses its own source (not `herdr:pi`), and the Herdr-managed integration does not report for the pane, so exactly one source holds it.
 - [x] Reports are best-effort: an unreachable socket or a failed report never blocks, slows, or breaks Pi.
 - [x] The reporter reports the session reference at the container-only sessions path. Herdr stores `agent_session` only for official `herdr:*` sources (`is_official_agent_source` in `src/agent_resume.rs`), so a custom source never populates it; this is by design and documented. Automatic restore uses a self-reported `resume_argv` (Herdr ≥ 0.9.2), which is ticket 07's follow-up.
@@ -95,3 +95,56 @@ resume command; Herdr has accepted a custom-source `resume_argv` since 0.9.2, so
 that is ticket 07's follow-up. ADR 0002 and the `safe-pi` glossary were
 updated, and the 03/06 ticket notes and the draft guide now describe the
 sandbox reporter instead of the managed integration.
+
+(That last note is superseded by tickets 07/10/13: the reporter now attaches a
+self-reported `resume_argv`, `["safe-pi", "--session", <id>]` with `["safe-pi",
+"-c"]` as the fallback.)
+
+### End-to-end verification under Herdr (2026-10-09)
+
+Run on the live Herdr 0.9.3 server with the real Docker sandbox, in throwaway
+tabs created for the check; this closes the two criteria that needed a running
+pane.
+
+**Attribution and exactly one source.** In a sandboxed pane,
+`herdr pane process-info` shows the foreground `bash`/`docker` and the wrapper
+forwarding `SAFE_PI_HERDR_SOCKET_PATH` and `SAFE_PI_HERDR_PANE_ID` with no
+`HERDR_ENV`/`HERDR_SOCKET_PATH`/`HERDR_PANE_ID`, ending in `pi -e
+/usr/local/share/safe-pi/herdr-reporter.ts`. `herdr api snapshot` lists the pane
+as `agent: pi` with `agent_session: null`. Had the managed `herdr:pi`
+integration reported, Herdr would have stored a session for it (as it does for
+every host Pi pane); the null session is the observable proof that the custom
+`safe-pi` source is the only one holding the pane.
+
+**Working and settled.** With the reporter from the repository mounted into the
+container under its real source `safe-pi`, typing a prompt that runs `sleep 20`
+moved the pane `idle → working` in 2 s (`06:21:59 → 06:22:01`) and to `done` at
+`06:22:25` when the turn settled. `herdr agent focus` then marked the completion
+seen and it read `idle`; `done` is Herdr's settled-but-unseen state, the same
+one host Pi panes show. The shipped path was checked too: the real `safe-pi`
+wrapper in a fresh pane went `working` at `06:30:00` and `done` at `06:30:24`
+after a prompt.
+
+**Blocked.** With the same reporter, a prompt asking for `sudo true` (a
+`permission-gate` pattern) reached `blocked` at `06:23:40`, 4 s after the prompt,
+and stayed there; the pane showed the gate (`⚠️ Comando suspeito: sudo true /
+Permitir?`). Answering it with `Down`+`Enter` (`Não`) at `06:25:02` cleared it:
+`working` at `06:25:04`, `done` at `06:25:06`. A `herdr agent prompt` cannot drive
+these panes (`agent_not_ready`: the pane's foreground is `docker`), so the check
+typed into the pane the way a user does.
+
+Two things seen while running that are worth knowing:
+
+- The first `pane.report_agent_session` of a run is rejected with
+  `resume_not_accepted` ("report its state with pane.report_agent first")
+  because the reporter sends it concurrently with the first state report. The
+  state report is accepted and carries `resume_argv` as well, so the resume
+  command is still stored; but if the session report's own fields are ever
+  needed before a state report, the reporter should send state first.
+- The cached `safe-pi:current-u1000` image on this machine was built before
+  `e4cf2e7` and still carries the pre-ticket-10 reporter (the constant
+  `RESUME_ARGV`); the entrypoint label did not change, so the wrapper reused it
+  rather than rebuilding. Fresh builds carry the current reporter, which is what
+  the working/settled and blocked runs above used. Ticket 10's change should
+  bump the label (or otherwise version the reporter) so a cached image cannot
+  keep serving a superseded reporter.
