@@ -83,11 +83,18 @@ prepare_profile() {
 	mkdir -p "$SOURCE_DIR/sessions"
 
 	local entry src dst target
-	local -a to_link=()
+	local -a to_link=() to_prune=()
 	for entry in "${SHARED_ENTRIES[@]}"; do
-		source_has "$entry" || continue
 		src="$SOURCE_DIR/$entry"
 		dst="$PROFILE_DIR/$entry"
+		if ! source_has "$entry"; then
+			# A link pi-deere made to an entry since removed from the original is stale.
+			# Only that exact link is pruned; any other link is left alone.
+			if [[ -L "$dst" && "$(readlink "$dst")" == "$src" ]]; then
+				to_prune+=("$entry")
+			fi
+			continue
+		fi
 		if [[ -L "$dst" ]]; then
 			target="$(readlink "$dst")"
 			[[ "$target" == "$src" ]] && continue
@@ -103,6 +110,9 @@ prepare_profile() {
 
 	mkdir -p "$PROFILE_DIR"
 	chmod 700 "$PROFILE_DIR"
+	for entry in ${to_prune[@]+"${to_prune[@]}"}; do
+		rm -f "$PROFILE_DIR/$entry"
+	done
 	for entry in ${to_link[@]+"${to_link[@]}"}; do
 		ln -s "$SOURCE_DIR/$entry" "$PROFILE_DIR/$entry"
 	done
@@ -111,7 +121,7 @@ prepare_profile() {
 	# Post-check: every shared entry present in the source must resolve from the profile.
 	for entry in "${SHARED_ENTRIES[@]}"; do
 		if source_has "$entry" && [[ ! -e "$PROFILE_DIR/$entry" ]]; then
-			die "shared $entry is a broken link: $SOURCE_DIR/$entry does not resolve"
+			die "shared $entry in $SOURCE_DIR is a broken link to $(readlink "$SOURCE_DIR/$entry"), which does not exist. Pi-deere changed nothing in the original; remove the stale link with: rm '$SOURCE_DIR/$entry' (or repoint it), then run $SCRIPT_NAME again."
 		fi
 	done
 }

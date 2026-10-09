@@ -416,12 +416,34 @@ test_missing_pi_executable_fails() {
 	assert_contains "$LAUNCH_STDERR" "pi executable was not found" "missing executable message"
 }
 
+test_stale_profile_link_to_a_removed_entry_is_pruned() {
+	new_case
+	run_launcher -- "first"
+	assert_eq "$SRC/prompts" "$(readlink "$PROF/prompts")" "prompts linked before the removal"
+	rm -rf "$SRC/prompts"
+	run_launcher -- "second"
+	assert_eq 0 "$LAUNCH_STATUS" "launch after the original entry was removed"
+	[[ ! -e "$PROF/prompts" && ! -L "$PROF/prompts" ]] || fail "the stale link pi-deere made must be pruned"
+	pass
+}
+
+test_foreign_link_to_a_missing_target_is_left_alone() {
+	new_case
+	mkdir -p "$PROF"
+	ln -s "$case_root/elsewhere-missing" "$PROF/themes"
+	run_launcher -- "x"
+	assert_eq 0 "$LAUNCH_STATUS" "launch with a foreign dangling link"
+	assert_eq "$case_root/elsewhere-missing" "$(readlink "$PROF/themes")" "foreign link kept, not pruned"
+}
+
 test_broken_shared_link_fails() {
 	new_case
 	ln -s "$case_root/missing-target.md" "$SRC/themes"
 	run_launcher -- "x"
 	assert_eq 1 "$LAUNCH_STATUS" "broken source status"
 	assert_contains "$LAUNCH_STDERR" "broken link" "broken shared resource detected"
+	assert_contains "$LAUNCH_STDERR" "$case_root/missing-target.md" "error names the broken target"
+	assert_contains "$LAUNCH_STDERR" "rm '$SRC/themes'" "error says which link to remove"
 }
 
 test_entry_added_to_source_is_shared_on_next_launch() {
