@@ -1,6 +1,6 @@
 # Skills externas como dependências locais
 
-Status: ready-for-agent
+Status: superseded in part (per-machine skill manifests are now tracked; see ## Comments)
 
 ## Problem Statement
 
@@ -92,3 +92,26 @@ O checkout inspecionado contém alterações locais nas skills e em configuraç�
 As instruções do repositório definem um tracker Markdown local e o status canônico `ready-for-agent`; specs existentes usam esse status diretamente. As referências a documentos auxiliares de tracker, triagem e domínio nas instruções não estavam disponíveis no checkout inspecionado. Não foi encontrado um glossário existente nem uma decisão arquitetural específica sobre esta separação.
 
 Critério de conclusão da futura implementação: dependências ausentes dos arquivos rastreados atuais; configuração aplicável sem instalação implícita de skills; diretório local independente; migração comprovadamente preservadora; documentação atualizada; testes de integração aprovados; nenhuma referência corporativa nova publicada.
+
+## Comments
+
+**2026-10-09 — superada em parte; o resto segue em vigor.**
+
+A parte superada é a proibição de rastrear lockfile de instalação, e apenas para o **manifesto project** (`~/skills-lock.json`, schema v1, o que `add`/`update` leem). Ele passa a ser rastreado em dois pacotes de máquina, no padrão de variante que o repo já usa com `pi-linux`/`pi-mac`:
+
+- `skills-personal/skills-lock.json` → `~/skills-lock.json` na máquina pessoal (Linux)
+- `skills-corporate/skills-lock.json` → `~/skills-lock.json` na máquina da empresa (macOS)
+
+Cada máquina stowa exatamente um dos dois; ambos forneceriam o mesmo caminho, então nunca convivem. O CLI escreve o arquivo **através** do symlink (`writeSkillLock` usa `writeFile`), então o manifesto do repo é atualizado no lugar e o link sobrevive — verificado empiricamente antes de adotar o padrão.
+
+Três decisões desta spec ficam **superadas** por consequência:
+
+1. "lockfiles de instalação não serão rastreados pelos dotfiles" — superada para o manifesto project. O lock **global** `.skill-lock.json` (`~/.agents/.skill-lock.json`, o que `update -g` usa) continua machine-local e não rastreado, que é o que `tests/external-skills-local-installation-test.sh` exige.
+2. "O repositório pessoal não conterá configuração específica da empresa, incluindo origem do fork" — o manifesto corporativo passa a viver neste repo, então a origem do fork aparece aqui. Aceito: o repositório é privado e apenas a referência à origem é registrada, não conteúdo corporativo.
+3. A separação entre configuração e dependências instaladas deixa de exigir um repositório à parte: o gerenciamento continua separado do bootstrap, mas mora neste repo.
+
+Motivo da reversão, nas palavras do usuário: manter tudo no repositório atual e não criar repositório paralelo de gerenciamento; a estratégia de dois manifestos por máquina já é usada nos dotfiles do pi.
+
+Segue **em vigor** sem mudança: conteúdo de skills externas fora do checkout (`~/.agents/skills` real e externo); bootstrap (`apply-agent-config` / linhas de `stow`) não instala, não atualiza e não escolhe dependências; skills de autoria própria publicadas individualmente; garantias de preservação da migração; histórico Git não reescrito; nenhum conteúdo corporativo publicado.
+
+O gerenciamento é feito por `skills-sync` (`general/bin/skills-sync`, no PATH via `~/bin`), documentado no README §"Agent skills".
