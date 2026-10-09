@@ -1,6 +1,6 @@
 # 01 — Manifesto da máquina corporativa (macOS)
 
-Status: implemented
+**Status:** resolved
 
 Continuação de `../spec.md` na outra máquina. Nesta sessão apenas a máquina
 pessoal (Linux) foi configurada; este arquivo é o handoff para a sessão que

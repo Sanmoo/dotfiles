@@ -1,6 +1,6 @@
 # Apply only tracked agent content
 
-Status: approved
+Status: implemented (the single authorized follow-up ticket, quality-gateway-followups/issues/01-apply-agent-config-local-skills.md, is resolved; covered by tests/external-skills-local-installation-test.sh)
 Design: decided
 Implementation authorization: granted for the single follow-up ticket
 `quality-gateway-followups/issues/01-apply-agent-config-local-skills.md`

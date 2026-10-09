@@ -1,6 +1,6 @@
 # http oc: CLI body override
 
-Status: ready-for-agent
+Status: implemented (no tickets; commit 62243b1 adds -d/--data and -f/--file, semantics recorded in ADR-0001, covered by tests/http-oc-test.sh and tests/http-test.sh)
 
 ## Problem Statement
 

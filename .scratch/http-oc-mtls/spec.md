@@ -1,6 +1,6 @@
 # http oc: mTLS client certificates (OpenCollection clientCertificates)
 
-Status: ready-for-agent
+Status: implemented (tickets 01–04 resolved; commits b22c560 manifest certs, 0df6e19 environment certs, 5e524e5 CLI overrides, 7772c96 oauth2 token certs; covered by tests/http-oc-test.sh tests 54–86)
 
 ## Problem Statement
 

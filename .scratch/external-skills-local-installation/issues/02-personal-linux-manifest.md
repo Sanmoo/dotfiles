@@ -1,6 +1,6 @@
 # 02 — Manifesto da máquina pessoal (Linux)
 
-Status: implemented
+**Status:** resolved
 
 Entrega na máquina pessoal do desenho que supera em parte `../spec.md` (ver o
 `## Comments` de lá). A decisão está registrada em

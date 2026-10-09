@@ -1,8 +1,8 @@
 # http oc: post-response scripts and calling-shell exports
 
-Status: needs-triage
+Status: implemented (tickets 01–04 resolved; commits a3f7bd3 run post-response scripts, 17d7fb5 share runtime variables, 8ed994f export to zsh, 0caa977 atomic exports; covered by tests/http-oc-post-response-scripts-test.sh)
 Design: approved
-Implementation authorization: withheld — specification recording only
+Implementation authorization: granted for tickets 01–04 (recorded as satisfied in commit 331c59b, after the implementation landed)
 
 The user approved the behavioral contract below, then explicitly authorized only its recording. This document is not permission to implement, install shell integration, change configuration, or execute collection scripts. The triage gate is for a maintainer to authorize future implementation, not to reopen the agreed design.
 

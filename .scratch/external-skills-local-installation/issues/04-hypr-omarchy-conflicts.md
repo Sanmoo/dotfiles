@@ -1,6 +1,7 @@
 # 04 — Conflitos do pacote `hypr` com o Omarchy (e o comportamento de idle)
 
-Status: ready-for-human
+**Status:** ready-for-human
+**Blocked by:** None — precisa da decisão do owner sobre o comportamento de idle e o papel do pacote `hypr`
 
 Achado enquanto se executava o item "(2)" da limpeza desta máquina. **Nada foi
 mudado no pacote `hypr`**: o que está aqui precisa de decisão humana antes.

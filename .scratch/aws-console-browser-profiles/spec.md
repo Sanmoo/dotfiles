@@ -1,6 +1,6 @@
 # aws-console: browser-profile isolation & service deep-links
 
-Status: ready-for-agent
+Status: implemented (tickets 01–04 resolved; commits 063be50 browser-profile isolation and 3d8a284 service deep-links; covered by general/bin/aws-console.test)
 
 ## Problem Statement
 

@@ -1,6 +1,6 @@
 # 03 — Documentos do agente escondidos pelo padrão `docs`
 
-Status: implemented
+**Status:** resolved
 
 Achado enquanto se registrava o ADR 0003: o `git add` do ADR falhou e o commit
 entrou **parcial**, só com o ticket `02`. Causa: o `.gitignore` tinha uma linha
