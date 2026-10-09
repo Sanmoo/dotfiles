@@ -2,7 +2,7 @@
 
 **What to build:** The reporter's self-reported resume command must reopen the *same* conversation after a Herdr restart. `safe-pi -c` (continue the most recent session in the cwd) is not enough: with more than one session in the same directory it can reopen a different conversation. The command should name the session (for example `safe-pi --session <id>`).
 
-**Blocked by:** 07 — Spike: a sandbox that declares its own resume command (decides the resume shape)
+**Blocked by:** 13 — Wire the self-reported resume command into the sandbox reporter (the mechanism 10 refines)
 
 **Status:** needs-info
 
@@ -33,3 +33,24 @@
 
 `safe-pi -c` is not sufficient for auto-resume: it can open another session in
 the same directory. Include a session id.
+
+### Answers from the ticket 07 spike
+
+Ticket 07 resolved the mechanism and settled the shape questions this ticket was
+blocked on:
+
+- The resume command runs **on the host**, typed into the restored pane's shell
+  in the pane's saved cwd. A container-only session path
+  (`/run/safe-pi/sessions/…`) does not exist there, so the argument must be
+  something the host `safe-pi` can resolve. The session id (UUID), forwarded as
+  `safe-pi --session <id>`, is the right form; the reporter knows it from
+  `ctx.sessionManager.getSessionId()`.
+- The command is typed, not `exec`'d, so `safe-pi` must stay a bare first token
+  on the host shell's `PATH`; no path or quoting change is possible.
+- Herdr keeps one resume slot per pane and replaces it on a newer report, so the
+  reporter should re-report whenever the session changes (`session_start`,
+  `agent_start`) rather than only once.
+- Remaining open questions here are about Pi, not Herdr: whether a partial UUID
+  resolves stably with `--session`, and whether it survives a fork/branch. The
+  wiring itself is ticket 13; this ticket picks the exact argument once the
+  mechanism is in place.
