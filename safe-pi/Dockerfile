@@ -28,7 +28,7 @@ ARG GID=1000
 ARG USERNAME=sandbox
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="1" \
+      safe-pi.entrypoint="2" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \
@@ -108,6 +108,11 @@ RUN set -eux; \
 # shims ahead of the image's binaries, checks Pi's Node requirement, and then
 # runs the command. Every start goes through it, including the debug shell.
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/safe-pi-entrypoint
+
+# The sandbox-owned Herdr reporter. It loads from the container-only extensions
+# view the entrypoint builds, because the mounted Herdr-managed integration is
+# ignored for a pane whose foreground process is not a detected Pi (docker).
+COPY --chmod=0644 herdr-reporter.ts /usr/local/share/safe-pi/herdr-reporter.ts
 
 ENV HOME=/home/${USERNAME}
 USER ${USERNAME}

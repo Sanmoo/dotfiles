@@ -21,6 +21,15 @@ set -euo pipefail
 readonly SCRIPT_NAME="safe-pi"
 readonly CONVERGE_STEP="mise install --yes"
 
+# Container-only paths the wrapper and this entrypoint share. The host
+# extensions are mounted at HOST_EXTENSIONS_DIR, and the entrypoint builds the
+# extensions view Pi discovers (EXTENSIONS_VIEW) from them.
+readonly MANAGED_HERDR_EXTENSION="herdr-agent-state"
+readonly HOST_EXTENSIONS_DIR="${SAFE_PI_HOST_EXTENSIONS:-/run/safe-pi/host-extensions}"
+readonly SANDBOX_REPORTER="${SAFE_PI_REPORTER:-/usr/local/share/safe-pi/herdr-reporter.ts}"
+readonly AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+readonly EXTENSIONS_VIEW="$AGENT_DIR/extensions"
+
 warn() {
 	printf '%s: warning: %s\n' "$SCRIPT_NAME" "$1" >&2
 }
@@ -137,5 +146,36 @@ check_pi_engine() {
 if ((run_pi)); then
 	check_pi_engine "$image_npm_root" || exit 1
 fi
+
+# --- Sandbox extensions view ---------------------------------------------------
+# The wrapper mounts the host extensions read-only at a container-only path and
+# a tmpfs at the path Pi discovers, so this can build a view that keeps every
+# host extension but replaces the Herdr-managed integration with the sandbox
+# reporter. Herdr ignores the managed integration's `herdr:pi` report because a
+# sandboxed pane's foreground process is `docker`, so dropping it leaves exactly
+# one source owning the pane. Best effort: whatever fails here, the command
+# still runs with the extensions that are already visible.
+build_extensions_view() {
+	[[ "${SAFE_PI_SANDBOX:-}" == "1" ]] || return 0
+	mkdir -p "$EXTENSIONS_VIEW" 2>/dev/null || return 0
+
+	local entry name
+	if [[ -d "$HOST_EXTENSIONS_DIR" ]]; then
+		for entry in "$HOST_EXTENSIONS_DIR"/*; do
+			[[ -e "$entry" || -L "$entry" ]] || continue
+			name="${entry##*/}"
+			case "$name" in
+			"$MANAGED_HERDR_EXTENSION".ts | "$MANAGED_HERDR_EXTENSION".js) continue ;;
+			esac
+			ln -sfn "$entry" "$EXTENSIONS_VIEW/$name" 2>/dev/null || true
+		done
+	fi
+
+	if [[ -f "$SANDBOX_REPORTER" ]]; then
+		ln -sfn "$SANDBOX_REPORTER" "$EXTENSIONS_VIEW/${SANDBOX_REPORTER##*/}" 2>/dev/null || true
+	fi
+}
+
+build_extensions_view
 
 exec "$@"

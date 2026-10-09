@@ -110,7 +110,7 @@ reset_stubs() {
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
-	FAKE_ENTRYPOINT="1"
+	FAKE_ENTRYPOINT="2"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]
@@ -268,6 +268,16 @@ assert_log "docker build --tag $current_tag"
 assert_log "--build-arg PI_VERSION=1.1.0"
 assert_log "docker run --rm"
 grep -Fq "entrypoint" "$tmpdir/stale.err" || fail "stale image rebuild should say why"
+
+# An image from the previous entrypoint version is also stale: it cannot build
+# the sandbox extensions view the reporter loads from, so it is rebuilt too.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_ENTRYPOINT="1"
+run_safe_pi -c 2>"$tmpdir/stale-v1.err" || fail "v1-entrypoint image run failed"
+assert_log "docker build --tag $current_tag"
+assert_log "docker run --rm"
+grep -Fq "entrypoint" "$tmpdir/stale-v1.err" || fail "v1-entrypoint rebuild should say why"
 
 reset_stubs
 FAKE_IMAGES="$current_tag
@@ -496,7 +506,8 @@ FAKE_IMAGES="$current_tag"
 assert_log "--workdir $invoked"
 assert_log "--volume $invoked:$invoked:rw"
 assert_log "--volume $contract_home/.pi/agent:$contract_home/.pi/agent:rw"
-assert_log "--volume $contract_home/.pi/agent/extensions:$contract_home/.pi/agent/extensions:ro"
+assert_log "--volume $contract_home/.pi/agent/extensions:/run/safe-pi/host-extensions:ro"
+assert_log "--tmpfs $contract_home/.pi/agent/extensions"
 assert_log "--volume $contract_home/.pi/agent/npm:$contract_home/.pi/agent/npm:ro"
 assert_log "--volume $contract_home/.pi/agent/sessions:/run/safe-pi/sessions:rw"
 assert_log "--volume $contract_home/.agents/skills:$contract_home/.agents/skills:ro"
@@ -523,6 +534,7 @@ assert_log "--env MISE_STATE_DIR=$contract_home/.local/share/mise/state"
 encoded_invoked="${invoked#/}"
 encoded_invoked="--${encoded_invoked//[\/\\:]/-}--"
 assert_log "--env PI_CODING_AGENT_SESSION_DIR=/run/safe-pi/sessions/$encoded_invoked"
+assert_log "--env SAFE_PI_HOST_EXTENSIONS=/run/safe-pi/host-extensions"
 assert_log "--env SSH_AUTH_SOCK=/run/safe-pi/ssh-agent.sock"
 assert_log "--env HERDR_ENV"
 assert_log "--env HERDR_SOCKET_PATH"
