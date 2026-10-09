@@ -92,6 +92,21 @@ printf '%s\n' "$@" >> "$BROWSER_CALLS"
 MOCK
 chmod +x "$tmp_dir/fake-chrome"
 
+# The isolated launch is fire-and-forget (Popen without a wait), so the stub may
+# record its argv after the script exits; wait for a complete line before reading
+# the file, and fail rather than assert on a stub that never ran.
+wait_for_browser() {
+  local i
+  for ((i = 0; i < 200; i++)); do
+    if [[ -s "$BROWSER_CALLS" && "$(tail -c1 "$BROWSER_CALLS" | wc -l)" -eq 1 ]]; then
+      return 0
+    fi
+    sleep 0.01
+  done
+  printf 'FAIL: browser stub recorded no complete line in %s\n' "$BROWSER_CALLS" >&2
+  return 1
+}
+
 python3 "$tmp_dir/stub.py" "$REQUESTS_LOG" "$PORT" &
 stub_pid=$!
 trap 'rm -rf "$tmp_dir"; kill "$stub_pid" 2>/dev/null || true' EXIT
@@ -144,6 +159,7 @@ env "${COMMON_ENV[@]}" \
   AWS_ACCESS_KEY_ID=AKIABARE \
   AWS_SECRET_ACCESS_KEY=bare-secret \
   python3 "$SCRIPT" >"$tmp_dir/bare.out" 2>"$tmp_dir/bare.err"
+wait_for_browser
 
 assert_contains "$REQUESTS_LOG" 'Action=GetCallerIdentity&Version=2011-06-15'
 assert_contains "$REQUESTS_LOG" 'Credential=AKIABARE/'
@@ -178,6 +194,7 @@ env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
   AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
   AWS_CONFIG_FILE="$tmp_dir/config" \
   python3 "$SCRIPT" --profile rev-qual >"$tmp_dir/profile.out" 2>"$tmp_dir/profile.err"
+wait_for_browser
 
 assert_contains "$REQUESTS_LOG" 'Credential=AKIAPROFILE/'
 if [[ $(sed -n '1p' "$BROWSER_CALLS") != '--profile-directory=aws-rev-qual' ]]; then
@@ -200,6 +217,7 @@ env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
   AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
   AWS_CONFIG_FILE="$tmp_dir/config" \
   python3 "$SCRIPT" --profile default >"$tmp_dir/default.out" 2>"$tmp_dir/default.err"
+wait_for_browser
 
 assert_contains "$BROWSER_CALLS" "$ENDPOINT?Action=login&"
 if grep -Fq -- '--profile-directory=' "$BROWSER_CALLS"; then
@@ -261,6 +279,7 @@ env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
   AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
   AWS_CONFIG_FILE="$tmp_dir/config" \
   python3 "$SCRIPT" --profile rev-qual >"$tmp_dir/missing.out" 2>"$tmp_dir/missing.err"
+wait_for_browser
 
 assert_contains "$tmp_dir/missing.err" 'warning'
 assert_contains "$BROWSER_CALLS" "$ENDPOINT?Action=login&"
@@ -277,6 +296,7 @@ env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
   AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
   AWS_CONFIG_FILE="$tmp_dir/config" \
   python3 "$SCRIPT" --profile rev-qual >"$tmp_dir/nonchromium.out" 2>"$tmp_dir/nonchromium.err"
+wait_for_browser
 
 assert_contains "$tmp_dir/nonchromium.err" 'warning'
 assert_contains "$BROWSER_CALLS" "$ENDPOINT?Action=login&"
@@ -296,6 +316,7 @@ env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
   AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
   AWS_CONFIG_FILE="$tmp_dir/config" \
   python3 "$SCRIPT" ecs --profile rev-qual >"$tmp_dir/ecs.out" 2>"$tmp_dir/ecs.err"
+wait_for_browser
 
 assert_contains "$BROWSER_CALLS" \
   'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fecs%2Fv2%2Fhome%3Fregion%3Dsa-east-1'
@@ -313,6 +334,7 @@ env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
   AWS_SHARED_CREDENTIALS_FILE="$tmp_dir/credentials" \
   AWS_CONFIG_FILE="$tmp_dir/config" \
   python3 "$SCRIPT" iam --profile rev-qual >"$tmp_dir/iam.out" 2>"$tmp_dir/iam.err"
+wait_for_browser
 
 assert_contains "$BROWSER_CALLS" \
   'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fiam%2Fhome&'
@@ -354,6 +376,7 @@ env "${COMMON_ENV[@]}" \
   AWS_ACCESS_KEY_ID=AKIABARE \
   AWS_SECRET_ACCESS_KEY=bare-secret \
   python3 "$SCRIPT" ecs >"$tmp_dir/ecs-bare.out" 2>"$tmp_dir/ecs-bare.err"
+wait_for_browser
 
 assert_contains "$BROWSER_CALLS" \
   'Destination=https%3A%2F%2Fconsole.aws.amazon.com%2Fecs%2Fv2%2Fhome%3Fregion%3Dus-east-1'

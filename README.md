@@ -42,8 +42,10 @@ sufficient: a task is not finished until `tests/run --full` reports
 
 Both commands work from any directory, bound every test with a timeout, and stop
 with a runner error (exit 2) when a required tool such as `bun` or `timeout` is
-missing. The individual tests below remain useful on their own; the runner is
-what makes them the Quality gateway.
+missing. On macOS the gate needs two tools the stock system lacks — GNU coreutils
+for `timeout` (used as `gtimeout`) and `flock` for the safe-pi entrypoint test.
+Install them with `brew install coreutils flock`. The individual tests below
+remain useful on their own; the runner is what makes them the Quality gateway.
 
 ## Agent skills
 

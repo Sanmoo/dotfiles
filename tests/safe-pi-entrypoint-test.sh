@@ -13,7 +13,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENTRYPOINT="$repo_root/safe-pi/entrypoint.sh"
 bash_bin="$(command -v bash)"
-tmpdir="$(mktemp -d)"
+tmpdir="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 fail() {
@@ -26,6 +26,12 @@ fail() {
 # check exercises a real runtime against a real semver implementation.
 IMAGE_BIN="$tmpdir/image-bin"
 mkdir -p "$IMAGE_BIN"
+# The entrypoint serializes convergence with flock, which util-linux provides on
+# Linux and a Homebrew package does on macOS. run_entrypoint keeps only
+# $IMAGE_BIN on PATH, so expose the host's flock there rather than assume it.
+flock_bin="$(command -v flock || true)"
+[[ -n "$flock_bin" ]] || fail "flock is required to run the entrypoint test"
+ln -sf "$flock_bin" "$IMAGE_BIN/flock"
 CALL_LOG="$tmpdir/calls.log"
 : >"$CALL_LOG"
 
@@ -309,7 +315,7 @@ wait "$first_pid" || fail "first concurrent prepare failed"
 wait "$second_pid" || fail "second concurrent prepare failed"
 # Each container converges twice (declaration, then pins), so the lock must
 # keep every begin/end pair whole, one container at a time.
-sequence="$(grep -E '^mise-(begin|end)$' "$CALL_LOG" | paste -sd' ')"
+sequence="$(grep -E '^mise-(begin|end)$' "$CALL_LOG" | paste -sd' ' -)"
 expected="$(printf 'mise-begin mise-end %.0s' 1 2 3 4 | sed 's/ $//')"
 [[ "$sequence" == "$expected" ]] || fail "concurrent convergence overlapped: $sequence"
 

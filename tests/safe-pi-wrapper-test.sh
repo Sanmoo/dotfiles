@@ -10,7 +10,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$repo_root/pi/.local/bin/safe-pi"
 bash_bin="$(command -v bash)"
-tmpdir="$(mktemp -d)"
+tmpdir="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 BIN="$tmpdir/bin"
