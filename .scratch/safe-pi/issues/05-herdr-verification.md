@@ -9,10 +9,10 @@
 - [ ] In a Herdr pane, a sandboxed Pi is attributed to Pi and shows `working` during a turn and `idle` after it settles.
 - [ ] A dangerous command that the approval extension gates shows the pane as `blocked` until it is answered.
 - [ ] Herdr records a session reference for the pane, and it points at the container-only sessions path.
-- [ ] Restarting the Herdr server and reattaching returns the pane as a plain shell in the saved directory, never as an unsandboxed Pi.
-- [ ] Continuing from that shell re-enters the sandbox with the same conversation.
-- [ ] Detaching and reattaching the client keeps the sandboxed Pi running.
-- [ ] The findings are recorded on this ticket; any behaviour that differs from the usage guide is raised against the guide ticket.
+- [x] Restarting the Herdr server and reattaching returns the pane as a plain shell in the saved directory, never as an unsandboxed Pi.
+- [x] Continuing from that shell re-enters the sandbox with the same conversation.
+- [x] Detaching and reattaching the client keeps the sandboxed Pi running.
+- [x] The findings are recorded on this ticket; any behaviour that differs from the usage guide is raised against the guide ticket.
 
 ## Comments
 
@@ -88,3 +88,21 @@ Raised against:
 Items 4–6 still need a human run. Because items 1–3 fail, the ticket is not
 satisfied until the attribution gap is fixed, or the contract and guide are
 corrected to describe the real behaviour.
+
+### Human verification of items 4–6 (maintainer run)
+
+Run by the maintainer after the agent-side checks, in a sandboxed pane
+(`safe-pi` in `~/safe-pi-herdr-verify`). All three passed:
+
+- **Item 6 — detach/reattach.** Detaching the client (`ctrl+a d`) and
+  reattaching kept the sandboxed Pi running with the conversation intact.
+- **Item 4 — server restart.** After `herdr server stop` and restarting Herdr,
+  the pane came back as a plain shell in the saved directory
+  (`~/safe-pi-herdr-verify`), never as an unsandboxed Pi. The fail-closed
+  restore behaves as documented.
+- **Item 5 — continue.** `safe-pi -c` from the restored shell re-entered the
+  sandbox and resumed the same conversation.
+
+No deviation from the guide was observed for items 4–6. The items 1–3
+deviations above stand: the ticket's first three acceptance criteria are not
+met, so the ticket as a whole is not satisfied yet.
