@@ -217,6 +217,13 @@ if command -v bun >/dev/null 2>&1; then
 	BUN_BIN=bun
 fi
 
+# The real-Pi suite (tier: slow) runs only in the full gate and needs the
+# installed pi; a missing pi is a broken environment, not a failing test.
+if [[ $MODE == full ]]; then
+	command -v pi >/dev/null 2>&1 ||
+		runner_error "the 'pi' tool is required by the full gate's real-Pi suite and was not found on PATH"
+fi
+
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
