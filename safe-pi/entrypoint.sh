@@ -57,6 +57,16 @@ export MISE_DATA_DIR
 # interrupted install be recognised on the next start.
 export MISE_CACHE_DIR="${MISE_CACHE_DIR:-$MISE_DATA_DIR/cache}"
 export MISE_STATE_DIR="${MISE_STATE_DIR:-$MISE_DATA_DIR/state}"
+# Erlang/OTP: the image is Debian and mise publishes no precompiled OTP for it,
+# so the declared OTP would be built from source — a 107 MB download plus a
+# configure that fails on the image's missing build headers, on every start,
+# because mise does not remember a failed install. The sandbox therefore asks
+# for the Ubuntu 22.04 build, whose older glibc the image satisfies, and refuses
+# the source fallback, so a pin without a precompiled build fails fast and loud
+# instead of re-downloading. Both settings are sandbox-only: on the host,
+# refusing the fallback would break the next OTP install outright.
+export MISE_ERLANG_PRECOMPILED_OS="${MISE_ERLANG_PRECOMPILED_OS:-ubuntu-22.04}"
+export MISE_ERLANG_COMPILE="${MISE_ERLANG_COMPILE:-false}"
 export PATH="$MISE_DATA_DIR/shims:$PATH"
 
 # The working repository's own mise configuration is honoured because the

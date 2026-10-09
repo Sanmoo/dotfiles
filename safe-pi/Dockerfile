@@ -28,7 +28,7 @@ ARG GID=1000
 ARG USERNAME=sandbox
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="2" \
+      safe-pi.entrypoint="3" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \

@@ -111,7 +111,7 @@ reset_stubs() {
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
-	FAKE_ENTRYPOINT="2"
+	FAKE_ENTRYPOINT="3"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]
@@ -268,17 +268,18 @@ run_safe_pi -c 2>"$tmpdir/stale.err" || fail "stale image run failed"
 assert_log "docker build --tag $current_tag"
 assert_log "--build-arg PI_VERSION=1.1.0"
 assert_log "docker run --rm"
-grep -Fq "reporter" "$tmpdir/stale.err" || fail "stale image rebuild should say why"
+grep -Fq "entrypoint" "$tmpdir/stale.err" || fail "stale image rebuild should say why"
 
-# An image from the previous entrypoint version is also stale: it cannot build
-# the sandbox extensions view the reporter loads from, so it is rebuilt too.
+# An image from a previous entrypoint version is stale too: it predates the
+# precompiled OTP target, so it would converge Erlang from source and fail on
+# every start.
 reset_stubs
 FAKE_IMAGES="$current_tag"
-FAKE_ENTRYPOINT="1"
-run_safe_pi -c 2>"$tmpdir/stale-v1.err" || fail "v1-entrypoint image run failed"
+FAKE_ENTRYPOINT="2"
+run_safe_pi -c 2>"$tmpdir/stale-v2.err" || fail "v2-entrypoint image run failed"
 assert_log "docker build --tag $current_tag"
 assert_log "docker run --rm"
-grep -Fq "reporter" "$tmpdir/stale-v1.err" || fail "v1-entrypoint rebuild should say why"
+grep -Fq "entrypoint" "$tmpdir/stale-v2.err" || fail "v2-entrypoint rebuild should say why"
 
 reset_stubs
 FAKE_IMAGES="$current_tag

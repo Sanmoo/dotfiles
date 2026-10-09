@@ -153,10 +153,11 @@ image_pi_version() {
 	docker image inspect --format '{{ index .Config.Labels "safe-pi.pi.version" }}' "$1" 2>/dev/null
 }
 
-# Images built before the reporter existed carry no label or the previous
-# version, so both count as stale: they have no sandbox reporter to load.
+# The entrypoint label versions the sandbox's convergence contract: 2 added the
+# reporter, 3 the precompiled OTP target. An image carrying anything else is
+# stale and rebuilt, so the change reaches a machine that already has one.
 image_has_entrypoint() {
-	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "2" ]]
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "3" ]]
 }
 
 build_image() { # $1 = tag, $2 = optional Pi version
@@ -396,7 +397,7 @@ elif ! image_exists "$CURRENT_TAG"; then
 	build_image "$CURRENT_TAG"
 	tag_baked_version
 elif ! image_has_entrypoint "$CURRENT_TAG"; then
-	printf '%s: the current image predates the sandbox Herdr reporter; rebuilding it\n' "$SCRIPT_NAME" >&2
+	printf '%s: the current image carries an older sandbox entrypoint; rebuilding it\n' "$SCRIPT_NAME" >&2
 	version="$(image_pi_version "$CURRENT_TAG" || true)"
 	build_image "$CURRENT_TAG" "$version"
 	tag_baked_version

@@ -44,9 +44,10 @@ if [[ " $* " == *" --dry-run-code "* ]]; then
 	exit 0
 fi
 printf 'mise-begin\n' >>"$log"
-printf 'mise %s cwd=%s trusted=%s data=%s cache=%s state=%s\n' "$*" "$PWD" \
+printf 'mise %s cwd=%s trusted=%s data=%s cache=%s state=%s precompiled=%s compile=%s\n' "$*" "$PWD" \
 	"${MISE_TRUSTED_CONFIG_PATHS-}" "${MISE_DATA_DIR-}" \
-	"${MISE_CACHE_DIR-}" "${MISE_STATE_DIR-}" >>"$log"
+	"${MISE_CACHE_DIR-}" "${MISE_STATE_DIR-}" \
+	"${MISE_ERLANG_PRECOMPILED_OS-}" "${MISE_ERLANG_COMPILE-}" >>"$log"
 sleep "${SAFE_PI_FAKE_MISE_SLEEP:-0}"
 printf 'mise-end\n' >>"$log"
 if [[ -n "${SAFE_PI_FAKE_MISE_FAIL_CWD-}" && "$PWD" == "$SAFE_PI_FAKE_MISE_FAIL_CWD" ]]; then
@@ -188,6 +189,10 @@ assert_call "data=$data"
 # Cache and state sit in the volume even when the wrapper does not set them,
 # so the image run directly still keeps its mise state where it survives.
 assert_call "cache=$data/cache state=$data/state"
+# The sandbox's OTP provenance travels with the image, not the host: the
+# precompiled target whose glibc the image satisfies, and the refusal of the
+# source fallback that would re-download OTP on every start.
+assert_call "precompiled=ubuntu-22.04 compile=false"
 assert_call "trusted=$workdir"
 assert_call "pi --version"
 
