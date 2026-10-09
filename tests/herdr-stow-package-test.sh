@@ -10,7 +10,13 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 STOW_DIR="$TMPDIR/stow"
 mkdir -p "$STOW_DIR"
-cp -R "$ROOT_DIR/herdr" "$STOW_DIR/"
+# The source checkout may contain live sockets and absolute runtime symlinks.
+# Stage current tracked files only, then generate the controlled runtime below.
+git -C "$ROOT_DIR" ls-files -z -- herdr >"$TMPDIR/package-files"
+while IFS= read -r -d '' path; do
+	mkdir -p "$STOW_DIR/$(dirname "$path")"
+	cp -P "$ROOT_DIR/$path" "$STOW_DIR/$path"
+done <"$TMPDIR/package-files"
 
 # A running Herdr writes these files into a folded checkout. The package must
 # ignore them rather than trying to stow runtime state and socket symlinks.
