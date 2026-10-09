@@ -1,6 +1,6 @@
 # 01 — Disponibilizar pi-deere com segunda conta Copilot
 
-Status: ready-for-human
+Status: resolved
 Type: task
 Spec: [pi-deere](../spec.md)
 
@@ -44,7 +44,7 @@ Esta publicação não inicia a implementação nem autentica contas reais.
 - [x] A documentação descreve o login da segunda conta, a troca manual, a retomada exata e a exigência de encerrar a instância anterior antes de reutilizar a mesma sessão.
 - [x] A documentação distingue a execução paralela em sessões diferentes da escrita concorrente não suportada na mesma sessão.
 - [x] Os testes automatizados usam dados fictícios e recursos locais, sem rede, logins reais ou consumo de franquia; a validação com Pi real comprova descoberta de recursos e de sessões além do stub.
-- [ ] Um smoke test supervisionado confirma as duas contas reais, uma requisição por perfil e a retomada entre perfis; a evidência não contém segredos. Se faltar autenticação humana, registrar a pré-condição pendente e não marcar este item aprovado.
+- [x] Um smoke test supervisionado confirma as duas contas reais, uma requisição por perfil e a retomada entre perfis; a evidência não contém segredos. Se faltar autenticação humana, registrar a pré-condição pendente e não marcar este item aprovado.
 - [x] O Quality gateway termina com FULL GATE: PASS; o resultado do smoke test real é registrado separadamente.
 
 ## Testing Seam
@@ -129,3 +129,11 @@ ready-for-agent; a correção desbloqueia somente a publicação da especificaç
 - Não automatizado: o seletor `--resume` (TUI), a ramificação ativa da sessão e a renovação real de token. Esses itens não foram verificados.
 - Pendente (pré-condição humana): smoke test supervisionado com as duas contas GitHub reais. Não executado; o item permanece desmarcado e não está aprovado.
 - Mantido por necessidade: `bin/` (o Pi instala `rg`/`fd` ali), `models-store.json` (catálogo offline), `PI_DEERE_AGENT_DIR` (usado pelos testes) e `mkdir` de `sessions/` na origem (o Pi criaria o mesmo diretório).
+
+### Smoke test e fechamento
+
+- Smoke test supervisionado com as duas contas GitHub reais: reportado pelo dono do ambiente como concluído conforme o esperado (login da segunda conta no perfil, requisição em cada perfil e retomada da mesma sessão entre `pi` e `pi-deere`). Nenhuma evidência com tokens ou arquivos privados foi registrada aqui.
+- Correção pós-smoke: a primeira execução parou em `shared prompts is a broken link`, causada por um link morto `~/.pi/agent/prompts` para um diretório removido em `f6ec641`. Corrigido em `61df6c7` (remoção de links próprios mortos e mensagem de erro com o comando de correção). O link morto do dono foi removido.
+- Limitação aceita pelo dono do projeto: quando o modelo de uma sessão não existe no segundo perfil, o Pi usa um modelo Copilot com aviso visível apenas na UI interativa. O critério de escolha explícita ou erro acionável permanece desmarcado como limitação aceita.
+- Não automatizados e não verificados: o seletor `--resume` e a ramificação ativa da sessão. Permanecem desmarcados.
+- Status: resolvido, com as limitações acima registradas.
