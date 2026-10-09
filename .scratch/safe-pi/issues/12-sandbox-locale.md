@@ -2,10 +2,10 @@
 
 **What to build:** The declared tools must run inside the sandbox under a UTF-8 locale, as they do on the host. The wrapper forwards the host's `LANG` (`en_US.UTF-8`), which `node:26-bookworm-slim` does not generate, so the Erlang VM starts with native name encoding latin1: every `elixir` invocation warns that it may malfunction, including the one mise runs while installing Elixir on the first converge.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Inside `safe-pi --shell`, `elixir --version` prints no latin1 warning and `locale charmap` reports `UTF-8`.
-- [ ] Pi and the other declared tools keep the host's locale behaviour rather than silently falling back to POSIX.
+- [x] Inside `safe-pi --shell`, `elixir --version` prints no latin1 warning and `locale charmap` reports `UTF-8`.
+- [x] Pi and the other declared tools keep the host's locale behaviour rather than silently falling back to POSIX.
 
 ## What is known
 
@@ -70,3 +70,39 @@ Decisions:
   construction, but the value lands in the layer chain before mise and Pi are
   installed, so every host locale change would rebuild the image's expensive
   layers. The entrypoint's availability check costs nothing at start.
+
+### Implemented (2026-10-09)
+
+Integrated as `93bd46b`, with the review's fixes as `3b871c5`, on the planning
+commits `6383960` and `a7beace`. `FULL GATE: PASS` (23 of 23 units) in the
+worktree that carried the change.
+
+Verified against the rebuilt image (entrypoint label `4`) and the real daemon:
+
+- **The locale inside the sandbox.** With the wrapper forwarding
+  `LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8`, `locale charmap` reports `UTF-8`, every
+  `LC_*` category reports `en_US.UTF-8` as it does on the host, `elixir --version`
+  prints no warning, `file:native_name_encoding()` returns `utf8`, and the
+  declared Node's `Intl` resolves `en-US`.
+- **The fallback.** A locale the image does not ship (`pt_BR.UTF-8`), a
+  single-byte one it does (`C`), and no forwarded locale at all each end as
+  `LANG=C.UTF-8` with `charmap=UTF-8` and no warning. An unresolved `LC_ALL` also
+  prints one `setlocale` notice from the entrypoint's own shell, before the
+  entrypoint can replace it; a mismatched `LANG` alone is silent, and no command
+  the sandbox runs sees the unresolved value.
+- **No alias is lost.** Measured on the host, which does have `en_US.utf8`,
+  `LC_ALL=en_US.UTF-8@euro locale charmap` answers `ANSI_X3.4-1968`: glibc
+  refuses a name whose modifier the archive has no entry for, so replacing it is
+  what keeps the sandbox UTF-8.
+- **Cost.** `locales` is 4.6 MB of archives / 20.7 MB installed and the
+  `localedef` archive 2.9 MB; the image moves from 1.02 GB to 1.04 GB. Rebuilding
+  it for this change re-ran the expensive mise and Pi layers once (75 s); a
+  rebuild with those layers in cache took 2.4 s.
+- **An existing image is rebuilt, not run.** `safe-pi:current-u1000` at label `3`
+  was rebuilt on the next `--prepare`, with the wrapper printing why, and the run
+  continued.
+
+Two limits are recorded in ADR 0002 rather than fixed here: the sandbox locale is
+a property of the image, so a host whose locale the image does not generate runs
+under `C.UTF-8` until the image changes; and an unresolved `LC_ALL` costs one
+`setlocale` line per start, printed before the entrypoint can act.
