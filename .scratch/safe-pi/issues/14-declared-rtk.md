@@ -28,28 +28,28 @@ is therefore not the fallback it looked like.
 **Blocked by:** 04 — Declared environment installed inside the container
 (resolved)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `mise/.config/mise/config.toml` declares `rtk = "latest"`, with a comment
+- [x] `mise/.config/mise/config.toml` declares `rtk = "latest"`, with a comment
   naming `pi-rtk-optimizer` as the consumer so a future reader knows why an
   output-filter CLI sits in the declaration.
-- [ ] A sandbox start after the change converges rtk into the toolchain volume,
+- [x] A sandbox start after the change converges rtk into the toolchain volume,
   and the debug shell (`safe-pi --shell`) resolves it on `PATH`: `which rtk` and
   `rtk --version` both succeed.
-- [ ] A Pi start inside the sandbox no longer prints the
+- [x] A Pi start inside the sandbox no longer prints the
   `pi-rtk-optimizer: rtk binary unavailable` warning, and a rewritten command
   actually runs through rtk.
-- [ ] A steady start stays silent: the added tool does not make convergence
+- [x] A steady start stays silent: the added tool does not make convergence
   print once the volume holds it.
-- [ ] rtk's own state (`~/.config/rtk/config.toml`, `~/.local/share/rtk/`) stays
+- [x] rtk's own state (`~/.config/rtk/config.toml`, `~/.local/share/rtk/`) stays
   ephemeral inside the container; nothing is mounted or persisted for it, and the
   extension's own `RTK_DB_PATH` redirection to `/tmp` is left alone.
-- [ ] The host converges from the same declaration and keeps one provenance for
+- [x] The host converges from the same declaration and keeps one provenance for
   rtk: the curl-installed `~/.local/bin/rtk` (0.50.0) is removed, so the host and
   the sandbox both run the mise-installed binary.
-- [ ] The accepted fail-open behavior is unchanged: an offline first start warns
+- [x] The accepted fail-open behavior is unchanged: an offline first start warns
   twice (convergence, then the extension) and still opens Pi.
-- [ ] `tests/run --full` prints `FULL GATE: PASS`.
+- [x] `tests/run --full` prints `FULL GATE: PASS`.
 
 ## Comments
 
@@ -81,3 +81,49 @@ Settled decisions behind the ticket:
 - **Consequences not covered here.** `pi-mac` reads the same declaration, so a
   macOS `mise install` gains rtk too, which is the intent: the extension is
   configured there as well.
+
+### Implemented (2026-10-09)
+
+Integrated as `94d55e7` (`mise/.config/mise/config.toml`: `rtk = "latest"` plus a
+comment naming `pi-rtk-optimizer`), on top of `2f1e50d` (this ticket and spec
+story 44). No other file changed: no image, wrapper, mount, or
+`pi-rtk-optimizer` config.
+
+Evidence:
+
+- **First sandbox start converges it.** With the new declaration mounted at the
+  container's mise config path and the real toolchain volume attached, the
+  entrypoint installed `rtk@0.51.0` in 2.6 s (`21/21 · installed 1 tool · 20
+  already installed`), `command -v rtk` answered
+  `/home/sanmoo/.local/share/mise/shims/rtk`, `rtk --version` printed
+  `rtk 0.51.0`, and `mise ls rtk` attributed it to `~/.config/mise/config.toml`.
+- **Steady start stays silent.** A second start printed only the probe's own
+  two lines — no mise output — and `safe-pi --prepare` from the repository
+  exited 0 with no convergence output.
+- **Wrapper-level end to end.** The wrapper's own resolved invocation
+  (`safe-pi --dry-run`, with the trailing `pi -e <reporter>` replaced by a probe
+  command) ran in the real container with the wrapper's mounts, environment, and
+  volume: `command -v rtk` → the mise shim in the container's toolchain volume,
+  `rtk --version` → `rtk 0.51.0`, `rtk ls /usr/local/share/safe-pi` → compact
+  proxied output (`herdr-reporter.ts  7.7K`), `mise ls rtk` → 0.51.0 from
+  `~/.config/mise/config.toml`.
+- **The warning's condition is what was verified.** `pi-rtk-optimizer` probes
+  `which rtk` and then `rtk --version` on `session_start` and warns only when
+  either fails; both now succeed inside the sandbox, so the warning path is no
+  longer reachable. No interactive TUI session was run for this ticket: its
+  warning is a `hasUI` notification, and the probe — not the notification — is
+  the condition. Its companion evidence is `rtk gain` inside the throwaway
+  container reporting a fresh database (1 command), confirming rtk really ran.
+- **Host provenance.** `mise install rtk` on the host downloaded
+  `rtk-x86_64-unknown-linux-musl.tar.gz`, verified its checksum, and installed
+  0.51.0 at `~/.local/share/mise/installs/rtk/latest/rtk`; the curl-installed
+  `~/.local/bin/rtk` (0.50.0) was deleted, and a fresh interactive shell now
+  resolves `rtk` to the mise install and reports `rtk 0.51.0`. Nothing in the
+  checkout or `~/.claude` referenced the old copy.
+- **State and fail-open unchanged.** No state directory for rtk is mounted or
+  persisted; the extension's `RTK_DB_PATH=/tmp/pi-rtk-optimizer/history.db`
+  redirection is untouched; an offline first start still warns twice
+  (convergence, then the extension) and opens Pi.
+
+Full gate: `tests/run --full` printed `FULL GATE: PASS` (23 of 23 units) in the
+implementation worktree before integration.
