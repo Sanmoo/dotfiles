@@ -131,6 +131,11 @@ function statesOf(requests: Request[]): unknown[] {
 	return requests.filter((request) => request.method === "pane.report_agent").map((request) => request.params?.state);
 }
 
+/** The reports that carry a resume command; a metadata report does not. */
+function reportRequests(requests: Request[]): Request[] {
+	return requests.filter((request) => request.method !== "pane.report_metadata");
+}
+
 describe("herdr-reporter", () => {
 	it("stays inert outside a Herdr pane", () => {
 		const { handlers, blocked } = setupPi();
@@ -187,10 +192,7 @@ describe("herdr-reporter", () => {
 		blocked[0]({ active: true, label: "Aguardando permissão" });
 		await waitForRequests(requests, 3);
 
-		for (const request of requests) {
-			if (request.method === "pane.report_metadata") {
-				continue;
-			}
+		for (const request of reportRequests(requests)) {
 			const argv = request.params?.resume_argv as string[] | undefined;
 			expect(Array.isArray(argv)).toBe(true);
 			expect(argv![0]).toBe("safe-pi");
@@ -246,10 +248,7 @@ describe("herdr-reporter", () => {
 		);
 		await waitForRequests(requests, 2);
 
-		for (const request of requests) {
-			if (request.method === "pane.report_metadata") {
-				continue;
-			}
+		for (const request of reportRequests(requests)) {
 			expect(request.params?.resume_argv).toEqual([
 				"safe-pi",
 				"--session",
@@ -462,7 +461,9 @@ describe("herdr-reporter", () => {
 		const elapsed = Date.now() - start;
 
 		expect(elapsed).toBeGreaterThanOrEqual(200);
-		expect(elapsed).toBeLessThan(600);
+		// The cap is 250 ms; the upper bound must stay well under it so a
+		// regression to a longer deadline fails this test.
+		expect(elapsed).toBeLessThan(400);
 	});
 
 	it("never throws or slows Pi when the socket is unreachable", () => {

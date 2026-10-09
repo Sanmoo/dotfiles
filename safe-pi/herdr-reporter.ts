@@ -141,59 +141,13 @@ function nextReportSeq(): number {
 }
 
 /**
- * Send one request and forget about it. The socket and its timeout are
- * unreferenced so a pending report never keeps Pi alive, and every failure
- * path is ignored.
+ * Send one request. The socket is always unreferenced so a pending report
+ * never keeps Pi alive; the deadline timer is referenced only when the caller
+ * awaits the send, so an awaited report is honoured even when nothing else
+ * would keep the event loop running. Every failure path resolves: a report
+ * never throws.
  */
-function sendRequest(request: unknown): void {
-	let socket: net.Socket | undefined;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const finish = () => {
-		if (timer) {
-			clearTimeout(timer);
-			timer = undefined;
-		}
-		try {
-			socket?.destroy();
-		} catch {
-			// Best effort.
-		}
-	};
-
-	try {
-		socket = net.createConnection(process.env.SAFE_PI_HERDR_SOCKET_PATH as string);
-		socket.unref?.();
-		socket.on("error", finish);
-		socket.on("end", finish);
-		socket.on("close", finish);
-		socket.on("connect", () => {
-			try {
-				socket?.write(`${JSON.stringify(request)}\n`);
-			} catch {
-				finish();
-			}
-		});
-		socket.on("data", finish);
-
-		timer = setTimeout(finish, REPORT_TIMEOUT_MS);
-		timer.unref?.();
-	} catch {
-		finish();
-	}
-}
-
-function requestId(kind: string): string {
-	return `${SOURCE}:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-/**
- * Send one request and resolve once Herdr has answered, the connection has
- * ended, or the deadline passes. The socket is unreferenced so it never keeps
- * Pi alive, but the deadline timer is not: an awaited report is honoured even
- * when nothing else would keep the event loop running. Every failure path
- * resolves, so a report never throws.
- */
-function sendRequestAndWait(request: unknown, timeoutMs: number): Promise<void> {
+function send(request: unknown, timeoutMs: number, keepAlive: boolean): Promise<void> {
 	return new Promise((resolve) => {
 		let socket: net.Socket | undefined;
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -231,10 +185,27 @@ function sendRequestAndWait(request: unknown, timeoutMs: number): Promise<void> 
 			});
 
 			timer = setTimeout(finish, timeoutMs);
+			if (!keepAlive) {
+				timer.unref?.();
+			}
 		} catch {
 			finish();
 		}
 	});
+}
+
+/** Send one request and forget about it. */
+function sendRequest(request: unknown): void {
+	void send(request, REPORT_TIMEOUT_MS, false);
+}
+
+function requestId(kind: string): string {
+	return `${SOURCE}:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+/** Send one request and resolve once Herdr has answered or the deadline passes. */
+function sendRequestAndWait(request: unknown, timeoutMs: number): Promise<void> {
+	return send(request, timeoutMs, true);
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -277,12 +248,23 @@ export default function (pi: ExtensionAPI): void {
 		return {};
 	}
 
-	function baseParams(): Record<string, unknown> {
+	/**
+	 * The fields every report needs to claim this pane under the reporter's
+	 * source. A state report also carries the resume command and the session
+	 * reference; a release and a metadata report carry neither.
+	 */
+	function authorityParams(): Record<string, unknown> {
 		return {
 			pane_id: process.env.SAFE_PI_HERDR_PANE_ID,
 			source: SOURCE,
 			agent: AGENT,
 			seq: nextReportSeq(),
+		};
+	}
+
+	function baseParams(): Record<string, unknown> {
+		return {
+			...authorityParams(),
 			resume_argv: resumeArgv(sessionId),
 			...sessionRef(),
 		};
@@ -313,11 +295,8 @@ export default function (pi: ExtensionAPI): void {
 			id: requestId("metadata"),
 			method: "pane.report_metadata",
 			params: {
-				pane_id: process.env.SAFE_PI_HERDR_PANE_ID,
-				source: SOURCE,
-				agent: AGENT,
+				...authorityParams(),
 				display_agent: DISPLAY_AGENT,
-				seq: nextReportSeq(),
 			},
 		});
 	}
@@ -328,17 +307,12 @@ export default function (pi: ExtensionAPI): void {
 	 * never on a session replacement, and awaited with a short deadline so
 	 * `process.exit(0)` cannot drop it.
 	 */
-	async function release(): Promise<void> {
+	async function releasePane(): Promise<void> {
 		await sendRequestAndWait(
 			{
 				id: requestId("release"),
 				method: "pane.release_agent",
-				params: {
-					pane_id: process.env.SAFE_PI_HERDR_PANE_ID,
-					source: SOURCE,
-					agent: AGENT,
-					seq: nextReportSeq(),
-				},
+				params: authorityParams(),
 			},
 			RELEASE_TIMEOUT_MS,
 		);
@@ -442,7 +416,7 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 			rootSession = false;
-			await release();
+			await releasePane();
 		} catch {
 			// Best effort: a failed release never breaks a quit.
 		}
