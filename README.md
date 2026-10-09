@@ -371,13 +371,19 @@ inside one running instance and no balancing between accounts.
 
 - **Private** (`~/.pi-deere/agent`): `auth.json`, so the second account's
   login never touches the original's. Nothing is copied from `~/.pi/agent`
-  except the shared resources below, and no other provider is logged in.
+  except the shared resources below, and no other provider is logged in. Trust
+  decisions and run history are also private.
 - **Shared** (symlinks into `~/.pi/agent`, which stays the maintained source):
-  `settings.json`, `extensions/`, `skills/`, `prompts/`, `themes/`, `agents/`,
-  `tools/`, `bin/`, `npm/` and `git/` (installed packages and their
-  dependencies), `AGENTS.md`, `keybindings.json`, `models.json`,
-  `models-store.json`, `mcp-adapter.json`, `trust.json`, and `sessions/`.
-  Edit these in the original; the next run of either command uses the change.
+  `extensions/`, `skills/`, `prompts/`, `themes/`, `agents/`, `tools/`, `bin/`,
+  `npm/` and `git/` (installed packages and their dependencies), `AGENTS.md`,
+  `keybindings.json`, `models.json`, `models-store.json`, `mcp-adapter.json`,
+  and `sessions/`. Edit these in the original; the next run of either command
+  uses the change.
+- **Preferences** (`settings.json`) are copied from the original on every
+  launch, never linked. Pi writes model and thinking choices into its settings
+  file, and a link would carry them into `~/.pi/agent`. Changes made inside
+  `pi-deere` therefore last for that run; to change a shared preference, edit
+  the original `settings.json`.
 - **Sessions** are the same store as `pi`, with the native layout grouped by
   project. Sessions are not copied or migrated.
 - **New conversations** start on GitHub Copilot. `pi-deere` passes
@@ -394,6 +400,11 @@ inside one running instance and no balancing between accounts.
    second GitHub account.
 3. Confirm the profile: `PI_CODING_AGENT_DIR=~/.pi-deere/agent pi auth check --provider github-copilot`
    prints `"status":"ready"`.
+
+Pi's subcommands work through `pi-deere` too (`pi-deere update`, `install`,
+`remove`, `list`, `auth`). They act on the shared `npm/` installation, so a
+package installed or updated there also changes what `pi` loads: that is the
+point of one installation.
 
 The login is stored once in the profile; later runs reuse it. Logging out or
 replacing the login in one profile does not change the other.
@@ -433,9 +444,11 @@ original agent directory is missing, set `PI_CODING_AGENT_DIR` to it.
 - When a resumed session used a model the second profile cannot use, Pi falls
   back to a Copilot model and shows a warning in the interactive UI. Choose the
   model you want with `/model`.
-- Model or thinking changes you make in `pi-deere` are written to the shared
-  `settings.json`; the `session-model-isolation` extension restores the default
-  model fields, as it does for `pi`.
+- Model or thinking changes you make in `pi-deere` are written to the profile's
+  `settings.json` copy and do not reach `pi`. The copy is regenerated on the next
+  launch, so those choices are not kept as preferences.
+- Pi reads `COPILOT_GITHUB_TOKEN` for GitHub Copilot and no other token variable,
+  so that is the only inherited credential removed for `pi-deere`.
 - Only GitHub Copilot is logged in for the second profile. Use `pi` for other
   providers.
 

@@ -51,8 +51,9 @@ STATUS=0
 
 # Session files are grouped by working directory, as Pi's default layout does:
 # sessions/--<cwd without leading slash, / \ : replaced by ->--/<stamp>_<id>.jsonl
+# An optional 7th argument records a thinking level after the user message.
 make_session() {
-	local cwd="$1" id="$2" stamp="$3" provider="$4" model="$5" text="$6"
+	local cwd="$1" id="$2" stamp="$3" provider="$4" model="$5" text="$6" thinking="${7:-}"
 	local enc="${cwd#/}"
 	enc="${enc//\//-}"
 	enc="${enc//:/-}"
@@ -62,6 +63,9 @@ make_session() {
 	printf '{"type":"session","version":3,"id":"%s","timestamp":"2026-10-09T10:00:00.000Z","cwd":"%s"}\n' "$id" "$cwd" >"$file"
 	printf '{"type":"model_change","id":"m%s","parentId":null,"timestamp":"2026-10-09T10:00:01.000Z","provider":"%s","modelId":"%s"}\n' "${id:0:8}" "$provider" "$model" >>"$file"
 	printf '{"type":"message","id":"u%s","parentId":"m%s","timestamp":"2026-10-09T10:00:02.000Z","message":{"role":"user","content":"%s","timestamp":1733234402000}}\n' "${id:0:8}" "${id:0:8}" "$text" >>"$file"
+	if [[ -n "$thinking" ]]; then
+		printf '{"type":"thinking_level_change","id":"t%s","parentId":"u%s","timestamp":"2026-10-09T10:00:03.000Z","thinkingLevel":"%s"}\n' "${id:0:8}" "${id:0:8}" "$thinking" >>"$file"
+	fi
 }
 
 build_fixture() {
@@ -132,7 +136,9 @@ module.exports = function (pi) {
 JS
 
 	# The original profile holds an Anthropic key that the second profile must not import.
-	printf '{"anthropic":{"type":"api_key","key":"ORIGINAL-FIXTURE-KEY"}}\n' >"$SRC/auth.json"
+	# The original profile also holds the first Copilot account's login; the
+	# second profile must never see it.
+	printf '{"anthropic":{"type":"api_key","key":"ORIGINAL-FIXTURE-KEY"},"github-copilot":{"type":"oauth","access":"FIRST-ACCOUNT-FIXTURE-LOGIN","refresh":"FIRST-ACCOUNT-REFRESH","expires":9999999999999,"availableModelIds":["gpt-5.6-sol"]}}\n' >"$SRC/auth.json"
 	chmod 600 "$SRC/auth.json"
 
 	make_session "$PROJ_A" "$ID_A1" "2026-10-09T10-00-00-000Z" github-copilot gpt-5.6-sol "marker-A1"
@@ -332,9 +338,11 @@ test_inherited_copilot_token_never_becomes_the_second_account() {
 	build_fixture
 
 
-	# No Copilot login in the second profile; the first account's token is inherited.
+	# No Copilot login in the second profile; the first account's token is inherited
+	# and its login is present in the original profile's auth.json.
 	run_in "$PROJ_A" "${DEERE_ENV[@]}" COPILOT_GITHUB_TOKEN=first-account-fake -- bash "$LAUNCHER" --mode rpc < <(rpc '{"id":"1","type":"get_available_models"}')
-	assert_out_lacks '"provider":"github-copilot"' "no Copilot model from the inherited token"
+	assert_out_lacks '"provider":"github-copilot"' "no Copilot model from the inherited token or the first login"
+	grep -Fq "FIRST-ACCOUNT-FIXTURE-LOGIN" "$PROF/auth.json" "$OUT" && fail "the first account login must never reach the second profile" || pass
 	grep -Fq "GitHub Copilot is not logged in for this profile" "$ERR" || fail "an actionable login hint is expected"
 	pass
 	grep -Fq "first-account-fake" "$ERR" "$OUT" && fail "the inherited token must never be printed" || pass
@@ -352,8 +360,33 @@ test_credentials_stay_private_to_each_profile() {
 	[[ ! -L "$PROF/auth.json" ]] || fail "the second profile must keep its own credential file"
 	pass
 	grep -Fq "ORIGINAL-FIXTURE-KEY" "$PROF/auth.json" && fail "the original credential must not be imported" || pass
+	grep -Fq "FIRST-ACCOUNT-FIXTURE-LOGIN" "$PROF/auth.json" && fail "the first account login must not be imported" || pass
 	grep -Fq '"github-copilot"' "$PROF/auth.json" || fail "the second account login must remain in its profile"
 	pass
+
+	# Logout in the second profile, then a renewal simulated by a new token: neither
+	# may touch the original profile's credential store.
+	local first_account_before
+	first_account_before="$(digest "$SRC/auth.json")"
+	printf '{}\n' >"$PROF/auth.json"
+	run_in "$PROJ_A" "${DEERE_ENV[@]}" -- bash "$LAUNCHER" --mode rpc < <(rpc '{"id":"1","type":"get_state"}')
+	assert_eq "$first_account_before" "$(digest "$SRC/auth.json")" "logout in the second profile leaves the original store alone"
+	write_copilot_login
+	printf '{"github-copilot":{"type":"oauth","access":"RENEWED-SECOND-TOKEN","refresh":"fake-refresh","expires":9999999999999,"availableModelIds":["gpt-5.6-sol"]}}\n' >"$PROF/auth.json"
+	run_in "$PROJ_A" "${DEERE_ENV[@]}" -- bash "$LAUNCHER" --mode rpc < <(rpc '{"id":"1","type":"get_state"}')
+	assert_eq "$first_account_before" "$(digest "$SRC/auth.json")" "a renewed second-profile token leaves the original store alone"
+	grep -Fq "RENEWED-SECOND-TOKEN" "$PROF/auth.json" || fail "the renewed token stays in the second profile"
+	pass
+}
+
+test_thinking_level_is_restored_from_the_session() {
+	build_fixture
+	write_copilot_login
+	# A Copilot session that was recorded at a low thinking level; the default is high.
+	make_session "$PROJ_A" "0195a0f5-0000-7000-8000-00000000d001" "2026-10-09T10-08-00-000Z" github-copilot gpt-5.6-sol "marker-D1" low
+	run_in "$PROJ_A" "${DEERE_ENV[@]}" -- bash "$LAUNCHER" --mode rpc --session 0195a0f5-0000-7000-8000-00000000d001 < <(rpc '{"id":"1","type":"get_state"}')
+	assert_eq 0 "$STATUS" "thinking session status"
+	assert_out_has '"thinkingLevel":"low"' "the session's thinking level is restored, not the default"
 }
 
 test_unavailable_session_model_is_restored_visibly_on_copilot() {

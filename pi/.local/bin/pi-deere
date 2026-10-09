@@ -20,11 +20,11 @@ set -euo pipefail
 
 readonly SCRIPT_NAME="pi-deere"
 
-# Resources shared with the original profile. Each one is linked only when it
-# exists in the source, so a later addition is picked up on the next launch.
+# Resources shared with the original profile by symlink. Each one is linked only
+# when it exists in the source, so a later addition is picked up on the next
+# launch. settings.json is not listed: it is copied (see refresh_settings).
 # Credentials and per-profile runtime state (auth.json, mcp-oauth/, run history,
-# MCP caches, subagent and intercom state) are deliberately absent: they stay
-# private to the profile.
+# MCP caches, trust decisions, subagent and intercom state) stay private.
 readonly SHARED_ENTRIES=(
 	AGENTS.md
 	agents
@@ -37,22 +37,37 @@ readonly SHARED_ENTRIES=(
 	models.json
 	npm
 	prompts
-	settings.json
 	sessions
 	skills
 	themes
 	tools
-	trust.json
 )
+
+# Pi recognises these only as the first argument; they are passed through as is.
+readonly PI_SUBCOMMANDS="install remove uninstall update list config auth mcp"
+
+readonly COPILOT_PROVIDER="github-copilot"
 
 die() {
 	printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
 	exit "${2:-1}"
 }
 
-SOURCE_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-PROFILE_DIR="${PI_DEERE_AGENT_DIR:-$HOME/.pi-deere/agent}"
-readonly COPILOT_PROVIDER="github-copilot"
+# Expand a leading ~ the way Pi does for its own directory variables.
+expand_home() {
+	case "$1" in
+	"~") printf '%s' "$HOME" ;;
+	"~/"*) printf '%s/%s' "$HOME" "${1#\~/}" ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+
+SOURCE_DIR="$(expand_home "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}")"
+PROFILE_DIR="$(expand_home "${PI_DEERE_AGENT_DIR:-$HOME/.pi-deere/agent}")"
+
+source_has() {
+	[[ -e "$SOURCE_DIR/$1" || -L "$SOURCE_DIR/$1" ]]
+}
 
 # --- Profile preparation ------------------------------------------------------
 # Validation runs before any change, so a conflict leaves the profile as it was.
@@ -70,42 +85,45 @@ prepare_profile() {
 	local entry src dst target
 	local -a to_link=()
 	for entry in "${SHARED_ENTRIES[@]}"; do
+		source_has "$entry" || continue
 		src="$SOURCE_DIR/$entry"
 		dst="$PROFILE_DIR/$entry"
-		if [[ ! -e "$src" && ! -L "$src" ]]; then
-			continue
-		fi
 		if [[ -L "$dst" ]]; then
 			target="$(readlink "$dst")"
-			if [[ "$target" == "$src" ]]; then
-				continue
-			fi
+			[[ "$target" == "$src" ]] && continue
 			die "conflict: $dst is a link to $target, expected $src; nothing was changed (remove or move the link and run again)"
 		fi
-		if [[ -e "$dst" ]]; then
+		[[ -e "$dst" ]] &&
 			die "conflict: $dst exists and is not the shared $entry; nothing was changed (move it aside and run again)"
-		fi
 		to_link+=("$entry")
 	done
 
-	if [[ -e "$PROFILE_DIR/auth.json" && -L "$PROFILE_DIR/auth.json" ]]; then
+	[[ ! -L "$PROFILE_DIR/auth.json" ]] ||
 		die "conflict: $PROFILE_DIR/auth.json is a link; the second profile must keep its own credentials"
-	fi
 
 	mkdir -p "$PROFILE_DIR"
 	chmod 700 "$PROFILE_DIR"
 	for entry in ${to_link[@]+"${to_link[@]}"}; do
 		ln -s "$SOURCE_DIR/$entry" "$PROFILE_DIR/$entry"
 	done
+	refresh_settings
 
 	# Post-check: every shared entry present in the source must resolve from the profile.
 	for entry in "${SHARED_ENTRIES[@]}"; do
-		src="$SOURCE_DIR/$entry"
-		dst="$PROFILE_DIR/$entry"
-		if [[ -e "$src" || -L "$src" ]] && [[ ! -e "$dst" ]]; then
-			die "shared $entry is a broken link: $src does not resolve"
+		if source_has "$entry" && [[ ! -e "$PROFILE_DIR/$entry" ]]; then
+			die "shared $entry is a broken link: $SOURCE_DIR/$entry does not resolve"
 		fi
 	done
+}
+
+# settings.json is a copy, regenerated on every launch, and never a link. Pi
+# writes model and thinking choices into its settings file; through a link those
+# writes would reach the original profile. The copy is replaced atomically, so a
+# link left by an earlier layout is replaced rather than followed.
+refresh_settings() {
+	local tmp="$PROFILE_DIR/settings.json.tmp"
+	cp "$SOURCE_DIR/settings.json" "$tmp"
+	mv -f "$tmp" "$PROFILE_DIR/settings.json"
 }
 
 # --- Copilot authentication ---------------------------------------------------
@@ -134,6 +152,14 @@ caller_sets_models() {
 	return 1
 }
 
+is_subcommand() {
+	local word
+	for word in $PI_SUBCOMMANDS; do
+		[[ "$1" == "$word" ]] && return 0
+	done
+	return 1
+}
+
 main() {
 	command -v pi >/dev/null 2>&1 || die "the pi executable was not found on PATH" 127
 
@@ -141,6 +167,12 @@ main() {
 	prepare_profile
 
 	export PI_CODING_AGENT_DIR="$PROFILE_DIR"
+
+	# Subcommands such as `update` or `auth check` are dispatched by Pi only when
+	# they come first, and they do not start a conversation, so no scope is added.
+	if [[ $# -gt 0 ]] && is_subcommand "$1"; then
+		exec pi "$@"
+	fi
 
 	warn_if_not_logged_in
 

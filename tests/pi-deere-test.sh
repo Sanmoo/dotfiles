@@ -157,13 +157,69 @@ test_first_launch_prepares_private_profile_with_shared_links() {
 	assert_eq 0 "$LAUNCH_STATUS" "first launch status"
 	assert_eq "$SRC/extensions" "$(readlink "$PROF/extensions")" "extensions link target"
 	assert_eq "$SRC/prompts" "$(readlink "$PROF/prompts")" "prompts link target"
-	assert_eq "$SRC/settings.json" "$(readlink "$PROF/settings.json")" "settings link target"
+	[[ ! -L "$PROF/settings.json" && -f "$PROF/settings.json" ]] || fail "settings.json must be a copy, not a link"
+	pass
+	assert_eq "$(cat "$SRC/settings.json")" "$(cat "$PROF/settings.json")" "settings copy matches the shared preferences"
 	assert_eq "$SRC/AGENTS.md" "$(readlink "$PROF/AGENTS.md")" "AGENTS.md link target"
 	[[ ! -e "$PROF/themes" && ! -L "$PROF/themes" ]] || fail "absent source entry must not be linked"
 	pass
 	[[ ! -L "$PROF/auth.json" && ! -e "$PROF/auth.json" ]] || fail "launch must not create or link auth.json"
 	pass
 	assert_eq 700 "$(stat -f %Lp "$PROF" 2>/dev/null || stat -c %a "$PROF")" "profile permissions"
+}
+
+test_profile_writes_to_settings_never_reach_the_original() {
+	new_case
+	run_launcher -- "x"
+	local before after
+	before="$(digest "$SRC/settings.json")"
+	printf '{"defaultProvider":"github-copilot"}\n' >"$PROF/settings.json"
+	after="$(digest "$SRC/settings.json")"
+	assert_eq "$before" "$after" "original settings untouched by a profile write"
+	run_launcher -- "again"
+	assert_eq "$(cat "$SRC/settings.json")" "$(cat "$PROF/settings.json")" "copy regenerated from the shared preferences"
+}
+
+test_source_settings_change_is_seen_on_next_launch() {
+	new_case
+	run_launcher -- "first"
+	printf '{"defaultThinkingLevel":"low"}\n' >"$SRC/settings.json"
+	run_launcher -- "second"
+	assert_eq 0 "$LAUNCH_STATUS" "status after a shared settings change"
+	assert_eq '{"defaultThinkingLevel":"low"}' "$(cat "$PROF/settings.json")" "shared settings change reflected"
+}
+
+test_legacy_settings_link_is_replaced_by_a_copy() {
+	new_case
+	mkdir -p "$PROF"
+	ln -s "$SRC/settings.json" "$PROF/settings.json"
+	run_launcher -- "x"
+	assert_eq 0 "$LAUNCH_STATUS" "status with a legacy settings link"
+	[[ ! -L "$PROF/settings.json" ]] || fail "the legacy link must be replaced by a copy"
+	pass
+	before="$(digest "$SRC/settings.json")"
+	printf 'profile only\n' >"$PROF/settings.json"
+	assert_eq "$before" "$(digest "$SRC/settings.json")" "original settings untouched after the legacy link is gone"
+}
+
+test_pi_subcommands_are_dispatched_without_a_scope() {
+	new_case
+	run_launcher -- update --extension npm:pi-subagents
+	local log
+	log="$(stub_log)"
+	assert_line "$log" "argc=3" "subcommand arguments untouched"
+	assert_not_contains "$log" "github-copilot/*" "no scope added to a subcommand"
+	assert_line "$log" "arg=update" "subcommand kept first"
+
+	run_launcher -- auth check --provider github-copilot --json
+	assert_not_contains "$(stub_log)" "github-copilot/*" "auth check gets no scope"
+}
+
+test_home_tilde_in_profile_dir_is_expanded() {
+	new_case
+	run_launcher PI_DEERE_AGENT_DIR='~/.pi-deere/agent' -- "x"
+	assert_eq 0 "$LAUNCH_STATUS" "status with a tilde profile dir"
+	assert_contains "$(stub_log)" "PI_CODING_AGENT_DIR=$PROF" "pi receives the expanded profile dir"
 }
 
 test_repeated_launch_is_idempotent() {
