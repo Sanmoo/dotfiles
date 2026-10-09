@@ -76,17 +76,19 @@ in about a second.
   toolchain volume, so switching repositories does not re-download them.
 - After a Herdr server restart, a sandboxed pane comes back as a plain shell on
   purpose: Herdr's automatic resume would otherwise start an unsandboxed Pi.
-  Re-enter the conversation with `safe-pi -c`.
+  Re-enter the conversation with `safe-pi -c`. (Once the reporter declares its
+  own resume command, this becomes automatic; see below.)
 - `pi install` inside the sandbox fails on purpose, because extensions and
   packages are read-only. Install on the host; the sandbox picks it up
   immediately.
 - The sandbox is a filesystem boundary, not a credential boundary: it can read
   the credentials Pi uses.
-- Herdr 0.9.3 records no session reference for a sandboxed pane: a custom
-  integration's session reference is accepted but not stored, so the pane
-  reports state while restore stays fail-closed. A Herdr that accepts
-  custom-source session references (documented as 0.10.0 or later) is needed
-  before the reference can appear.
+- Herdr's native `agent_session` is stored only for official `herdr:*` sources,
+  so a custom source cannot set it — by design, not by version. Automatic
+  restore instead uses a self-reported resume command, available since Herdr
+  0.9.2; wiring `safe-pi -c` into the reporter is a follow-up. Until then,
+  restore stays fail-closed and `safe-pi -c` from the restored shell resumes the
+  conversation.
 - A warning that the image's Pi differs from the host's Pi is expected until you
   run `safe-pi --update`.
 

@@ -1,6 +1,6 @@
 # 08 — Container-side Herdr integration for the sandbox
 
-**What to build:** A Herdr reporter that runs *inside* the sandbox and reports the sandboxed Pi's state under its own source, so a sandboxed pane is attributed to Pi instead of staying `unknown`. Ticket 05 proved the mounted Herdr-managed integration cannot do this: on Herdr 0.9.3 a `herdr:pi` report is dropped when the pane's foreground process is not a detected Pi, and a sandboxed pane's foreground is `docker`. A report from the same container under a custom source is applied immediately, so the fix is a sandbox-owned reporter, with the Herdr-managed integration neutralised inside the sandbox so the two do not compete. **No Herdr upgrade is needed for this ticket:** state attribution from a custom source works on the installed 0.9.3. The session reference is the one part gated on a future Herdr (≥ 0.10.0) and is documented, not required here.
+**What to build:** A Herdr reporter that runs *inside* the sandbox and reports the sandboxed Pi's state under its own source, so a sandboxed pane is attributed to Pi instead of staying `unknown`. Ticket 05 proved the mounted Herdr-managed integration cannot do this: on Herdr 0.9.3 a `herdr:pi` report is dropped when the pane's foreground process is not a detected Pi, and a sandboxed pane's foreground is `docker`. A report from the same container under a custom source is applied immediately, so the fix is a sandbox-owned reporter, with the Herdr-managed integration neutralised inside the sandbox so the two do not compete. **No Herdr upgrade is needed for this ticket:** state attribution from a custom source works on the installed 0.9.3. Herdr's native `agent_session` field is stored only for official `herdr:*` sources, so a custom source cannot set it by design; automatic restore uses a self-reported `resume_argv`, shipped in Herdr 0.9.2 and left to ticket 07.
 
 **Blocked by:** None (can start immediately; the socket mount from 03 is already in place)
 
@@ -10,7 +10,7 @@
 - [ ] A dangerous command gated by `permission-gate` shows the pane as `blocked` until it is answered, and clears when it is.
 - [x] The reporter uses its own source (not `herdr:pi`), and the Herdr-managed integration does not report for the pane, so exactly one source holds it.
 - [x] Reports are best-effort: an unreachable socket or a failed report never blocks, slows, or breaks Pi.
-- [x] The reporter reports the session reference at the container-only sessions path. The installed Herdr 0.9.3 stores none for a custom source, so the limitation is documented (pending a Herdr that accepts custom-source session references, ≥ 0.10.0); this does not block the state attribution that is this ticket's deliverable.
+- [x] The reporter reports the session reference at the container-only sessions path. Herdr stores `agent_session` only for official `herdr:*` sources (`is_official_agent_source` in `src/agent_resume.rs`), so a custom source never populates it; this is by design and documented. Automatic restore uses a self-reported `resume_argv` (Herdr ≥ 0.9.2), which is ticket 07's follow-up.
 - [x] The reporter ships with the sandbox (in the image or on a container-only mount) without writing into the host Pi agent directory, which is mounted read-only inside the sandbox.
 - [x] A test at the docker/entrypoint seam asserts the reporter is loaded and the managed integration is not; the contract and guide (03/06) are updated to the real behaviour.
 
@@ -21,13 +21,13 @@
 - Herdr 0.9.3, integration `pi` v9, socket reachable inside the container, `HERDR_ENV=1`, `HERDR_SOCKET_PATH`, `HERDR_PANE_ID` all forwarded. The managed integration's `pane.report_agent` / `pane.report_agent_session` are acknowledged with `{"result":{"type":"ok"}}` and then ignored.
 - The same request from inside the same container under a custom source (`safepi`) is applied at once: `agent: safepi`, `agent_status: working`. It is cleared when the pane returns to an idle shell prompt, which is why the reporter must run for as long as Pi does.
 - A `herdr:pi` report for a pane Herdr has not detected as Pi is ignored even from the host, so the gate is the source, not the container.
-- On 0.9.3, a custom-source report carrying `agent_session_path`, `agent_session_id`, and `resume_argv` is accepted but never populates `agent_session`; only official `herdr:*` sources store a native session reference. The official docs say custom resume commands need Herdr ≥ 0.10.0, which bounds this ticket and ticket 07.
+- On 0.9.3, a custom-source report carrying `agent_session_path`, `agent_session_id`, and `resume_argv` is accepted but never populates `agent_session`; only official `herdr:*` sources store a native session reference. That gate is `is_official_agent_source` in `src/agent_resume.rs` — intentional, not a missing release. Custom resume commands actually shipped in Herdr 0.9.2 via `resume_argv` (PR #4687); see the correction below.
 
 ### Seams to decide during implementation
 
 - Loading: Pi accepts `-e/--extension <path>` (repeatable) and an `extensions` settings key, so a container-only reporter can be loaded explicitly. Decide between shipping it in the image and loading it from a container-only path, versus adding it to a sandbox-only agent overlay.
 - Disabling the managed integration: the host `~/.pi/agent/extensions` is mounted read-only and contains `herdr-agent-state.ts`. Decide how to keep it from loading in the sandbox (for example a container-only extensions view) without losing the approval and other host extensions the sandbox needs.
-- Relationship to ticket 07: the same reporter is the natural place to declare a resume command once Herdr ≥ 0.10.0 accepts one from a custom source. 07 answers whether that works; this ticket does not depend on it.
+- Relationship to ticket 07: the same reporter is the natural place to declare a resume command. Herdr ≥ 0.9.2 (installed 0.9.3) already accepts a custom-source `resume_argv`, so 07 answers with a restart test; this ticket does not depend on it.
 - ADR 0002 records "Herdr keeps working because the host integration extension reports state over the mounted socket", which ticket 05 disproved. Revisit that decision record when this lands.
 
 ### Implementation (agent-side)
@@ -88,9 +88,10 @@ Evidence:
 - `shellcheck` is clean on the wrapper, entrypoint, and both shell tests.
 
 The session-reference limitation is documented: the reporter carries
-`agent_session_path`, but Herdr 0.9.3 stores nothing for a custom source (only
-`herdr:*` sources do), pending a Herdr that accepts custom-source session
-references (≥ 0.10.0). The reporter deliberately does not declare a resume
-command; that is ticket 07's follow-up. ADR 0002 and the `safe-pi` glossary were
+`agent_session_path`, but Herdr stores `agent_session` only for official
+`herdr:*` sources — `is_official_agent_source` is an intentional authority
+boundary, not a pending release. The reporter deliberately does not declare a
+resume command; Herdr has accepted a custom-source `resume_argv` since 0.9.2, so
+that is ticket 07's follow-up. ADR 0002 and the `safe-pi` glossary were
 updated, and the 03/06 ticket notes and the draft guide now describe the
 sandbox reporter instead of the managed integration.

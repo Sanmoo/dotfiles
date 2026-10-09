@@ -8,7 +8,7 @@
 
 - [ ] In a Herdr pane, a sandboxed Pi is attributed to Pi and shows `working` during a turn and `idle` after it settles.
 - [ ] A dangerous command that the approval extension gates shows the pane as `blocked` until it is answered.
-- [ ] Herdr records a session reference for the pane, and it points at the container-only sessions path.
+- [ ] After a Herdr server restart, the pane reopens inside the sandbox in the same conversation, driven by the reporter's self-reported resume command. (Herdr's native `agent_session` field is stored only for official `herdr:*` sources, so it is not expected for a custom-source pane.)
 - [x] Restarting the Herdr server and reattaching returns the pane as a plain shell in the saved directory, never as an unsandboxed Pi.
 - [x] Continuing from that shell re-enters the sandbox with the same conversation.
 - [x] Detaching and reattaching the client keeps the sandboxed Pi running.
@@ -55,6 +55,8 @@ and `pane.report_agent_session` requests are acknowledged with
   `agent_session_id`, and `resume_argv` is accepted (`ok`) but never populates
   `agent_session`; only official `herdr:*` sources store a native session
   reference. The official docs say custom resume commands need Herdr ≥ 0.10.0.
+  **(Superseded — see the correction below: the resume half shipped in 0.9.2
+  via `resume_argv`.)**
 
 So Herdr gates the `herdr:pi` source on the pane's detected agent process. A
 sandboxed pane's foreground process is `docker`, Herdr never detects Pi, and the
@@ -107,14 +109,40 @@ No deviation from the guide was observed for items 4–6. The items 1–3
 deviations above stand: the ticket's first three acceptance criteria are not
 met, so the ticket as a whole is not satisfied yet.
 
-### Item 3 is future-gated on Herdr
+### Item 3 is future-gated on Herdr (superseded — see the correction below)
 
 Item 3 (Herdr records a session reference pointing at the container-only
 sessions path) cannot pass on the installed Herdr 0.9.3. A custom source
 attributes the pane and reports state, but Herdr stores no `agent_session` for
 it — only official `herdr:*` integrations do — and 0.9.3 is the newest release.
 The session reference becomes achievable with a Herdr that accepts custom-source
-session references (documented as ≥ 0.10.0), which does not exist yet. This
-does not block ticket 08: state attribution (items 1–2) is fixable now. Decide
+session references (documented as ≥ 0.10.0), which does not exist yet. **This
+paragraph is superseded by the correction below.** It does not block ticket 08:
+state attribution (items 1–2) is fixable now. Decide
 whether to keep item 3 as an open criterion pending that release or record it as
 an accepted limitation.
+
+### Correction: the resume half shipped in 0.9.2; `agent_session` is native-only
+
+The "≥ 0.10.0" claim in the comments above is wrong, and it made the resume half
+look future-gated when it is not.
+
+- Herdr **v0.9.2** (PR #4687, the feature release behind the installed 0.9.3)
+  added self-reported resume commands: *"Agents can report their own resume
+  command. Herdr then reopens their exact session after a server restart, with
+  no built-in integration needed."* The current docs say "Resume commands need
+  Herdr 0.9.2 or later" and list two restore paths: a native reference through
+  an official `herdr:*` integration, or the agent's own reported resume
+  command.
+- In `src/agent_resume.rs`, the native `agent_session` path is gated by
+  `is_official_agent_source(source, agent)`, which accepts only `herdr:*`
+  pairs. That is why a custom-source report never populated `agent_session`: it
+  is an intentional authority boundary, not a missing release. The resume
+  command travels separately as `ReportedAgentResume`/`resume_argv`, with no
+  such gate.
+
+So item 3 is reframed above around the auto-restore via `resume_argv`, which is
+answerable now (ticket 07). The literal `agent_session` record is not achievable
+for a custom source and is recorded as by-design. Items 1–2 pass on the reporter
+from ticket 08; item 3 still needs the restart test once ticket 07/08 wire the
+resume command.

@@ -31,7 +31,10 @@ Herdr statements: the socket bullet now names the sandbox-owned reporter (not
 Herdr's own Pi integration, which is neutralised inside the sandbox), the
 "plain terminal" and "blocked prompts never appear" troubleshooting rows now
 point at Herdr reachability and the mounted `permission-gate` extension, and a
-limitations bullet records that Herdr 0.9.3 stores no session reference for a
-custom source. The rest of the guide — the README move, first-run timing, and
-the erlang/elixir convergence failure — is still this ticket's work and still
-awaits ticket 04.
+limitations bullet records the session-reference situation. That bullet was
+corrected after research: Herdr stores `agent_session` only for official
+`herdr:*` sources (by design), while a custom source's self-reported
+`resume_argv` has been accepted since 0.9.2, so automatic restore is a wiring
+follow-up (ticket 07), not a missing release. The rest of the guide — the README
+move, first-run timing, and the erlang/elixir convergence failure — is still
+this ticket's work and still awaits ticket 04.

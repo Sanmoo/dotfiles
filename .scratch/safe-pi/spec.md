@@ -30,7 +30,7 @@ The development environment is declared once, in the repository's tracked mise c
 14. As a Herdr user, I want the `permission-gate` approval prompt inside the sandbox to surface as `blocked`, so that I notice a pending decision without reading the pane.
 15. As a Herdr user, I want the pane to be recognised as a Pi agent even though the foreground process is `docker`, so that labels, waits, and notifications keep working.
 16. As a Herdr user, I want a Herdr server restart to keep the socket reachable from a running sandbox, so that a server restart does not silently break state reporting.
-17. As a Herdr user, I want Herdr to record the sandboxed session reference, so that session metadata is visible for the pane.
+17. As a Herdr user, I want Herdr to know how to restore the sandboxed session, so that a server restart reopens the pane inside the sandbox in the same conversation.
 18. As a Herdr user, I want a restored sandboxed pane to come back as a shell rather than as an unsandboxed Pi, so that I am never surprised by isolation that is no longer there.
 19. As a Herdr user, I want to re-enter the previous conversation after such a restore with a single command, so that failing closed costs me one keystroke.
 20. As a Pi user, I want every `pi` argument to pass through unchanged (`--continue`, `--session`, `--model`, `-p`, `--no-lens`), so that `safe-pi` is a drop-in replacement for `pi`.
@@ -121,10 +121,10 @@ The development environment is declared once, in the repository's tracked mise c
 
 ### Herdr integration
 
-- State reporting comes from the integration extension that Herdr installs into the host Pi agent directory, which is part of the mounted agent directory. The blocked state comes from the approval extension in the configuration checkout emitting the Herdr event that the integration consumes. Both are therefore unchanged by the sandbox as long as the socket is reachable and the checkout is mounted.
-- Session restore: the session path reported to Herdr is the container-only sessions path. Herdr's native agent session restore derives its resume command from a host path, so a sandboxed pane's reference is deliberately invalid on the host and the pane restores as a shell in the saved directory instead of as an unsandboxed Pi. `safe-pi --continue` (or the equivalent) re-enters the sandbox with the same conversation, since sessions are stored in the shared host directory.
-- Two consequences are accepted and documented in the ADR: inside the container the same sessions directory is visible twice (under the agent directory and at the container-only path; Pi uses the latter), and sandboxed panes do not receive Herdr's automatic session resume.
-- A follow-up spike (separate ticket) will test whether a container-side Herdr integration can report `safe-pi --session <path>` as its own resume command, which would restore automatic resume while keeping the sandbox.
+- State reporting comes from a sandbox-owned reporter extension loaded inside the container, not from the Herdr-managed integration: Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is `docker`. The blocked state comes from the approval extension in the configuration checkout emitting the Herdr event the reporter consumes. The socket and checkout mounts are what make this work.
+- Session restore: the reporter reports the container-only sessions path, but Herdr stores the native `agent_session` reference only for official `herdr:*` sources, so the reference is not retained for this pane. Automatic restore instead uses a self-reported resume command (`resume_argv`), which Herdr has accepted from custom sources since 0.9.2. `safe-pi --continue` (or the equivalent) re-enters the sandbox with the same conversation, since sessions are stored in the shared host directory.
+- Two consequences are accepted and documented in the ADR: inside the container the same sessions directory is visible twice (under the agent directory and at the container-only path; Pi uses the latter), and until the reporter declares a resume command, sandboxed panes do not receive Herdr's automatic session resume.
+- The container-side resume-command spike (separate ticket) tests reporting `safe-pi -c` as `resume_argv`, which would restore automatic resume while keeping the sandbox; the mechanism has been available since Herdr 0.9.2.
 
 ### Configuration repository changes
 
