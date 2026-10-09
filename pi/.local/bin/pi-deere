@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# pi-deere — a second Pi profile for the second GitHub Copilot account.
+#
+# Installed by stow as part of the `pi` package. The launcher prepares a private
+# agent profile (its own auth.json) whose resources are symlinks into the agent
+# directory of the original Pi, then execs the installed `pi` with that profile.
+# Nothing here replaces `pi`: the original profile and its logins are untouched.
+#
+#   PI_CODING_AGENT_DIR            original agent dir (default ~/.pi/agent)
+#   PI_DEERE_AGENT_DIR             second profile dir (default ~/.pi-deere/agent)
+#
+# Sessions are shared by linking the profile's sessions/ to the original one.
+# Pi keeps its per-project grouping (sessions/--<cwd>--/) under the default
+# layout, so no session-dir override is exported. A caller-supplied
+# PI_CODING_AGENT_SESSION_DIR is inherited unchanged, as Pi would use it.
+#
+# Every argument is forwarded to Pi unchanged, and `exec` hands Pi the process,
+# so signals and the exit status are Pi's own.
+set -euo pipefail
+
+readonly SCRIPT_NAME="pi-deere"
+
+# Resources shared with the original profile. Each one is linked only when it
+# exists in the source, so a later addition is picked up on the next launch.
+# Credentials and per-profile runtime state (auth.json, mcp-oauth/, run history,
+# MCP caches, subagent and intercom state) are deliberately absent: they stay
+# private to the profile.
+readonly SHARED_ENTRIES=(
+	AGENTS.md
+	agents
+	bin
+	extensions
+	git
+	keybindings.json
+	mcp-adapter.json
+	models-store.json
+	models.json
+	npm
+	prompts
+	settings.json
+	sessions
+	skills
+	themes
+	tools
+	trust.json
+)
+
+die() {
+	printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+	exit "${2:-1}"
+}
+
+SOURCE_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+PROFILE_DIR="${PI_DEERE_AGENT_DIR:-$HOME/.pi-deere/agent}"
+readonly COPILOT_PROVIDER="github-copilot"
+
+# --- Profile preparation ------------------------------------------------------
+# Validation runs before any change, so a conflict leaves the profile as it was.
+prepare_profile() {
+	[[ -d "$SOURCE_DIR" ]] ||
+		die "agent directory of the original Pi not found: $SOURCE_DIR (set PI_CODING_AGENT_DIR or install the pi package)"
+	[[ -e "$SOURCE_DIR/settings.json" ]] ||
+		die "missing $SOURCE_DIR/settings.json; the shared preferences cannot be loaded"
+	[[ "$SOURCE_DIR" != "$PROFILE_DIR" ]] ||
+		die "PI_DEERE_AGENT_DIR must differ from the original agent directory"
+
+	# Pi creates sessions/ on first use; creating it here lets the link exist before that.
+	mkdir -p "$SOURCE_DIR/sessions"
+
+	local entry src dst target
+	local -a to_link=()
+	for entry in "${SHARED_ENTRIES[@]}"; do
+		src="$SOURCE_DIR/$entry"
+		dst="$PROFILE_DIR/$entry"
+		if [[ ! -e "$src" && ! -L "$src" ]]; then
+			continue
+		fi
+		if [[ -L "$dst" ]]; then
+			target="$(readlink "$dst")"
+			if [[ "$target" == "$src" ]]; then
+				continue
+			fi
+			die "conflict: $dst is a link to $target, expected $src; nothing was changed (remove or move the link and run again)"
+		fi
+		if [[ -e "$dst" ]]; then
+			die "conflict: $dst exists and is not the shared $entry; nothing was changed (move it aside and run again)"
+		fi
+		to_link+=("$entry")
+	done
+
+	if [[ -e "$PROFILE_DIR/auth.json" && -L "$PROFILE_DIR/auth.json" ]]; then
+		die "conflict: $PROFILE_DIR/auth.json is a link; the second profile must keep its own credentials"
+	fi
+
+	mkdir -p "$PROFILE_DIR"
+	chmod 700 "$PROFILE_DIR"
+	for entry in ${to_link[@]+"${to_link[@]}"}; do
+		ln -s "$SOURCE_DIR/$entry" "$PROFILE_DIR/$entry"
+	done
+
+	# Post-check: every shared entry present in the source must resolve from the profile.
+	for entry in "${SHARED_ENTRIES[@]}"; do
+		src="$SOURCE_DIR/$entry"
+		dst="$PROFILE_DIR/$entry"
+		if [[ -e "$src" || -L "$src" ]] && [[ ! -e "$dst" ]]; then
+			die "shared $entry is a broken link: $src does not resolve"
+		fi
+	done
+}
+
+# --- Copilot authentication ---------------------------------------------------
+# The check only reports; Pi still starts so that /login is available.
+warn_if_not_logged_in() {
+	local status
+	status="$(PI_OFFLINE=1 pi auth check --provider "$COPILOT_PROVIDER" --json 2>/dev/null || true)"
+	if [[ "$status" != *'"status":"ready"'* ]]; then
+		printf '%s: GitHub Copilot is not logged in for this profile (%s).\n' "$SCRIPT_NAME" "$PROFILE_DIR" >&2
+		printf '%s: inside Pi, run /login and choose GitHub Copilot. The original pi login is not used.\n' "$SCRIPT_NAME" >&2
+	fi
+}
+
+# --- Argument scoping ---------------------------------------------------------
+# `--models` limits the models for a new session; a resumed session keeps its
+# own model. Scoping to Copilot here, instead of editing settings.json, keeps
+# the original default provider intact. A caller-supplied --models wins.
+caller_sets_models() {
+	local arg
+	for arg in "$@"; do
+		case "$arg" in
+		--) return 1 ;;
+		--models | --models=*) return 0 ;;
+		esac
+	done
+	return 1
+}
+
+main() {
+	command -v pi >/dev/null 2>&1 || die "the pi executable was not found on PATH" 127
+
+	unset COPILOT_GITHUB_TOKEN
+	prepare_profile
+
+	export PI_CODING_AGENT_DIR="$PROFILE_DIR"
+
+	warn_if_not_logged_in
+
+	if caller_sets_models "$@"; then
+		exec pi "$@"
+	fi
+	exec pi --models "$COPILOT_PROVIDER/*" "$@"
+}
+
+main "$@"
