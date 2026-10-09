@@ -19,6 +19,11 @@ yarn = "1.22.22"
 bun = "latest"
 maven = "latest"
 "github:paivot-ai/nd" = "latest"
+# Pi's pi-rtk-optimizer extension shells out to rtk for command rewriting and
+# output compaction. Declared here rather than mounted from the host, so a
+# sandbox start converges it into the toolchain volume and the extension finds
+# it on PATH; the host installs the same declaration.
+rtk = "latest"
 
 # [tools."http:flutter"]
 # version = "latest"
