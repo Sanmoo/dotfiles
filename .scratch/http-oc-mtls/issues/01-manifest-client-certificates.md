@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] A collection with a matching `pem` entry makes the main request's curl receive `--cert` and `--key` (and `--pass` when `passphrase` is set)
 - [x] The dry-run command shows the same certificate flags

@@ -4,15 +4,20 @@
 
 **Blocked by:** 02 — Browser profile isolation
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `aws-console ecs --profile rev-qual` sets the federation Destination to the current ECS console URL (with the profile's configured region) and opens it in the `aws-rev-qual` browser profile.
-- [ ] All fifteen curated service names map to their current, verified console URLs (ECS uses its current console path).
-- [ ] Regional services append `?region=<configured region>` when the AWS profile configures one; global services (`iam`, `s3`) never append a region.
-- [ ] No region configured → no region parameter.
-- [ ] Unknown service name exits non-zero and prints the supported names to stderr.
-- [ ] Deep-link without `--profile` opens via the default browser (no isolation), still landing on the service page.
-- [ ] Deep-link with `--stdout` prints only the service-aimed signin URL on stdout.
-- [ ] Service URL building and region handling are covered by direct assertions on the pure helpers, including the global-vs-regional split.
+- [x] `aws-console ecs --profile rev-qual` sets the federation Destination to the current ECS console URL (with the profile's configured region) and opens it in the `aws-rev-qual` browser profile.
+- [x] All fifteen curated service names map to their current, verified console URLs (ECS uses its current console path).
+- [x] Regional services append `?region=<configured region>` when the AWS profile configures one; global services (`iam`, `s3`) never append a region.
+- [x] No region configured → no region parameter.
+- [x] Unknown service name exits non-zero and prints the supported names to stderr.
+- [x] Deep-link without `--profile` opens via the default browser (no isolation), still landing on the service page.
+- [x] Deep-link with `--stdout` prints only the service-aimed signin URL on stdout.
+- [x] Service URL building and region handling are covered by direct assertions on the pure helpers, including the global-vs-regional split.
 
 ## Comments
+
+Implemented in `general/bin/aws-console` (commit 3d8a284). The curated table,
+the regional-vs-global region rule, the unknown-service error, and the
+no-profile/`--stdout` combinations are asserted in `general/bin/aws-console.test`;
+ticket 04 verified the ECS deep-link on the real macOS machine.

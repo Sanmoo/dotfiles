@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Container contract: mounts and environment
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] The first start installs the declared toolchain into the named volume and reports progress; later starts install nothing and add no noticeable delay.
 - [x] The declared tools are on PATH in the sandbox, ahead of the image's own binaries.

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Building with the host uid, gid, and user name arguments succeeds, and processes in the resulting image run as that uid/gid.
 - [x] Running the image non-interactively prints Pi's version, matching the version selection passed to the build.

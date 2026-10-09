@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Manifest client certificates reach the main request.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] A certificate declared only in the environment is matched and presented when that environment is selected
 - [x] For the same `domain` in both lists, the environment entry wins when that environment is selected

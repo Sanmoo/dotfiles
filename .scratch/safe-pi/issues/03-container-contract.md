@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — `safe-pi` wrapper starts Pi in the container
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] A debug shell shows the invoking uid/gid, the working directory, and every contract path present with its intended mode; read-only entries reject writes.
 - [x] The Pi agent directory is writable (Pi must lock its credential store there), while extensions and installed Pi packages are not writable.

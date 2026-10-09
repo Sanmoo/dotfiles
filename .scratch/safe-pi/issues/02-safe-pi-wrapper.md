@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Sandbox image that runs Pi
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `safe-pi <pi arguments>` runs Pi in the container with arguments unchanged, in the invoking directory, and exits with Pi's status.
 - [x] The image is built on first use and skipped when the current tag already exists.

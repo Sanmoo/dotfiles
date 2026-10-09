@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Harness runs the real script offline: STS stubbed through the botocore per-service endpoint variable against a local HTTP stub answering the canonical GetCallerIdentity XML; federation stubbed through the new endpoint override env var against a local HTTP stub answering a SigninToken JSON payload; browser stubbed with a fake script that records its argv.
 - [x] Bare `aws-console` opens the signin URL through the platform's default browser (fake browser receives the URL) — today's behavior, unchanged.
