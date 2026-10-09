@@ -28,7 +28,7 @@ ARG GID=1000
 ARG USERNAME=sandbox
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="3" \
+      safe-pi.entrypoint="4" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \
@@ -36,7 +36,7 @@ LABEL safe-pi.base.image="${BASE_IMAGE}" \
       safe-pi.gid="${GID}"
 
 # Base utilities: Pi's tool probes (git, ripgrep, fd, jq), the sandbox's needs
-# (curl, an SSH client), and build tooling.
+# (curl, an SSH client), the locale source data, and build tooling.
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -46,12 +46,25 @@ RUN set -eux; \
         fd-find \
         git \
         jq \
+        locales \
         openssh-client \
         pkg-config \
         python3 \
         ripgrep \
         xz-utils; \
     ln -s /usr/bin/fdfind /usr/local/bin/fd; \
+    # The wrapper forwards the host's locale as host identity, so the image has
+    # to ship it: glibc resolving a locale it does not have is not cosmetic, it
+    # warns on every locale-aware call and falls back to the POSIX charmap,
+    # which starts the Erlang VM with latin1 native name encoding. `localedef`
+    # compiles this one locale out of the source data `locales` provides rather
+    # than everything `/etc/locale.gen` names; `en_US.UTF-8` is what the host
+    # forwards. C.UTF-8 is glibc's built-in and is asserted here because the
+    # entrypoint falls back to it for any locale the image cannot run UTF-8
+    # under.
+    localedef -i en_US -f UTF-8 en_US.UTF-8; \
+    locale -a | grep -qix 'C\.utf8'; \
+    LC_ALL=en_US.UTF-8 locale charmap | grep -qx 'UTF-8'; \
     rm -rf /var/lib/apt/lists/*
 
 # mise, pinned. Installed to a system path so the sandbox user can run it.
@@ -119,6 +132,9 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/safe-pi-entrypoint
 COPY --chmod=0644 herdr-reporter.ts /usr/local/share/safe-pi/herdr-reporter.ts
 
 ENV HOME=/home/${USERNAME}
+# An image run without the wrapper has nothing to forward a locale from, so the
+# image's own default is glibc's built-in C.UTF-8 rather than the POSIX charmap.
+ENV LANG=C.UTF-8
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 

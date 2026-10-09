@@ -50,6 +50,42 @@ if ((!prepare)) && [[ "${1-}" == "pi" ]]; then
 	image_npm_root="$(npm root -g 2>/dev/null || true)"
 fi
 
+# --- The locale the sandbox runs under -----------------------------------------
+# The wrapper forwards the host's locale as host identity, but the image only
+# ships the locales it was built with: en_US.UTF-8, plus glibc's built-in
+# C.UTF-8. glibc resolving a locale it does not have is not cosmetic — it warns
+# on every locale-aware call and falls back to the POSIX charmap, which starts
+# the Erlang VM with latin1 native name encoding and makes every `elixir`
+# invocation warn, including the one mise runs while installing Elixir. So the
+# sandbox runs under the host's locale when the image ships it and under C.UTF-8
+# otherwise: always UTF-8, never POSIX by accident. This runs before
+# convergence, so mise, the tools it installs, and the command itself all see
+# the same locale.
+locale_key() { # glibc matches locale names ignoring case and codeset punctuation
+	printf '%s' "$1" | tr -d '[:punct:]' | tr '[:upper:]' '[:lower:]'
+}
+
+sandbox_locales="$(locale -a 2>/dev/null || true)"
+for locale_var in LANG LC_ALL LC_CTYPE; do
+	locale_value="${!locale_var-}"
+	[[ -n "$locale_value" ]] || continue
+	locale_wanted="$(locale_key "$locale_value")"
+	# A locale naming no UTF-8 codeset (C, POSIX, a legacy latin1 name) is a
+	# single-byte charmap whether or not the image ships it.
+	if [[ "$locale_wanted" != *utf* ]]; then
+		export "$locale_var=C.UTF-8"
+		continue
+	fi
+	locale_honoured=0
+	while IFS= read -r locale_entry; do
+		[[ "$(locale_key "$locale_entry")" == "$locale_wanted" ]] && {
+			locale_honoured=1
+			break
+		}
+	done <<<"$sandbox_locales"
+	((locale_honoured)) || export "$locale_var=C.UTF-8"
+done
+
 # --- Declared tools first on PATH ---------------------------------------------
 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
 export MISE_DATA_DIR

@@ -50,10 +50,10 @@ if [[ " $* " == *" --dry-run-code "* ]]; then
 	exit 0
 fi
 printf 'mise-begin\n' >>"$log"
-printf 'mise %s cwd=%s trusted=%s data=%s cache=%s state=%s precompiled=%s compile=%s\n' "$*" "$PWD" \
+printf 'mise %s cwd=%s trusted=%s data=%s cache=%s state=%s precompiled=%s compile=%s lang=%s\n' "$*" "$PWD" \
 	"${MISE_TRUSTED_CONFIG_PATHS-}" "${MISE_DATA_DIR-}" \
 	"${MISE_CACHE_DIR-}" "${MISE_STATE_DIR-}" \
-	"${MISE_ERLANG_PRECOMPILED_OS-}" "${MISE_ERLANG_COMPILE-}" >>"$log"
+	"${MISE_ERLANG_PRECOMPILED_OS-}" "${MISE_ERLANG_COMPILE-}" "${LANG-}" >>"$log"
 sleep "${SAFE_PI_FAKE_MISE_SLEEP:-0}"
 printf 'mise-end\n' >>"$log"
 if [[ -n "${SAFE_PI_FAKE_MISE_FAIL_CWD-}" && "$PWD" == "$SAFE_PI_FAKE_MISE_FAIL_CWD" ]]; then
@@ -74,6 +74,18 @@ fi
 exit 99
 NPM
 chmod +x "$IMAGE_BIN/npm"
+
+cat >"$IMAGE_BIN/locale" <<'LOCALE'
+#!/usr/bin/env bash
+set -euo pipefail
+# The image's available locales, so the run does not depend on the host's.
+if [[ "${1-}" == "-a" ]]; then
+	printf '%s\n' ${SAFE_PI_FAKE_LOCALES:?}
+	exit 0
+fi
+exit 99
+LOCALE
+chmod +x "$IMAGE_BIN/locale"
 
 cat >"$IMAGE_BIN/pi" <<'PI'
 #!/usr/bin/env bash
@@ -124,6 +136,10 @@ reset_stubs() {
 	FAKE_INHERITED_TRUST=""
 	FAKE_MISE_FAIL_CWD=""
 	FAKE_MISE_MISSING=1
+	FAKE_LOCALES="C.utf8 en_US.utf8 POSIX"
+	FAKE_LOCALE_LANG="en_US.UTF-8"
+	FAKE_LOCALE_LC_ALL=""
+	FAKE_LOCALE_LC_CTYPE="en_US.UTF-8"
 }
 
 # run_entrypoint [--cwd DIR] [entrypoint args...]
@@ -140,8 +156,12 @@ run_entrypoint() {
 		env -i \
 			HOME="$home" \
 			PATH="$IMAGE_BIN:/usr/bin:/bin" \
+			LANG="$FAKE_LOCALE_LANG" \
+			LC_ALL="$FAKE_LOCALE_LC_ALL" \
+			LC_CTYPE="$FAKE_LOCALE_LC_CTYPE" \
 			MISE_DATA_DIR="$data" \
 			MISE_TRUSTED_CONFIG_PATHS="$FAKE_INHERITED_TRUST" \
+			SAFE_PI_FAKE_LOCALES="$FAKE_LOCALES" \
 			SAFE_PI_TEST_LOG="$CALL_LOG" \
 			SAFE_PI_TEST_NPM_ROOT="$npm_root" \
 			SAFE_PI_FAKE_MISE_STATUS="$FAKE_MISE_STATUS" \
@@ -220,6 +240,62 @@ for i in "${!path_entries[@]}"; do
 done
 [[ "$image_index" -gt "$shims_index" && "$shims_index" -ge 0 ]] ||
 	fail "declared shims must precede the image's binaries: $path_line"
+
+# --- The locale the sandbox runs under -----------------------------------------
+# The wrapper forwards the host's locale as host identity; the image ships
+# en_US.UTF-8 and glibc's built-in C.UTF-8. A locale the image cannot resolve is
+# not cosmetic: glibc falls back to the POSIX charmap, which starts the Erlang
+# VM with latin1 native name encoding and makes every `elixir` invocation warn.
+READ_LOCALES='printf "locale %s|%s|%s\n" "${LANG-}" "${LC_ALL-}" "${LC_CTYPE-}"'
+
+reset_stubs
+locale_out="$(run_entrypoint "$bash_bin" -c "$READ_LOCALES")" ||
+	fail "run under the host's locale failed"
+[[ "$locale_out" == "locale en_US.UTF-8||en_US.UTF-8" ]] ||
+	fail "a locale the image ships must be honoured as forwarded, got: $locale_out"
+
+# A locale the image does not ship becomes C.UTF-8 before convergence, so the
+# elixir install mise runs converges under UTF-8 too.
+reset_stubs
+FAKE_LOCALE_LANG=pt_BR.UTF-8
+FAKE_LOCALE_LC_CTYPE=pt_BR.UTF-8
+locale_out="$(run_entrypoint "$bash_bin" -c "$READ_LOCALES")" ||
+	fail "run under a locale the image does not ship failed"
+[[ "$locale_out" == "locale C.UTF-8||C.UTF-8" ]] ||
+	fail "an unshipped locale must become C.UTF-8, got: $locale_out"
+assert_call "lang=C.UTF-8"
+
+# A single-byte locale is replaced even though the image ships it: the sandbox
+# is UTF-8, and POSIX is what the latin1 fallback looked like.
+reset_stubs
+FAKE_LOCALE_LANG=C
+FAKE_LOCALE_LC_CTYPE=POSIX
+locale_out="$(run_entrypoint "$bash_bin" -c "$READ_LOCALES")" ||
+	fail "run under a single-byte locale failed"
+[[ "$locale_out" == "locale C.UTF-8||C.UTF-8" ]] ||
+	fail "a single-byte locale must become C.UTF-8, got: $locale_out"
+
+# Each of the three is resolved on its own, and an unset one stays unset rather
+# than being invented. (bash itself announces an unavailable LC_ALL on startup,
+# before the entrypoint can replace it; the assertion is about the environment
+# the command ends up with.)
+reset_stubs
+FAKE_LOCALE_LC_ALL=de_DE.UTF-8
+FAKE_LOCALE_LC_CTYPE=""
+locale_out="$(run_entrypoint "$bash_bin" -c "$READ_LOCALES")" ||
+	fail "run with an unshipped LC_ALL failed"
+[[ "$locale_out" == "locale en_US.UTF-8|C.UTF-8|" ]] ||
+	fail "LC_ALL must be resolved on its own, got: $locale_out"
+
+# A host that forwards no locale at all keeps the image's own default, which is
+# glibc's built-in C.UTF-8 rather than the POSIX charmap.
+reset_stubs
+FAKE_LOCALE_LANG=""
+FAKE_LOCALE_LC_CTYPE=""
+locale_out="$(run_entrypoint "$bash_bin" -c "$READ_LOCALES")" ||
+	fail "run without a forwarded locale failed"
+[[ "$locale_out" == "locale ||" ]] ||
+	fail "the entrypoint must not invent a locale, got: $locale_out"
 
 # --- A steady start installs nothing and prints nothing ------------------------
 # When every declared tool is installed the probe passes, so the install step
@@ -331,5 +407,16 @@ grep -Fq "herdr-reporter.ts" "$repo_root/safe-pi/Dockerfile" ||
 # a missing explicit `install -d` leaves the reporter directory non-traversable.
 grep -Fq "install -d -m 0755 /usr/local/share/safe-pi" "$repo_root/safe-pi/Dockerfile" ||
 	fail "the reporter directory must be created traversable before the COPY"
+
+# --- The image ships the locale the wrapper forwards ---------------------------
+# The sandbox runs under the host's locale, and only the image can ship it: the
+# `locales` source data, the generated locale, and the UTF-8 default a direct
+# image run starts under.
+grep -Fq "localedef -i en_US -f UTF-8 en_US.UTF-8" "$repo_root/safe-pi/Dockerfile" ||
+	fail "the image must generate the locale the wrapper forwards"
+grep -Fq "locale -a | grep -qix 'C\\.utf8'" "$repo_root/safe-pi/Dockerfile" ||
+	fail "the image must ship the C.UTF-8 the entrypoint falls back to"
+grep -Fq "ENV LANG=C.UTF-8" "$repo_root/safe-pi/Dockerfile" ||
+	fail "a direct image run must default to a UTF-8 locale"
 
 printf 'safe-pi entrypoint tests passed\n'

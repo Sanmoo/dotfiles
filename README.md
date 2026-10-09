@@ -319,6 +319,10 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
   immediately.
 - The sandbox is a filesystem boundary, not a credential boundary: it can read
   the credentials Pi uses.
+- `safe-pi` runs under your host locale. The image ships `en_US.UTF-8`, and a
+  host forwarding a locale the image does not have gets glibc's `C.UTF-8`
+  instead of a silent POSIX fallback, so tools and the Erlang VM are always
+  UTF-8. Another locale means regenerating it in the image.
 - Herdr's native `agent_session` reference is stored only for official
   `herdr:*` sources — by design, not by version — so the sandbox reporter
   declares its own resume command, which Herdr has accepted from a custom
