@@ -12,8 +12,10 @@
  * (`HERDR_ENV`, `HERDR_SOCKET_PATH`, `HERDR_PANE_ID`) inside the sandbox and
  * hands this reporter the socket and pane under `SAFE_PI_HERDR_*` instead, so
  * exactly one source owns the pane. The state mapping matches the managed
- * integration — working during a turn, idle once settled, blocked while the
- * permission gate is open — so the sidebar behaves as it does for a host Pi.
+ * integration — working during a turn, idle once settled, and blocked while a
+ * `herdr:blocked` source is active — so the sidebar behaves as it does for a
+ * host Pi. Inside the sandbox nothing emits `blocked`: the permission gate
+ * registers nothing there, because the container is the boundary.
  * Every report carries a monotonically increasing `seq`, so Herdr keeps the
  * newest state even when two reports overlap.
  *

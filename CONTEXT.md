@@ -54,6 +54,10 @@ _Avoid_: Environment update, collection variable (when meaning a shell export)
 The throwaway container Pi runs in when started through `safe-pi`.
 _Avoid_: container (when meaning the isolation boundary), devcontainer
 
+**Permission gate**:
+The `permission-gate` extension: an advisory confirmation prompt before a dangerous bash command on the host, not an isolation boundary. Inside the sandbox it registers nothing, so a dangerous command runs without a prompt even though the repository, the sessions directory, the toolchain volume and the forwarded SSH agent are all reachable from there.
+_Avoid_: sandbox guard, sandbox protection, isolation (when meaning the gate)
+
 **Declared environment**:
 The set of tool versions the sandbox installs, read from the repository's tracked mise configuration instead of from the host's installed toolchain.
 _Avoid_: dev environment, toolchain (when meaning the declaration)
@@ -87,7 +91,7 @@ The `resume_argv` a sandboxed pane's reporter attaches to its Herdr reports (`sa
 _Avoid_: resume hook, restore command, resume path
 
 **Sandbox reporter**:
-The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working`, `blocked`, and `idle` state, its session reference, and a self-reported resume command, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
+The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working` and `idle` state, its session reference, and a self-reported resume command, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
 _Avoid_: Herdr integration (when meaning the sandbox-owned reporter), host integration
 
 ## aws-console

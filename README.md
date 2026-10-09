@@ -295,10 +295,12 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 - Your Pi configuration, credentials, sessions, skills, prompts, agents,
   extensions, and packages, shared with the host Pi. Extensions and packages are
   read-only inside the sandbox.
-- Herdr's socket, plus a sandbox reporter that reports the pane as `working`,
-  `blocked`, and `idle`. Herdr's own Pi integration is disabled inside the
-  sandbox, because Herdr ignores it for a pane whose foreground process is
-  `docker`.
+- Herdr's socket, plus a sandbox reporter that reports the pane as `working`
+  and `idle`. Herdr's own Pi integration is disabled inside the sandbox,
+  because Herdr ignores it for a pane whose foreground process is `docker`.
+  The `permission-gate` extension registers nothing inside the sandbox — the
+  container is the boundary there, so dangerous commands run without a prompt,
+  and the pane never reports `blocked`.
 - The declared environment installed inside the container from the repository's
   tracked mise configuration, kept in the toolchain volume.
 - Not your host toolchain, not other repositories, not the rest of your home
@@ -352,7 +354,7 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
 | Herdr shows the pane as a plain terminal | You are not running inside a Herdr pane, or Herdr's socket is not reachable from the container, so the sandbox reporter cannot attribute the pane |
 | A restored pane comes back as a plain shell | No report reached Herdr before the restart, so the pane has no stored resume command; run `safe-pi -c` |
-| Blocked prompts never appear in Herdr | The `permission-gate` extension is missing from the mounted configuration, so nothing emits the blocked event the sandbox reporter consumes |
+| Dangerous commands run without a prompt | Expected inside the sandbox: the `permission-gate` extension registers nothing there, because the container is the boundary |
 | Warning about differing Pi versions | The image's Pi is older than the host's; run `safe-pi --update` |
 | `setlocale: LC_ALL: cannot change locale (...)` on every start | Your shell exports an `LC_ALL` the image does not ship; the sandbox runs `C.UTF-8` instead, and the notice comes from the shell that reads the locale before the sandbox can replace it |
 

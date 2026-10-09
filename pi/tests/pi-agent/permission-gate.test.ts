@@ -100,6 +100,31 @@ const HERDR_WAITING = {
 const HERDR_CLEARED = { name: "herdr:blocked", data: { active: false } };
 
 describe("permission-gate", () => {
+	it("registers nothing inside the safe-pi sandbox", () => {
+		const handlers = new Map<string, EventHandler>();
+		const commands = new Map<string, CommandHandler>();
+		const pi = {
+			events: { emit() {} },
+			on(name: string, callback: EventHandler) {
+				handlers.set(name, callback);
+			},
+			registerCommand(name: string, options: { handler: CommandHandler }) {
+				commands.set(name, options.handler);
+			},
+			appendEntry() {},
+		};
+
+		process.env.SAFE_PI_SANDBOX = "1";
+		try {
+			permissionGate(pi as never);
+		} finally {
+			delete process.env.SAFE_PI_SANDBOX;
+		}
+
+		expect(handlers.size).toBe(0);
+		expect(commands.size).toBe(0);
+	});
+
 	it("does not block safe bash commands or emit Herdr blocked events", async () => {
 		const { toolCall, emitted } = setupPermissionGate();
 

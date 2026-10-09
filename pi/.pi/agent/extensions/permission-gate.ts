@@ -16,6 +16,12 @@
  * YOLO mode shows a footer status and can be inspected or toggled with
  * /permission-gate: there, on/off describe the gate itself, so "on" restores the
  * confirmations and "off" silences them for the rest of the session.
+ *
+ * Inside the safe-pi sandbox the extension registers nothing at all: the container
+ * is the boundary there and the gate is a host-side guardrail, so an approval
+ * prompt would only interrupt commands whose blast radius the sandbox already
+ * contains. The wrapper marks the sandbox with SAFE_PI_SANDBOX=1; the host keeps
+ * the gate unchanged.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -40,6 +46,8 @@ const GATE_ON_ARGS = new Set(["on", "ask", "perguntar"]);
 const GATE_OFF_ARGS = new Set(["off", "yolo"]);
 
 export default function (pi: ExtensionAPI) {
+	if (process.env.SAFE_PI_SANDBOX === "1") return;
+
 	let yoloActive = false;
 
 	const emitHerdrBlocked = (data: { active: boolean; label?: string }) => {
