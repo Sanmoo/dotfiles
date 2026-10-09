@@ -4,17 +4,17 @@
 
 **Blocked by:** 04 — Declared environment installed inside the container
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With the declaration carrying the pins below, a converged machine's `safe-pi` start prints no convergence output and adds no noticeable delay (measured, recorded on this ticket).
-- [ ] `safe-pi --prepare` exits zero on the declared environment: the first converge installs the pinned erlang and elixir into the volume (~13 s measured), later runs install nothing.
-- [ ] The sandbox runs the pinned versions: inside `safe-pi --shell`, `erl` reports OTP 29 and `elixir --version` reports `1.20.2-otp-29`.
-- [ ] The sandbox never falls back to a source build: a pin with no precompiled build for the target fails fast, without the 107 MB source download, and `--prepare` reports it with a non-zero exit. (Recipe: temporarily target `ubuntu-20.04`, which Bob has no OTP 29 build for.)
-- [ ] The pin costs the host nothing: the next host `mise install` neither downloads nor compiles erlang/elixir, because the pins equal what is already installed.
-- [ ] The change stays sandbox-scoped and minimal: the tracked declaration gains only the two pins (no `[settings.erlang]`, the other tools keep `latest`), and host mise behaviour is unchanged.
-- [ ] An existing `safe-pi:current-u<uid>` image is rebuilt on next use, so the change reaches a machine that already has one.
-- [ ] The entrypoint harness asserts that mise runs with the precompiled target and the source-build refusal set, the way it already asserts the data/cache/state directories.
-- [ ] Ticket 06, which owns the guide, gains the measured first-run and steady-start numbers and the note that `erlang`/`elixir` are pinned exceptions to the declaration's `latest` story.
+- [x] With the declaration carrying the pins below, a converged machine's `safe-pi` start prints no convergence output and adds no noticeable delay (measured, recorded on this ticket).
+- [x] `safe-pi --prepare` exits zero on the declared environment: the first converge installs the pinned erlang and elixir into the volume (~13 s measured), later runs install nothing.
+- [x] The sandbox runs the pinned versions: inside `safe-pi --shell`, `erl` reports OTP 29 and `elixir --version` reports `1.20.2-otp-29`.
+- [x] The sandbox never falls back to a source build: a pin with no precompiled build for the target fails fast, without the 107 MB source download, and `--prepare` reports it with a non-zero exit. (Recipe: temporarily target `ubuntu-20.04`, which Bob has no OTP 29 build for.)
+- [x] The pin costs the host nothing: the next host `mise install` neither downloads nor compiles erlang/elixir, because the pins equal what is already installed.
+- [x] The change stays sandbox-scoped and minimal: the tracked declaration gains only the two pins (no `[settings.erlang]`, the other tools keep `latest`), and host mise behaviour is unchanged.
+- [x] An existing `safe-pi:current-u<uid>` image is rebuilt on next use, so the change reaches a machine that already has one.
+- [x] The entrypoint harness asserts that mise runs with the precompiled target and the source-build refusal set, the way it already asserts the data/cache/state directories.
+- [x] Ticket 06, which owns the guide, gains the measured first-run and steady-start numbers and the note that `erlang`/`elixir` are pinned exceptions to the declaration's `latest` story.
 
 ## What to change
 
@@ -54,3 +54,35 @@ Decisions:
 - **Retiring the tools to per-repository `.mise.toml` was rejected**: nothing uses them today, but that removes them from the host's global toolkit as well and only postpones a working sandbox install that costs 11 seconds once.
 - **The guide's timing correction belongs to ticket 06**, which has not shipped; the numbers above are recorded there instead.
 - **Ticket 04 stays `resolved`** with its correction comment; this ticket owns the fix, and ADR 0002 records the decision and the alternatives.
+
+### Implemented (2026-10-09)
+
+Integrated as `fde912f`, on the planning commit `41f7ec7`. `FULL GATE: PASS`
+(23 of 23 units) in the worktree that carried the change.
+
+Verified against the real daemon and the rebuilt image (entrypoint label `3`):
+
+- **Convergence.** `safe-pi --prepare` exits zero. A fresh volume converged the
+two pinned tools in 13.4 s (`erlang@29.0.4` 12.2 s from Bob's Ubuntu 22.04
+build, `elixir@1.20.2-otp-29` 1.2 s) with the other 18 tools already present —
+17.6 s wall clock for the whole first run, which also included the stale
+image's rebuild (about a second: the heavy layers stay in the build cache).
+- **Steady start.** Convergence is silent and costs 0.35 s; a full
+`safe-pi --version` through the container takes 2.8 s, all of it container
+startup.
+- **Inside the sandbox.** `erl` resolves to the mise shim and prints `otp 29`;
+`elixir --version` reports `Elixir 1.20.2 (compiled with Erlang/OTP 29)`.
+- **No source fallback.** Targeting `ubuntu-20.04`, which Bob has no OTP 29
+build for, fails in 0.22 s with `precompiled erlang is not available: expected
+exactly one Hex OTP build record for OTP-29.0.4, found 0` — no download,
+nothing installed.
+- **Host untouched.** The pins name what the host already has: its
+`mise install --dry-run-code` reports `mise all tools are installed` and exits
+zero.
+
+Found while verifying, not a regression this introduced and not fixed here: the
+sandbox's locale. The wrapper forwards the host's `LANG=en_US.UTF-8`, which
+`node:26-bookworm-slim` does not generate, so the Erlang VM starts with native
+name encoding latin1 — every `elixir` invocation warns that it may malfunction,
+including the one mise runs while installing Elixir on the first converge.
+Raised as ticket 12.

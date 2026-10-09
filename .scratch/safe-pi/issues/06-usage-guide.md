@@ -38,3 +38,24 @@ corrected after research: Herdr stores `agent_session` only for official
 follow-up (ticket 07), not a missing release. The rest of the guide — the README
 move, first-run timing, and the erlang/elixir convergence failure — is still
 this ticket's work and still awaits ticket 04.
+
+### Timing and the pinned exceptions (from ticket 11)
+
+Ticket 11 is integrated as `fde912f`, and its measurements are the numbers this
+guide should carry:
+
+- **First run.** The image build (about a minute when cold) plus the toolchain
+  convergence, which for a fresh volume is 13.4 s inside mise and 17.6 s wall
+  clock for the whole run. The draft's "several minutes" is stale.
+- **Steady start.** Convergence installs nothing, prints nothing and costs
+  0.35 s; a full container start (`safe-pi --version`) takes 2.8 s, all of it
+  container startup. The draft's "about a second" should be this number.
+- `safe-pi --prepare` exits zero on the declared environment, first run and
+  after.
+
+One correction the draft does not have: `erlang` and `elixir` are the
+declaration's two pinned exceptions (`29.0.4`, `1.20.2-otp-29`) while every
+other tool stays `latest`. The sandbox installs them from Bob's precompiled
+Ubuntu 22.04 build and refuses a source build, so a converged start never
+compiles OTP. The "`latest` pins follow new releases the way they do on the
+host" bullet still holds for the rest of the declaration.
