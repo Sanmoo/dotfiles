@@ -23,7 +23,7 @@ done
 # and Stow aborts when it meets one. Ask Git for every untracked path under the
 # package and ignore each one, so the tracked index is the single source of
 # truth for what the package distributes.
-if ! prefix=$(git -C "$checkout" rev-parse --show-prefix 2>/dev/null); then
+if ! git -C "$checkout" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 	printf 'Checkout is not a Git work tree: %s\n' "$checkout" >&2
 	exit 1
 fi
@@ -32,18 +32,25 @@ if [[ -z "$(git -C "$checkout" ls-files -- agents)" ]]; then
 	exit 1
 fi
 
+# Git emits paths relative to the current directory, so dropping the package
+# prefix leaves the target path Stow matches against. Escape it so the pattern
+# is literal before anchoring it in a --ignore regex.
+escape_for_stow() {
+	printf '%s' "${1#agents/}" | sed 's/[][\\.^$*+?(){}|]/\\&/g'
+}
+
 ignore_args=()
 while IFS= read -r -d '' path; do
-	path=${path#"$prefix"}
-	path=${path#agents/}
 	path=${path%/}
 	[[ -n "$path" ]] || continue
-	escaped=$(printf '%s' "$path" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
-	ignore_args+=(--ignore="^${escaped}$")
+	ignore_args+=(--ignore="^$(escape_for_stow "$path")$")
 done < <(
 	git -C "$checkout" ls-files --others --directory -z -- agents
 	git -C "$checkout" ls-files --others --ignored --exclude-standard --directory -z -- agents
 )
 
-stow --no-folding --simulate --dir="$checkout" --target="$home" "${ignore_args[@]}" agents
-stow --no-folding --dir="$checkout" --target="$home" "${ignore_args[@]}" agents
+stow_agents() {
+	stow --no-folding "$@" --dir="$checkout" --target="$home" "${ignore_args[@]}" agents
+}
+stow_agents --simulate
+stow_agents
