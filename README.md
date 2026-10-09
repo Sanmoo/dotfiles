@@ -320,9 +320,10 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 - The sandbox is a filesystem boundary, not a credential boundary: it can read
   the credentials Pi uses.
 - `safe-pi` runs under your host locale. The image ships `en_US.UTF-8`, and a
-  host forwarding a locale the image does not have gets glibc's `C.UTF-8`
-  instead of a silent POSIX fallback, so tools and the Erlang VM are always
-  UTF-8. Another locale means regenerating it in the image.
+  host forwarding a locale the image does not ship — or one without a UTF-8
+  codeset, like `C` — gets glibc's `C.UTF-8` instead of a silent POSIX fallback,
+  so tools and the Erlang VM are always UTF-8. Another locale means regenerating
+  it in the image.
 - Herdr's native `agent_session` reference is stored only for official
   `herdr:*` sources — by design, not by version — so the sandbox reporter
   declares its own resume command, which Herdr has accepted from a custom
@@ -352,6 +353,7 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 | A restored pane comes back as a plain shell | No report reached Herdr before the restart, so the pane has no stored resume command; run `safe-pi -c` |
 | Blocked prompts never appear in Herdr | The `permission-gate` extension is missing from the mounted configuration, so nothing emits the blocked event the sandbox reporter consumes |
 | Warning about differing Pi versions | The image's Pi is older than the host's; run `safe-pi --update` |
+| `setlocale: LC_ALL: cannot change locale (...)` on every start | Your shell exports an `LC_ALL` the image does not ship; the sandbox runs `C.UTF-8` instead, and the notice comes from the shell that reads the locale before the sandbox can replace it |
 
 ## For `Omarchy`
 

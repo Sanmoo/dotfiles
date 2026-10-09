@@ -242,10 +242,11 @@ done
 	fail "declared shims must precede the image's binaries: $path_line"
 
 # --- The locale the sandbox runs under -----------------------------------------
-# The wrapper forwards the host's locale as host identity; the image ships
-# en_US.UTF-8 and glibc's built-in C.UTF-8. A locale the image cannot resolve is
-# not cosmetic: glibc falls back to the POSIX charmap, which starts the Erlang
-# VM with latin1 native name encoding and makes every `elixir` invocation warn.
+# The wrapper forwards the host's locale as host identity, and the image ships
+# en_US.UTF-8 plus glibc's built-in C.UTF-8. A locale glibc cannot resolve falls
+# back to the POSIX charmap, which is what started the Erlang VM with latin1
+# native name encoding.
+# shellcheck disable=SC2016 # expanded by the command that runs inside the sandbox
 READ_LOCALES='printf "locale %s|%s|%s\n" "${LANG-}" "${LC_ALL-}" "${LC_CTYPE-}"'
 
 reset_stubs

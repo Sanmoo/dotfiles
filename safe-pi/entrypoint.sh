@@ -4,12 +4,13 @@
 # The image's entrypoint, so every sandbox start (Pi, the debug shell, or a
 # prepare run) goes through the same convergence:
 #
-#   1. converges the environment declared in the mounted mise configuration, plus
+#   1. resolves the locale onto one the image can run UTF-8 under;
+#   2. converges the environment declared in the mounted mise configuration, plus
 #      the working repository's own pins, into the toolchain volume;
-#   2. puts the declared tools' shims ahead of the image's own binaries;
-#   3. before a Pi start, checks that the Node Pi will run on satisfies Pi's
+#   3. puts the declared tools' shims ahead of the image's own binaries;
+#   4. before a Pi start, checks that the Node Pi will run on satisfies Pi's
 #      engine requirement;
-#   4. executes the command.
+#   5. executes the command.
 #
 # Usage: safe-pi-entrypoint --prepare
 #        safe-pi-entrypoint command [arguments...]
@@ -78,10 +79,10 @@ for locale_var in LANG LC_ALL LC_CTYPE; do
 	fi
 	locale_honoured=0
 	while IFS= read -r locale_entry; do
-		[[ "$(locale_key "$locale_entry")" == "$locale_wanted" ]] && {
+		if [[ "$(locale_key "$locale_entry")" == "$locale_wanted" ]]; then
 			locale_honoured=1
 			break
-		}
+		fi
 	done <<<"$sandbox_locales"
 	((locale_honoured)) || export "$locale_var=C.UTF-8"
 done

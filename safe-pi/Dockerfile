@@ -54,11 +54,10 @@ RUN set -eux; \
         xz-utils; \
     ln -s /usr/bin/fdfind /usr/local/bin/fd; \
     # The wrapper forwards the host's locale as host identity, so the image has
-    # to ship it: glibc resolving a locale it does not have is not cosmetic, it
-    # warns on every locale-aware call and falls back to the POSIX charmap,
-    # which starts the Erlang VM with latin1 native name encoding. `localedef`
-    # compiles this one locale out of the source data `locales` provides rather
-    # than everything `/etc/locale.gen` names; `en_US.UTF-8` is what the host
+    # to ship it: what glibc cannot resolve it falls back to POSIX, and that is
+    # the charmap the Erlang VM starts latin1 under. `localedef` compiles this
+    # one locale out of the source data `locales` provides rather than
+    # everything `/etc/locale.gen` names; `en_US.UTF-8` is what the host
     # forwards. C.UTF-8 is glibc's built-in and is asserted here because the
     # entrypoint falls back to it for any locale the image cannot run UTF-8
     # under.
