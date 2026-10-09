@@ -137,9 +137,6 @@ run_entrypoint() {
 			MISE_TRUSTED_CONFIG_PATHS="$FAKE_INHERITED_TRUST" \
 			SAFE_PI_TEST_LOG="$CALL_LOG" \
 			SAFE_PI_TEST_NPM_ROOT="$npm_root" \
-			SAFE_PI_SANDBOX="${SAFE_PI_SANDBOX-}" \
-			SAFE_PI_HOST_EXTENSIONS="${SAFE_PI_HOST_EXTENSIONS-}" \
-			SAFE_PI_REPORTER="${SAFE_PI_REPORTER-}" \
 			SAFE_PI_FAKE_MISE_STATUS="$FAKE_MISE_STATUS" \
 			SAFE_PI_FAKE_MISE_SLEEP="$FAKE_MISE_SLEEP" \
 			SAFE_PI_FAKE_MISE_FAIL_CWD="$FAKE_MISE_FAIL_CWD" \
@@ -311,76 +308,17 @@ sequence="$(grep -E '^mise-(begin|end)$' "$CALL_LOG" | paste -sd' ')"
 expected="$(printf 'mise-begin mise-end %.0s' 1 2 3 4 | sed 's/ $//')"
 [[ "$sequence" == "$expected" ]] || fail "concurrent convergence overlapped: $sequence"
 
-# --- The sandbox view keeps host extensions but swaps the Herdr integration ----
-# The wrapper mounts the host extensions read-only at a container-only path and
-# a tmpfs at the location Pi discovers; the entrypoint fills that view with
-# every host extension except the Herdr-managed integration, plus the sandbox
-# reporter, so exactly one Herdr source owns the pane. The reporter and the
-# Dockerfile line that ships it are part of the same contract.
+# --- The sandbox reporter ships in the image -----------------------------------
+# The wrapper loads it explicitly with `-e`, so the image must carry it and its
+# directory must be traversable; the reporter's behavior is covered by the Pi
+# suite (pi/tests/pi-agent/herdr-reporter.test.ts).
 [[ -f "$repo_root/safe-pi/herdr-reporter.ts" ]] ||
 	fail "the sandbox reporter must live in the image build context"
 grep -Fq "herdr-reporter.ts" "$repo_root/safe-pi/Dockerfile" ||
 	fail "the image must copy the sandbox reporter"
-
-host_ext="$tmpdir/host-extensions"
-mkdir -p "$host_ext/pi-auto-rename"
-printf 'managed\n' >"$host_ext/herdr-agent-state.ts"
-printf 'managed js\n' >"$host_ext/herdr-agent-state.js"
-printf 'gate\n' >"$host_ext/permission-gate.ts"
-printf 'theme\n' >"$host_ext/omarchy-system-theme.ts"
-printf 'index\n' >"$host_ext/pi-auto-rename/index.ts"
-
-image_ext="$tmpdir/image-extensions"
-mkdir -p "$image_ext"
-printf '// reporter\n' >"$image_ext/herdr-reporter.ts"
-
-reset_stubs
-rm -rf "$home/.pi"
-SAFE_PI_SANDBOX=1 \
-	SAFE_PI_HOST_EXTENSIONS="$host_ext" \
-	SAFE_PI_REPORTER="$image_ext/herdr-reporter.ts" \
-	run_entrypoint pi --version >/dev/null || fail "sandbox start with an extensions view failed"
-
-view="$home/.pi/agent/extensions"
-[[ -L "$view/herdr-reporter.ts" ]] || fail "the reporter must be linked into the sandbox view"
-[[ "$(readlink "$view/herdr-reporter.ts")" == "$image_ext/herdr-reporter.ts" ]] ||
-	fail "the reporter link must point at the image's reporter"
-for managed in herdr-agent-state.ts herdr-agent-state.js; do
-	[[ ! -e "$view/$managed" && ! -L "$view/$managed" ]] ||
-		fail "the Herdr-managed integration $managed must not be in the sandbox view"
-done
-[[ -L "$view/permission-gate.ts" ]] || fail "host extension files must stay in the view"
-[[ -L "$view/omarchy-system-theme.ts" ]] || fail "host extension files must stay in the view"
-[[ -L "$view/pi-auto-rename" ]] || fail "host extension directories must stay in the view"
-
-# The reporter loads even when the host has no extensions to mount.
-reset_stubs
-rm -rf "$home/.pi"
-SAFE_PI_SANDBOX=1 \
-	SAFE_PI_HOST_EXTENSIONS="$tmpdir/no-host-extensions" \
-	SAFE_PI_REPORTER="$image_ext/herdr-reporter.ts" \
-	run_entrypoint pi --version >/dev/null || fail "reporter-only view start failed"
-[[ -L "$home/.pi/agent/extensions/herdr-reporter.ts" ]] ||
-	fail "the reporter must load even without host extensions"
-
-# Running the image directly does not touch the discovered extensions path.
-reset_stubs
-rm -rf "$home/.pi"
-SAFE_PI_HOST_EXTENSIONS="$host_ext" \
-	SAFE_PI_REPORTER="$image_ext/herdr-reporter.ts" \
-	run_entrypoint pi --version >/dev/null || fail "direct image run failed"
-[[ ! -e "$home/.pi/agent/extensions" ]] ||
-	fail "a direct image run must not build the sandbox view"
-
-# Building the view is best effort: an unusable view never blocks Pi.
-reset_stubs
-rm -rf "$home/.pi"
-mkdir -p "$home/.pi/agent"
-printf 'not a directory\n' >"$home/.pi/agent/extensions"
-SAFE_PI_SANDBOX=1 \
-	SAFE_PI_HOST_EXTENSIONS="$host_ext" \
-	SAFE_PI_REPORTER="$image_ext/herdr-reporter.ts" \
-	run_entrypoint pi --version >/dev/null || fail "an unusable view must not block Pi"
-assert_call "pi --version"
+# BuildKit applies `--chmod` to an implicitly-created destination directory, so
+# a missing explicit `install -d` leaves the reporter directory non-traversable.
+grep -Fq "install -d -m 0755 /usr/local/share/safe-pi" "$repo_root/safe-pi/Dockerfile" ||
+	fail "the reporter directory must be created traversable before the COPY"
 
 printf 'safe-pi entrypoint tests passed\n'

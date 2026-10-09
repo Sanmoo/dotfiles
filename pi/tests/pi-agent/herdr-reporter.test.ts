@@ -11,7 +11,7 @@ type Request = { id?: string; method?: string; params?: Record<string, unknown> 
 
 const SESSION_FILE = "/run/safe-pi/sessions/--repo--/2026-01-01T00-00-00.jsonl";
 const PANE_ID = "w1:p1";
-const HERDR_VARS = ["HERDR_ENV", "HERDR_SOCKET_PATH", "HERDR_PANE_ID"] as const;
+const HERDR_VARS = ["SAFE_PI_HERDR_ENV", "SAFE_PI_HERDR_SOCKET_PATH", "SAFE_PI_HERDR_PANE_ID"] as const;
 
 const cleanups: Array<() => Promise<void>> = [];
 const savedEnv = new Map<string, string | undefined>();
@@ -38,9 +38,8 @@ afterEach(async () => {
 });
 
 function setHerdrEnv(socketPath: string): void {
-	process.env.HERDR_ENV = "1";
-	process.env.HERDR_SOCKET_PATH = socketPath;
-	process.env.HERDR_PANE_ID = PANE_ID;
+	process.env.SAFE_PI_HERDR_SOCKET_PATH = socketPath;
+	process.env.SAFE_PI_HERDR_PANE_ID = PANE_ID;
 }
 
 function makeContext(overrides: Record<string, unknown> = {}) {
@@ -252,9 +251,8 @@ describe("herdr-reporter", () => {
 	});
 
 	it("never throws or slows Pi when the socket is unreachable", () => {
-		process.env.HERDR_ENV = "1";
-		process.env.HERDR_SOCKET_PATH = path.join(os.tmpdir(), `herdr-missing-${process.pid}.sock`);
-		process.env.HERDR_PANE_ID = PANE_ID;
+		process.env.SAFE_PI_HERDR_SOCKET_PATH = path.join(os.tmpdir(), `herdr-missing-${process.pid}.sock`);
+		process.env.SAFE_PI_HERDR_PANE_ID = PANE_ID;
 		const { handlers, blocked } = setupPi();
 
 		const start = Date.now();

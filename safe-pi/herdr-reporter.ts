@@ -8,7 +8,9 @@
  * Herdr applies to the pane regardless of its foreground process.
  *
  * It is a peer of the herdr-managed extension, not a replacement on the host:
- * the sandbox builds its extensions view without `herdr-agent-state.ts`, so
+ * the wrapper withholds the variables that activate the managed integration
+ * (`HERDR_ENV`, `HERDR_SOCKET_PATH`, `HERDR_PANE_ID`) inside the sandbox and
+ * hands this reporter the socket and pane under `SAFE_PI_HERDR_*` instead, so
  * exactly one source owns the pane. The state mapping matches the managed
  * integration — working during a turn, idle once settled, blocked while the
  * permission gate is open — so the sidebar behaves as it does for a host Pi.
@@ -61,11 +63,7 @@ interface ExtensionAPI {
 type AgentState = "working" | "blocked" | "idle";
 
 function enabled(): boolean {
-	return (
-		process.env.HERDR_ENV === "1" &&
-		!!process.env.HERDR_SOCKET_PATH &&
-		!!process.env.HERDR_PANE_ID
-	);
+	return !!process.env.SAFE_PI_HERDR_SOCKET_PATH && !!process.env.SAFE_PI_HERDR_PANE_ID;
 }
 
 let reportSeq = Date.now() * 1000;
@@ -96,7 +94,7 @@ function sendRequest(request: unknown): void {
 	};
 
 	try {
-		socket = net.createConnection(process.env.HERDR_SOCKET_PATH as string);
+		socket = net.createConnection(process.env.SAFE_PI_HERDR_SOCKET_PATH as string);
 		socket.unref?.();
 		socket.on("error", finish);
 		socket.on("end", finish);
@@ -163,7 +161,7 @@ export default function (pi: ExtensionAPI): void {
 
 	function baseParams(): Record<string, unknown> {
 		return {
-			pane_id: process.env.HERDR_PANE_ID,
+			pane_id: process.env.SAFE_PI_HERDR_PANE_ID,
 			source: SOURCE,
 			agent: AGENT,
 			seq: nextReportSeq(),

@@ -102,7 +102,8 @@ RUN set -eux; \
         "/home/${USERNAME}/.local" \
         "/home/${USERNAME}/.local/share" \
         "/home/${USERNAME}/.local/share/mise"; \
-    install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/ssh-agent.sock
+    install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/ssh-agent.sock; \
+    install -d -m 0755 /usr/local/share/safe-pi
 
 # The entrypoint converges the declared environment into the volume, puts its
 # shims ahead of the image's binaries, checks Pi's Node requirement, and then
@@ -112,6 +113,9 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/safe-pi-entrypoint
 # The sandbox-owned Herdr reporter. It loads from the container-only extensions
 # view the entrypoint builds, because the mounted Herdr-managed integration is
 # ignored for a pane whose foreground process is not a detected Pi (docker).
+# The directory is created above (mode 0755): BuildKit applies `--chmod` to an
+# implicitly-created destination directory too, which would leave it
+# non-traversable and make the reporter unreadable to the sandbox user.
 COPY --chmod=0644 herdr-reporter.ts /usr/local/share/safe-pi/herdr-reporter.ts
 
 ENV HOME=/home/${USERNAME}

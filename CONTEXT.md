@@ -71,12 +71,8 @@ Herdr behavior where a sandboxed pane's session reference cannot be resumed on t
 _Avoid_: disabled restore, broken restore
 
 **Sandbox reporter**:
-The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working`, `blocked`, and `idle` state, and its session reference, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`).
+The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working`, `blocked`, and `idle` state, and its session reference, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
 _Avoid_: Herdr integration (when meaning the sandbox-owned reporter), host integration
-
-**Extensions view**:
-The container-only extensions directory the sandbox builds from the read-only mounted host extensions, omitting the Herdr-managed integration and adding the sandbox reporter.
-_Avoid_: extensions mount, extension list
 
 ## aws-console
 

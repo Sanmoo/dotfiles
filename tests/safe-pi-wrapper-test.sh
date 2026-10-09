@@ -25,6 +25,7 @@ PI_LOG="$tmpdir/pi.log"
 
 uid="$(id -u)"
 current_tag="safe-pi:current-u$uid"
+reporter="-e /usr/local/share/safe-pi/herdr-reporter.ts"
 
 fail() {
 	printf 'FAIL: %s\n' "$*" >&2
@@ -199,7 +200,7 @@ assert_log "docker build --tag $current_tag"
 assert_log "docker run --rm"
 assert_log "--workdir $PWD"
 assert_log "--volume $PWD:$PWD"
-assert_log " pi --model test/model a b"
+assert_log " pi $reporter --model test/model a b"
 
 build_line="$(log_line_of "docker build --tag $current_tag")"
 run_line="$(log_line_of "docker run --rm")"
@@ -212,7 +213,7 @@ reset_stubs
 FAKE_IMAGES="$current_tag"
 run_safe_pi -c || fail "cached run failed"
 assert_no_log "docker build"
-assert_log " pi -c"
+assert_log " pi $reporter -c"
 
 # --- The working directory is the invoking directory --------------------------
 
@@ -234,7 +235,7 @@ run_safe_pi --rebuild --model test/model || fail "rebuild run failed"
 assert_log "docker build --tag $current_tag"
 assert_log "--build-arg PI_VERSION=2.2.2"
 assert_log "docker tag $current_tag safe-pi:pi-2.2.2-u$uid"
-assert_log " pi --model test/model"
+assert_log " pi $reporter --model test/model"
 
 # --- Refresh resolves the latest release and re-points the current tag ----------
 
@@ -267,7 +268,7 @@ run_safe_pi -c 2>"$tmpdir/stale.err" || fail "stale image run failed"
 assert_log "docker build --tag $current_tag"
 assert_log "--build-arg PI_VERSION=1.1.0"
 assert_log "docker run --rm"
-grep -Fq "entrypoint" "$tmpdir/stale.err" || fail "stale image rebuild should say why"
+grep -Fq "reporter" "$tmpdir/stale.err" || fail "stale image rebuild should say why"
 
 # An image from the previous entrypoint version is also stale: it cannot build
 # the sandbox extensions view the reporter loads from, so it is rebuilt too.
@@ -277,7 +278,7 @@ FAKE_ENTRYPOINT="1"
 run_safe_pi -c 2>"$tmpdir/stale-v1.err" || fail "v1-entrypoint image run failed"
 assert_log "docker build --tag $current_tag"
 assert_log "docker run --rm"
-grep -Fq "entrypoint" "$tmpdir/stale-v1.err" || fail "v1-entrypoint rebuild should say why"
+grep -Fq "reporter" "$tmpdir/stale-v1.err" || fail "v1-entrypoint rebuild should say why"
 
 reset_stubs
 FAKE_IMAGES="$current_tag
@@ -325,7 +326,7 @@ for flag in -h --help --version; do
 	reset_stubs
 	FAKE_IMAGES="$current_tag"
 	run_safe_pi "$flag" || fail "forwarding $flag failed"
-	assert_log " pi $flag"
+	assert_log " pi $reporter $flag"
 done
 
 # --- Warn when the image's Pi differs from the host's Pi -----------------------
@@ -468,7 +469,7 @@ assert_log "--file $altcontext/Dockerfile"
 reset_stubs
 FAKE_IMAGES="$current_tag"
 run_safe_pi -- --rebuild --shell --dry-run || fail "pass-through run failed"
-assert_log " pi --rebuild --shell --dry-run"
+assert_log " pi $reporter --rebuild --shell --dry-run"
 assert_log "docker run --rm"
 assert_no_log "docker build"
 
@@ -506,8 +507,7 @@ FAKE_IMAGES="$current_tag"
 assert_log "--workdir $invoked"
 assert_log "--volume $invoked:$invoked:rw"
 assert_log "--volume $contract_home/.pi/agent:$contract_home/.pi/agent:rw"
-assert_log "--volume $contract_home/.pi/agent/extensions:/run/safe-pi/host-extensions:ro"
-assert_log "--tmpfs $contract_home/.pi/agent/extensions"
+assert_log "--volume $contract_home/.pi/agent/extensions:$contract_home/.pi/agent/extensions:ro"
 assert_log "--volume $contract_home/.pi/agent/npm:$contract_home/.pi/agent/npm:ro"
 assert_log "--volume $contract_home/.pi/agent/sessions:/run/safe-pi/sessions:rw"
 assert_log "--volume $contract_home/.agents/skills:$contract_home/.agents/skills:ro"
@@ -534,11 +534,12 @@ assert_log "--env MISE_STATE_DIR=$contract_home/.local/share/mise/state"
 encoded_invoked="${invoked#/}"
 encoded_invoked="--${encoded_invoked//[\/\\:]/-}--"
 assert_log "--env PI_CODING_AGENT_SESSION_DIR=/run/safe-pi/sessions/$encoded_invoked"
-assert_log "--env SAFE_PI_HOST_EXTENSIONS=/run/safe-pi/host-extensions"
 assert_log "--env SSH_AUTH_SOCK=/run/safe-pi/ssh-agent.sock"
-assert_log "--env HERDR_ENV"
-assert_log "--env HERDR_SOCKET_PATH"
-assert_log "--env HERDR_PANE_ID"
+# The reporter gets the socket and pane under sandbox-owned names; Herdr's own
+# names are withheld so the Herdr-managed integration cannot activate.
+assert_log "--env SAFE_PI_HERDR_SOCKET_PATH=/tmp/safe-pi-test-herdr.sock"
+assert_log "--env SAFE_PI_HERDR_PANE_ID=wtest:p1"
+assert_no_log "--env HERDR_"
 assert_no_log "docker.sock"
 
 # The Herdr and SSH variables are forwarded only when the host sets them.

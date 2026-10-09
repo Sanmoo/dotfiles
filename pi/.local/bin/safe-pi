@@ -153,9 +153,8 @@ image_pi_version() {
 	docker image inspect --format '{{ index .Config.Labels "safe-pi.pi.version" }}' "$1" 2>/dev/null
 }
 
-# Images built before the entrypoint existed carry no label, and images built
-# before the sandbox extension view carry the previous version, so both count
-# as stale: they would run without building the view the reporter loads from.
+# Images built before the reporter existed carry no label or the previous
+# version, so both count as stale: they have no sandbox reporter to load.
 image_has_entrypoint() {
 	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "2" ]]
 }
@@ -205,7 +204,7 @@ HERDR_CONFIG_DIR="$HOME/.config/herdr"
 GIT_CONFIG_FILE="$HOME/.gitconfig"
 
 CONTAINER_SESSION_DIR="/run/safe-pi/sessions"
-CONTAINER_HOST_EXTENSIONS="/run/safe-pi/host-extensions"
+CONTAINER_REPORTER="/usr/local/share/safe-pi/herdr-reporter.ts"
 CONTAINER_MISE_CONFIG_DIR="$HOME/.config/mise"
 CONTAINER_MISE_DATA_DIR="$HOME/.local/share/mise"
 # Mise's cache sits inside the toolchain volume, so remote version lookups
@@ -260,14 +259,11 @@ record_mount "$HOST_SESSION_DIR" "$CONTAINER_SESSION_DIR" rw
 # its content is the declared environment, not image content.
 record_mount "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
 
-# Installed code is held immutable while agent state stays writable. The host
-# extensions are mounted at a container-only path rather than over their own,
-# so the entrypoint can build a sandbox-owned view (a tmpfs at the normal
-# location) that keeps every host extension but replaces the Herdr-managed
-# integration with the sandbox reporter. Herdr ignores the managed
-# integration's `herdr:pi` report for a pane whose foreground is `docker`, and
-# the reporter owns the pane instead.
-add_mount "$PI_AGENT_DIR/extensions" "$CONTAINER_HOST_EXTENSIONS" ro
+# Installed code is held immutable while agent state stays writable. The mount
+# stays at its own path so the host's relative extension symlinks keep
+# resolving; the Herdr-managed integration is neutralised by withholding the
+# variables that activate it (see the environment below), not by hiding it.
+add_mount "$PI_AGENT_DIR/extensions" "$PI_AGENT_DIR/extensions" ro
 add_mount "$PI_AGENT_DIR/npm" "$PI_AGENT_DIR/npm" ro
 add_mount "$SHARED_SKILLS_DIR" "$SHARED_SKILLS_DIR" ro
 # The checkout is read-only unless the working directory *is* the checkout; a
@@ -280,11 +276,6 @@ add_mount "$PI_LENS_DIR" "$PI_LENS_DIR" rw
 add_mount "$MISE_CONFIG_DIR" "$CONTAINER_MISE_CONFIG_DIR" ro
 add_mount "$HERDR_CONFIG_DIR" "$HERDR_CONFIG_DIR" ro
 add_mount "$GIT_CONFIG_FILE" "$GIT_CONFIG_FILE" ro
-
-# The extensions view is the one contract path that is not a bind mount: it is
-# the container-only tmpfs the entrypoint populates, reported with the rest by
-# the debug shell so all of the contract is visible in one place.
-contract_paths+=("$PI_AGENT_DIR/extensions:tmpfs")
 
 # Environment: identity and terminal variables Pi and its tools need, the
 # container-only paths, and the Herdr variables forwarded only when the host
@@ -303,10 +294,15 @@ env_args+=(--env "MISE_DATA_DIR=$CONTAINER_MISE_DATA_DIR")
 env_args+=(--env "MISE_CACHE_DIR=$CONTAINER_MISE_CACHE_DIR")
 env_args+=(--env "MISE_STATE_DIR=$CONTAINER_MISE_STATE_DIR")
 env_args+=(--env "PI_CODING_AGENT_SESSION_DIR=$CONTAINER_PROJECT_SESSION_DIR")
-# The wrapper owns where the host extensions land; the entrypoint builds the
-# view from that path instead of assuming it.
-env_args+=(--env "SAFE_PI_HOST_EXTENSIONS=$CONTAINER_HOST_EXTENSIONS")
-forward_env HERDR_ENV HERDR_SOCKET_PATH HERDR_PANE_ID
+# Herdr's own process variables are deliberately NOT forwarded under those
+# names: the Herdr-managed integration activates on HERDR_ENV/HERDR_SOCKET_PATH/
+# HERDR_PANE_ID, and leaving it unactivated is what keeps exactly one source
+# (the reporter below) owning the pane. The reporter gets the socket and pane
+# under sandbox-owned names instead.
+if [[ "${HERDR_ENV-}" == "1" && -n "${HERDR_SOCKET_PATH-}" && -n "${HERDR_PANE_ID-}" ]]; then
+	env_args+=(--env "SAFE_PI_HERDR_SOCKET_PATH=$HERDR_SOCKET_PATH")
+	env_args+=(--env "SAFE_PI_HERDR_PANE_ID=$HERDR_PANE_ID")
+fi
 # The SSH agent socket is mounted only when the host provides one.
 if [[ -n "${SSH_AUTH_SOCK-}" && -S "${SSH_AUTH_SOCK}" ]]; then
 	add_mount "$SSH_AUTH_SOCK" "$CONTAINER_SSH_SOCK" rw
@@ -342,10 +338,6 @@ run_args+=(--workdir "$PWD")
 run_args+=("${mount_args[@]}")
 # The temporary directory is writable but thrown away with the container.
 run_args+=(--tmpfs /tmp)
-# The extensions view shadows the mounted host extensions. It is a tmpfs so the
-# agent cannot persist changes into the host tree, and the entrypoint fills it
-# before Pi starts.
-run_args+=(--tmpfs "$PI_AGENT_DIR/extensions")
 run_args+=("${env_args[@]}")
 run_args+=("$CURRENT_TAG")
 # The image's entrypoint converges the declared environment before whatever
@@ -359,7 +351,9 @@ prepare)
 	run_args+=(--prepare)
 	;;
 *)
-	run_args+=(pi)
+	# The sandbox reporter is loaded explicitly: it lives in the image, and the
+	# host extensions directory is mounted read-only at its own path.
+	run_args+=(pi -e "$CONTAINER_REPORTER")
 	;;
 esac
 if ((${#pi_args[@]})); then
@@ -402,7 +396,7 @@ elif ! image_exists "$CURRENT_TAG"; then
 	build_image "$CURRENT_TAG"
 	tag_baked_version
 elif ! image_has_entrypoint "$CURRENT_TAG"; then
-	printf '%s: the current image uses an older entrypoint and cannot build the sandbox extensions view; rebuilding it\n' "$SCRIPT_NAME" >&2
+	printf '%s: the current image predates the sandbox Herdr reporter; rebuilding it\n' "$SCRIPT_NAME" >&2
 	version="$(image_pi_version "$CURRENT_TAG" || true)"
 	build_image "$CURRENT_TAG" "$version"
 	tag_baked_version
