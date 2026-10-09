@@ -62,7 +62,8 @@ the host, the argument must be a host-valid session id (`safe-pi --session
 ### Implemented (2026-10-09)
 
 Integrated as `a98dfa4` (implementation) on top of `ef51f92` (the spec and
-glossary wording). `baseParams()` now carries
+glossary wording), with `35fd880` retiring the problem statement's and user
+stories 18-19's remaining fail-closed wording. `baseParams()` now carries
 `resume_argv: ["safe-pi", "-c"]`, so both `pane.report_agent` and
 `pane.report_agent_session` reports under source `safe-pi` / agent `pi` declare
 it, and a changed session re-states it. The reporter's header doc and the new
