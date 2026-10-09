@@ -28,7 +28,7 @@ See ticket 05 for evidence.
 
 Ticket 08 landed the container-side reporter and corrected the draft guide's
 Herdr statements: the socket bullet now names the sandbox-owned reporter (not
-Herdr's own Pi integration, which is excluded inside the sandbox), the
+Herdr's own Pi integration, which is neutralised inside the sandbox), the
 "plain terminal" and "blocked prompts never appear" troubleshooting rows now
 point at Herdr reachability and the mounted `permission-gate` extension, and a
 limitations bullet records that Herdr 0.9.3 stores no session reference for a

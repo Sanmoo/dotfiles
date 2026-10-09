@@ -27,7 +27,7 @@ checkout (`CONFIG_CHECKOUT`):
 | --- | --- | --- |
 | `$PWD` | same path | rw |
 | `~/.pi/agent` | same path | rw |
-| `~/.pi/agent/extensions` | `/run/safe-pi/host-extensions` | ro (container-only path, for the extensions view) |
+| `~/.pi/agent/extensions` | same path | ro (over the agent dir; relative symlinks keep resolving) |
 | `~/.pi/agent/npm` | same path | ro (over the agent dir) |
 | `~/.pi/agent/sessions` | `/run/safe-pi/sessions` | rw |
 | `~/.agents/skills` | same path | ro |
@@ -38,7 +38,6 @@ checkout (`CONFIG_CHECKOUT`):
 | `~/.gitconfig` | same path | ro |
 | `$SSH_AUTH_SOCK` | `/run/safe-pi/ssh-agent.sock` | rw (only when set) |
 | volume `safe-pi-toolchain-u<uid>` | `~/.local/share/mise` | rw |
-| — | `~/.pi/agent/extensions` | tmpfs (the view the entrypoint builds) |
 | — | `/tmp` | tmpfs |
 
 - `PI_CODING_AGENT_SESSION_DIR` points at `<container sessions>/<encoded-cwd>`,
@@ -49,11 +48,10 @@ checkout (`CONFIG_CHECKOUT`):
 - Forwarded variables: `HOME`, `USER`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`,
   `TZ`; `MISE_DATA_DIR` and the session variable at container paths;
   `SSH_AUTH_SOCK` at the container socket path; and `HERDR_ENV`,
-  `HERDR_SOCKET_PATH`, `HERDR_PANE_ID` only when set on the host, plus
-  `SAFE_PI_HOST_EXTENSIONS` at the container path where the host extensions
-  land. The wrapper sets no Pi identity of its own: forwarding the Herdr
-  variables lets the sandbox reporter own the pane under source `safe-pi`
-  (ticket 08); the Herdr-managed integration is not loaded inside the sandbox.
+  `HERDR_SOCKET_PATH`, `HERDR_PANE_ID` only when set on the host. The wrapper
+  sets no Pi identity of its own: forwarding the Herdr variables lets the
+  sandbox reporter own the pane under source `safe-pi` (ticket 08); the
+  Herdr-managed integration is not loaded inside the sandbox.
 - The image creates `/run/safe-pi`, its `sessions` directory, the SSH socket
   placeholder, and an empty user-owned `~/.local/share/mise`, so the socket
   binds over a file and a fresh toolchain volume inherits user ownership. The
@@ -87,20 +85,19 @@ implemented.
 
 ### Corrected by ticket 08
 
-The Herdr-attribution contract changed. The host extensions are no longer
-mounted over `~/.pi/agent/extensions`; they are mounted read-only at the
-container-only path `/run/safe-pi/host-extensions`, and a tmpfs is mounted at
-`$HOME/.pi/agent/extensions`. Before Pi starts, the entrypoint builds a
-container-only extensions view there from the host extensions, omitting
-`herdr-agent-state.{ts,js}` and adding the reporter baked into the image at
-`/usr/local/share/safe-pi/herdr-reporter.ts`. The reporter reports over the
-mounted socket under source `safe-pi`, which Herdr applies to the pane even
-though its foreground process is `docker`.
+The Herdr-attribution contract changed. The host extensions stay mounted
+read-only at their own path, `~/.pi/agent/extensions`, because remounting them
+elsewhere breaks their relative symlinks. The sandbox reporter ships in the
+image at `/usr/local/share/safe-pi/herdr-reporter.ts` and is loaded with Pi's
+`-e` flag. The Herdr-managed integration is neutralised by withholding its
+activation variables: `HERDR_ENV`, `HERDR_SOCKET_PATH`, and `HERDR_PANE_ID` are
+no longer forwarded, and the reporter receives the socket and pane under
+`SAFE_PI_HERDR_SOCKET_PATH` and `SAFE_PI_HERDR_PANE_ID`. The managed integration
+is therefore loaded but inactive, and exactly one source (`safe-pi`) owns the
+pane; Herdr would drop a `herdr:pi` report for a `docker` foreground anyway.
 
 The earlier claim in this ticket — "the wrapper's advertised agent identity is
 visible to Herdr for the pane" via the mounted `herdr-agent-state.ts` — is
-therefore replaced: the managed integration is deliberately not loaded inside
-the sandbox, and exactly one source (`safe-pi`) owns the pane. The Herdr
-variables (`HERDR_ENV`, `HERDR_SOCKET_PATH`, `HERDR_PANE_ID`) are still forwarded
-only when the host sets them, now consumed by the reporter. No Docker socket,
-no other mount, and no environment variable changed.
+therefore replaced. No Docker socket and no mount changed; the only environment
+change is that the Herdr variables are forwarded under sandbox-owned names, not
+their own, so the managed integration cannot activate.

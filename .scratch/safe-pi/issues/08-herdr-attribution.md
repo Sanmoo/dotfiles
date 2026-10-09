@@ -45,35 +45,46 @@ active, and the session reference from `ctx.sessionManager.getSessionFile()`
 (the container-only `/run/safe-pi/sessions/...`). Every request is
 fire-and-forget with a 500 ms unref'd timeout, so a dead socket never delays Pi.
 
-Disabling the managed integration uses the container-only extensions view. The
-wrapper mounts the host extensions read-only at `/run/safe-pi/host-extensions`
-and a tmpfs over `$HOME/.pi/agent/extensions`; before Pi starts, the entrypoint
-symlinks every host extension except `herdr-agent-state.{ts,js}` into that view
-and adds the reporter. Host extensions stay immutable (the view is a tmpfs over
-the ro source) and exactly one source holds the pane. Building the view is
-best-effort: if it fails, the command still runs.
+Disabling the managed integration withholds the variables that activate it,
+rather than remounting host extensions. The host extensions stay mounted
+read-only at their own path, `HERDR_ENV`/`HERDR_SOCKET_PATH`/`HERDR_PANE_ID` are
+not forwarded, and the reporter is loaded from the image with Pi's `-e` flag,
+receiving the socket and pane under `SAFE_PI_HERDR_SOCKET_PATH` and
+`SAFE_PI_HERDR_PANE_ID`. The managed integration is therefore loaded but
+inactive — and Herdr would drop a `herdr:pi` report for a `docker` foreground
+anyway — so exactly one source (`safe-pi`) owns the pane.
+
+An earlier revision built a container-only extensions view instead, remounting
+the host extensions at `/run/safe-pi/host-extensions`. Real-container validation
+disproved it twice: BuildKit's `COPY --chmod=0644` also chmodded the
+implicitly-created reporter directory to a non-traversable mode, and the host
+extensions are relative symlinks (`../../../dev/...`) that dangle once
+remounted at a different depth. Both are recorded because they are why the
+shipped mechanism is the env neutralisation.
 
 Evidence:
 
-- An image built by the previous entrypoint (label `safe-pi.entrypoint="1"`)
-  is now stale and rebuilt on next use: running it under the new wrapper would
-  mount the host extensions at the container-only path with no entrypoint to
-  build the view, silently losing every host extension. The label is bumped to
-  `"2"` and `tests/safe-pi-wrapper-test.sh` asserts the v1 image is rebuilt.
-- `tests/safe-pi-wrapper-test.sh` asserts the ro host-extensions mount at the
-  container-only path, the tmpfs over the discovered extensions path, and the
-  forwarded `SAFE_PI_HOST_EXTENSIONS` path the entrypoint builds the view from.
-- `tests/safe-pi-entrypoint-test.sh` runs the real entrypoint against a fixture
-  host-extensions directory and asserts the view contains the reporter and
-  every host extension but neither `herdr-agent-state.ts` nor `.js`; it also
-  checks the image context ships the reporter, that a reporter-only view works,
-  that a direct image run does not build the view, and that an unusable view
-  still runs Pi. All pass.
+- An image built before the reporter (no label or `safe-pi.entrypoint="1"`) is
+  stale and rebuilt on next use, since it has no reporter to load. The label is
+  bumped to `"2"` and `tests/safe-pi-wrapper-test.sh` asserts the old image is
+  rebuilt.
+- `tests/safe-pi-wrapper-test.sh` asserts the host extensions mount at their
+  own read-only path, the `SAFE_PI_HERDR_SOCKET_PATH`/`SAFE_PI_HERDR_PANE_ID`
+  forwarding, the absence of `--env HERDR_*`, and `pi -e
+  /usr/local/share/safe-pi/herdr-reporter.ts` in the run invocation.
+- `tests/safe-pi-entrypoint-test.sh` asserts the image build context ships the
+  reporter and creates its directory traversable (the BuildKit `--chmod` trap).
+  All pass.
 - `pi/tests/pi-agent/herdr-reporter.test.ts` drives the reporter over a real
   unix socket and asserts source/agent/pane, `idle`/`working`/`blocked`
   transitions, the container-only `agent_session_path`, state deduplication,
   non-TUI suppression, and that an unreachable socket neither throws nor
   slows the handlers. All pass.
+- Real-container check (not part of the suite): the image was built, the
+  sandbox user could read the reporter, and the shipped `.ts` loaded under the
+  image's Node and emitted exactly `pane.report_agent`/`pane.report_agent_session`
+  with source `safe-pi`, agent `pi`, states `idle`/`working`/`blocked`/`working`,
+  and the container-only session path.
 - `shellcheck` is clean on the wrapper, entrypoint, and both shell tests.
 
 The session-reference limitation is documented: the reporter carries
