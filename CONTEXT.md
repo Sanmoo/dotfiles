@@ -74,6 +74,10 @@ _Avoid_: warm start, second run, later run
 The operating-system release whose precompiled Erlang/OTP build the sandbox installs instead of compiling OTP from source. It is chosen to be compatible with the image's system libraries, and it is a sandbox-only choice: the host keeps installing OTP its own way.
 _Avoid_: binary build, prebuilt Erlang, ubuntu build
 
+**Sandbox locale**:
+The locale a sandbox start runs under: the host's forwarded `LANG`/`LC_ALL`/`LC_CTYPE` when the image ships that locale, and glibc's built-in `C.UTF-8` when it does not, so the sandbox is never silently non-UTF-8. The image generates `en_US.UTF-8`, which is the locale the host forwards today.
+_Avoid_: container locale, image locale
+
 **Host path parity**:
 Mounting a host directory into the sandbox at the same absolute path, so absolute paths and symlinks keep resolving.
 _Avoid_: mount mapping, path mapping
