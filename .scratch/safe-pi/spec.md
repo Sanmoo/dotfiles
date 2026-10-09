@@ -56,7 +56,7 @@ The development environment is declared once, in the repository's tracked mise c
 40. As a maintainer, I want the shared behavior (mounts, environment, tagging) covered by a test that stubs the `docker` boundary, so that regressions are caught without a Docker daemon.
 41. As the sandbox user, I want a succinct usage guide in the repository README, so that I can work day to day without re-reading the spec.
 42. As the sandbox user, I want the guide to lead with the recipes I actually repeat (continue, one-shot, debug shell, prepare, update), so that the common flows are one lookup away.
-43. As the sandbox user, I want the guide to name the surprising behaviors and their symptoms, so that I recognise fail-closed restore, read-only extensions, and fail-open convergence instead of debugging them.
+43. As the sandbox user, I want the guide to name the surprising behaviors and their symptoms, so that I recognise a pane that came back as a plain shell instead of resuming, read-only extensions, and fail-open convergence instead of debugging them.
 
 ## Implementation Decisions
 
@@ -122,15 +122,16 @@ The development environment is declared once, in the repository's tracked mise c
 ### Herdr integration
 
 - State reporting comes from a sandbox-owned reporter extension loaded inside the container, not from the Herdr-managed integration: Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is `docker`. The blocked state comes from the approval extension in the configuration checkout emitting the Herdr event the reporter consumes. The socket and checkout mounts are what make this work.
-- Session restore: the reporter reports the container-only sessions path, but Herdr stores the native `agent_session` reference only for official `herdr:*` sources, so the reference is not retained for this pane. Automatic restore instead uses a self-reported resume command (`resume_argv`), which Herdr has accepted from custom sources since 0.9.2. `safe-pi --continue` (or the equivalent) re-enters the sandbox with the same conversation, since sessions are stored in the shared host directory.
-- Two consequences are accepted and documented in the ADR: inside the container the same sessions directory is visible twice (under the agent directory and at the container-only path; Pi uses the latter), and until the reporter declares a resume command, sandboxed panes do not receive Herdr's automatic session resume.
-- The container-side resume-command spike (separate ticket) tests reporting `safe-pi -c` as `resume_argv`, which would restore automatic resume while keeping the sandbox; the mechanism has been available since Herdr 0.9.2.
+- Session restore: the reporter reports the container-only sessions path, but Herdr stores the native `agent_session` reference only for official `herdr:*` sources, so the reference is not retained for this pane. Automatic restore instead uses the self-reported resume command (`resume_argv`) the reporter attaches to every report, which Herdr has accepted from custom sources since 0.9.2 and persists with the pane. After a Herdr server restart the restored pane's shell gets `safe-pi -c` typed into it in the saved working directory, so the pane comes back inside a fresh sandbox with the same conversation, since sessions are stored in the shared host directory.
+- The command satisfies Herdr's rules for a self-reported resume command: a bare first token resolved on the pane shell's `PATH` (`safe-pi` resolves at `~/.local/bin`), at most 64 arguments and 8 KiB, and no apostrophes or control characters. It runs on the host, in the pane's saved working directory, not inside the container.
+- One consequence is accepted and documented in the ADR: inside the container the same sessions directory is visible twice, under the agent directory and at the container-only path, and Pi uses the latter. The reported command starts as `["safe-pi", "-c"]` — the most recent conversation in the pane's directory; naming the exact session is a separate ticket.
+- The reporter re-states the command on every report, so a changed session re-establishes it and a report that never reaches Herdr leaves the pane to come back as a plain shell.
 
 ### Configuration repository changes
 
 - The domain glossary gains the new vocabulary introduced here.
 - An architecture decision record captures the isolation boundary, the declared-environment decision, and the restore trade-off, including the alternatives that were rejected.
-- The repository README gains the usage guide (see Documentation below), including the accepted limitations (no Docker socket, no credential boundary, no automatic Herdr session resume).
+- The repository README gains the usage guide (see Documentation below), including the accepted limitations (no Docker socket, no credential boundary).
 
 ### Documentation
 
@@ -145,14 +146,13 @@ The development environment is declared once, in the repository's tracked mise c
 - A good test here asserts *observable behavior of the script toward its one collaborator* — which mounts, in which mode, which environment variables, which tag, which ordering (build before run, prepare without run), and which exit code — never internal shell structure, helper function names, or the exact text of help output beyond the usage exit code.
 - Cases to cover: build when the image is absent; skip the build when the tag exists; forced rebuild; refresh path resolving and building a new tag; preparation mode running convergence and not Pi; preparation mode surfacing convergence failure as a non-zero exit; dry run printing a command and invoking nothing; argument pass-through including flags that look like script flags after `--`; refusal when running as root; refusal when Docker is missing; re-entry guard executing Pi; read-only versus read-write mount modes for each contract entry; the container-only sessions path variable; Herdr variables forwarded only when present in the environment; the toolchain volume name; and the working directory being the invoking directory.
 - Prior art: the existing script tests in `tests/` stub external commands and fixtures on `PATH` and assert on emitted JSON, arguments, and exit codes. This test follows the same shape.
-- Manual verification, recorded in the ADR rather than automated: a real Herdr run checking agent state, blocked prompt, and pane attribution; a Herdr server restart confirming the pane returns as a shell and `safe-pi --continue` resumes the conversation; the debug shell confirming uid, mounts, `mise ls`, and `pi --version`; an offline start confirming the fail-open warning; and a first-run measurement of the toolchain convergence.
+- Manual verification, recorded in the ADR rather than automated: a real Herdr run checking agent state, blocked prompt, and pane attribution; a Herdr server restart confirming the pane comes back inside the sandbox with the conversation resumed; the debug shell confirming uid, mounts, `mise ls`, and `pi --version`; an offline start confirming the fail-open warning; and a first-run measurement of the toolchain convergence.
 
 ## Out of Scope
 
 - Docker Sandboxes, OpenShell, Gondolin, or any managed sandbox replacing plain Docker.
 - Credential proxying or keeping provider credentials out of the container.
 - Network egress restrictions inside the container.
-- The Herdr custom-integration resume spike (own ticket).
 - macOS support (`pi-mac`), Windows, or multi-user machines.
 - Installing or updating Pi packages, extensions, or the Pi binary from inside the container.
 - Per-project toolchain volumes.
@@ -164,4 +164,4 @@ The development environment is declared once, in the repository's tracked mise c
 - Evidence behind the decisions, gathered while designing: a read-only Pi agent directory fails credential loading (`EACCES` creating the credential lock file) while a writable agent directory with read-only extensions and npm package directories runs normally; a fresh Docker named volume is seeded from image content and a later image does not re-seed it (which is why the toolchain volume is *not* keyed to a baked baseline in the chosen design); mounting host toolchain binaries into a Debian-based image fails for several core tools and works only in a distro-matched image, which is why the environment is installed inside the container instead of mounted from the host; and the mounted Pi packages' native artifacts are stable-ABI prebuilds that load under both the host and image Node majors.
 - The sandbox is a filesystem boundary, not a credential boundary: the agent can read every credential and every session in the mounted agent directory. This is the accepted cost of using the host Pi configuration unchanged.
 - The agent can modify the mounted agent directory's state (settings, credential file, caches). This is accepted; only extensions and npm-installed packages are held read-only.
-- Follow-ups worth their own tickets: the Herdr resume spike; an explicit way to reset the toolchain volume; and an optional mode that pulls a published image on machines where building is undesirable.
+- Follow-ups worth their own tickets: an explicit way to reset the toolchain volume, and an optional mode that pulls a published image on machines where building is undesirable.

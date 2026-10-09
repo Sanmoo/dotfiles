@@ -82,12 +82,12 @@ _Avoid_: container locale, image locale
 Mounting a host directory into the sandbox at the same absolute path, so absolute paths and symlinks keep resolving.
 _Avoid_: mount mapping, path mapping
 
-**Fail-closed restore**:
-Herdr behavior where a sandboxed pane's session reference cannot be resumed on the host, so a restored pane returns as a shell instead of as an unsandboxed agent.
-_Avoid_: disabled restore, broken restore
+**Self-reported resume command**:
+The `resume_argv` a sandboxed pane's reporter attaches to its Herdr reports (`safe-pi -c`): Herdr persists it with the pane and, after a server restart, types it into the restored pane's shell in the saved working directory, so the pane comes back inside a fresh sandbox. Herdr consults it before its built-in official resume table, and it is the sandbox's substitute for the native `agent_session` reference, which is stored only for official `herdr:*` sources.
+_Avoid_: resume hook, restore command, resume path
 
 **Sandbox reporter**:
-The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working`, `blocked`, and `idle` state, and its session reference, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
+The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working`, `blocked`, and `idle` state, its session reference, and a self-reported resume command, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
 _Avoid_: Herdr integration (when meaning the sandbox-owned reporter), host integration
 
 ## aws-console
