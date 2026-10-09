@@ -91,8 +91,16 @@ The `resume_argv` a sandboxed pane's reporter attaches to its Herdr reports (`sa
 _Avoid_: resume hook, restore command, resume path
 
 **Sandbox reporter**:
-The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working` and `idle` state, its session reference, and a self-reported resume command, under the `safe-pi` source. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
+The container-side Herdr integration (`herdr-reporter.ts`) that reports a sandboxed pane's `working` and `idle` state, its session reference, and a self-reported resume command, under the `safe-pi` source, and that releases the pane when the sandboxed Pi quits. It replaces the Herdr-managed integration inside the sandbox, because Herdr ignores that integration's `herdr:pi` source for a pane whose foreground process is not a detected Pi (the sandbox's foreground is `docker`). The managed integration is neutralised by withholding the variables that activate it; the reporter gets the socket and pane under sandbox-owned names.
 _Avoid_: Herdr integration (when meaning the sandbox-owned reporter), host integration
+
+**Pane release**:
+The clearing of a pane's agent attribution — its name, state, and stored resume command — when the agent that held it is no longer running. A reporter sends it when the user actually quits; it is not a session change, which reports the new session instead.
+_Avoid_: clear agent, unregister, detach
+
+**Idle-shell safety net**:
+Herdr's fallback that clears a self-reported agent once the pane's shell is back at its prompt with nothing running, for a reporter that never sent a pane release. It applies only to agents Herdr cannot identify by its own process detection, so a reporter that claims a process-detectable agent name gets no fallback.
+_Avoid_: shell-return cleanup, timeout, keepalive
 
 ## aws-console
 

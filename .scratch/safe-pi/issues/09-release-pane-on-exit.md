@@ -1,32 +1,33 @@
 # 09 — Releasing the pane when the sandboxed Pi exits
 
-**What to build:** A sandboxed pane must stop being attributed as a running agent when the Pi process inside the container exits (for example after Ctrl-C twice), not only when the pane is closed. Today `herdr agent list` keeps showing the pane as a running agent after the sandboxed Pi is gone; closing the pane is the only thing that clears it.
+**What to build:** A sandboxed pane must stop being attributed as a running agent when the Pi process inside the container exits (for example after Ctrl-C twice), not only when the pane is closed. Two things are wrong today, and both are fixed in the sandbox reporter: it never sends `pane.release_agent`, and it reports the agent label `pi`, which disarms Herdr's own idle-shell safety net. The reporter gains an explicit release on quit, and it reports an agent label Herdr does not recognize so the safety net arms for exits that produce no shutdown event.
 
-**Blocked by:** 08 — Container-side Herdr integration for the sandbox (the reporter whose exit behaviour this changes)
+**Blocked by:** 08 — Container-side Herdr integration for the sandbox (resolved)
 
-**Status:** needs-info
-
-- [ ] Reproduction: in a Herdr pane, start `safe-pi`, press Ctrl-C twice; `herdr agent list` still lists the pane, and only closing the pane clears it.
-- [ ] Expected: once the Pi process in the container ends, the pane leaves the agent list without closing it.
+**Status:** ready-for-agent
 
 ## What is known
 
 - State is reported by the sandbox reporter (`safe-pi/herdr-reporter.ts`) under source `safe-pi`. It reports `working`/`blocked`/`idle` only; it does **not** send `pane.release_agent`, and it has no `session_shutdown` handler.
-- The Herdr docs describe a release report for exactly this case ("Only release when the user actually quits") and an idle-shell safety net ("If your agent exits without releasing, Herdr notices once the pane is back at its idle shell prompt"). The pane's foreground process is `docker`, so it is unclear which path applies here.
-- The host wrapper knows the pane id after `docker run` returns, but it forwards the socket/pane to the container under `SAFE_PI_HERDR_*` and withholds `HERDR_*`.
+- **Root cause.** Herdr arms its idle-shell safety net only for a self-reported agent whose label it does not recognize by process: `self_reported_agent_active()` in `src/terminal/state.rs` tests `parse_agent_label(&authority.agent_label).is_none()`. The reporter reports `agent: "pi"`, and `parse_agent_label("pi")` resolves to `Agent::Pi`, so the safety net never ran and the pane stayed attributed. Herdr's own test `shell_return_keeps_agents_herdr_recognizes_by_process` asserts exactly this. Ticket 05's experiment that did clear used the label `safepi`; ticket 08's switch to `pi` is what disarmed it.
+- **Pi does quit.** In the TUI, `handleCtrlC()` treats a second Ctrl-C within 500 ms as quit → `shutdown()` → `await runtimeHost.dispose()`, which emits `session_shutdown` with `reason: "quit"` and is awaited by the extension runner → writes the resume hint → `process.exit(0)`. Pi is PID 1 in the container (the entrypoint `exec`s it), so the container and `docker run` end and the pane returns to its shell. Ctrl-D, `/quit`, and SIGTERM/SIGHUP take the same dispose path; session replacement emits `resume`/`new`/`fork`, and extension reload emits `reload`.
+- The reporter's `sendRequest` is fire-and-forget, so a release from `session_shutdown` must be awaited (bounded) or `process.exit(0)` drops it.
+- `pane.release_agent` with source `safe-pi` is accepted: it is not an official source pair, and the label matches the current authority. It clears the pane's name, state, and stored resume command.
+- Herdr accepts a per-source `pane.report_metadata` `display_agent` with no authority requirement, and the sidebar/border label prefers `display_agent` over the agent label, so a custom agent label can still display as `Pi`. `herdr agent list` prints raw JSON, so it shows `"agent": "safe-pi"` alongside `"display_agent": "Pi"`.
+- Re-entry needs no code: Herdr's `clear_self_reported_agent` ignores a shell-return signal older than the current authority, so a fresh report after `safe-pi -c` survives a late safety-net clear.
+- The host wrapper knows the pane id after `docker run` returns but is deliberately not used: it would be a second writer on the same source, needing `seq` coordination, and only the reporter knows the difference between quitting and switching sessions.
 
-## Open questions (why this is `needs-info`)
+## Acceptance criteria
 
-- Does the container / `docker run` process actually exit on Ctrl-C twice, or does something (entrypoint, mise, TTY handling) linger?
-- Does Pi emit `session_shutdown` on Ctrl-C twice, and is the reporter still alive to send `pane.release_agent` then?
-- If the container does exit, why does the idle-shell safety net not clear the agent — because the pane never returns to a prompt, or because a stale report keeps arriving?
-- Should the release be sent by the reporter on shutdown, by the host wrapper after `docker run` returns (it has the pane id), or both — and what happens when `safe-pi -c` re-enters the same pane afterwards?
-
-## Acceptance criteria (draft, pending the answers)
-
-- [ ] Ctrl-C twice in a sandboxed Pi clears the pane from `herdr agent list` without closing the pane.
-- [ ] The release is best-effort and never blocks or breaks Pi or the wrapper.
+- [ ] On `session_shutdown` with `reason === "quit"`, and only when the reporter holds the pane (TUI mode), the reporter sends `pane.release_agent` for source `safe-pi` and its agent label, and the report reaches Herdr before `process.exit(0)`.
+- [ ] The reporter never releases on `reload`, `resume`, `new`, or `fork`; those are session replacements where the new session reports instead.
+- [ ] The reported agent label is one Herdr does not recognize (`safe-pi`), and `pane.report_metadata` sets `display_agent: "Pi"`, so the sidebar and border still read `Pi`.
+- [ ] The release is best-effort: an unreachable socket is swallowed and costs at most 250 ms at quit; it never throws, never blocks longer, and never breaks Pi.
+- [ ] Reproduction on a real pane: Ctrl-C twice in `safe-pi`, then `herdr agent list` no longer lists the pane, without closing it.
+- [ ] A sandbox that dies without a shutdown event (SIGKILL/OOM/daemon stop) also clears, via Herdr's idle-shell safety net, about a second after the pane's shell returns.
 - [ ] Re-entry (`safe-pi -c`) still re-attributes the pane.
+- [ ] The host wrapper is untouched; the reporter is the only writer on the `safe-pi` source.
+- [ ] `pi/tests/pi-agent/herdr-reporter.test.ts` covers the release trigger, the non-triggers, the bounded await, and the agent-label constant; `tests/run --full` ends in `FULL GATE: PASS`.
 
 ## Comments
 
@@ -35,3 +36,20 @@
 After Ctrl-C twice in `safe-pi`, Herdr still considers the agent running. It only
 leaves the running-agents list when the pane is closed. Expected: it ends when
 the Pi process inside the container terminates.
+
+### Resolved by a grilling session (agent)
+
+The ticket's four open questions were answered from Pi's and Herdr 0.9.3's
+source, and the design was settled:
+
+- The container does exit on Ctrl-C twice, and Pi does emit `session_shutdown`
+  (reason `quit`); the reporter is alive but had no handler.
+- The idle-shell safety net did not clear the pane because the `agent: "pi"`
+  label disarms it; ticket 05's clearing experiment used `safepi`.
+- The release belongs to the reporter, not the host wrapper.
+- `safe-pi` becomes the reported agent label (arming the safety net), with
+  `display_agent: "Pi"` keeping the visible name; the explicit release covers the
+  normal quit immediately.
+
+Recorded in ADR 0004 and the `CONTEXT.md` terms "Pane release", "Idle-shell
+safety net", and the updated "Sandbox reporter".
