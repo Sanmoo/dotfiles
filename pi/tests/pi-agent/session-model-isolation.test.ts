@@ -77,6 +77,67 @@ afterEach(() => {
 	}
 });
 
+describe("session-model-isolation agent directory", () => {
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	const savedHome = process.env.HOME;
+
+	afterEach(() => {
+		restoreEnv("PI_CODING_AGENT_DIR", savedAgentDir);
+		restoreEnv("HOME", savedHome);
+	});
+
+	it("protects the settings of the directory named by PI_CODING_AGENT_DIR", async () => {
+		const root = mkdtempSync(join(tmpdir(), "session-model-isolation-agent-"));
+		cleanupDirs.push(root);
+		const agentDir = join(root, "pi-deere", "agent");
+		mkdirSync(agentDir, { recursive: true });
+		const settingsPath = join(agentDir, "settings.json");
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({ defaultModel: "mutated/model", defaultProvider: "mutated" }),
+		);
+		writeFileSync(
+			`${settingsPath}.bak`,
+			JSON.stringify({ defaultModel: "original/model", defaultProvider: "original" }),
+		);
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		process.env.HOME = join(root, "home-without-pi");
+		const { sessionStart } = setupExtension();
+
+		await sessionStart({}, { cwd: root });
+
+		expect(readSettingsFile(settingsPath).defaultModel).toBe("original/model");
+		expect(readSettingsFile(settingsPath).defaultProvider).toBe("original");
+	});
+
+	it("falls back to ~/.pi/agent when PI_CODING_AGENT_DIR is unset", async () => {
+		const root = mkdtempSync(join(tmpdir(), "session-model-isolation-home-"));
+		cleanupDirs.push(root);
+		const globalSettings = join(root, ".pi", "agent", "settings.json");
+		mkdirSync(join(root, ".pi", "agent"), { recursive: true });
+		writeFileSync(globalSettings, JSON.stringify({ defaultModel: "current/model" }));
+		writeFileSync(
+			`${globalSettings}.bak`,
+			JSON.stringify({ defaultModel: "home/model" }),
+		);
+		delete process.env.PI_CODING_AGENT_DIR;
+		process.env.HOME = root;
+		const { sessionStart } = setupExtension();
+
+		await sessionStart({}, { cwd: root });
+
+		expect(readSettingsFile(globalSettings).defaultModel).toBe("home/model");
+	});
+});
+
+function restoreEnv(name: string, value: string | undefined) {
+	if (value === undefined) {
+		delete process.env[name];
+	} else {
+		process.env[name] = value;
+	}
+}
+
 describe("session-model-isolation crash recovery", () => {
 	it("keeps settings keys the extension does not protect", async () => {
 		const { projectDir, settingsPath } = createProject(

@@ -43,6 +43,19 @@ export function findProjectRoot(cwd: string): string | null {
 }
 
 /**
+ * The agent directory Pi itself uses: PI_CODING_AGENT_DIR when set (a second
+ * profile such as pi-deere), otherwise ~/.pi/agent.
+ */
+export function agentDir(): string {
+	const configured = process.env.PI_CODING_AGENT_DIR;
+	if (!configured) return resolve(homedir(), ".pi", "agent");
+	if (configured === "~" || configured.startsWith("~/")) {
+		return resolve(homedir(), configured.slice(2));
+	}
+	return resolve(configured);
+}
+
+/**
  * Resolve the most appropriate settings file path for the session.
  *
  * Priority:
@@ -63,7 +76,7 @@ export function resolveSettingsPath(cwd: string): string | null {
 		if (existsSync(agentSettings)) return agentSettings;
 	}
 
-	const globalSettings = resolve(homedir(), ".pi", "agent", "settings.json");
+	const globalSettings = resolve(agentDir(), "settings.json");
 	if (existsSync(globalSettings)) return globalSettings;
 
 	return null;
@@ -261,7 +274,7 @@ function buildAgentModelCache(cwd: string): void {
 	agentModelCache = new Set<string>();
 
 	// 1. User agents (~/.pi/agent/agents/)
-	const userDir = resolve(homedir(), ".pi", "agent", "agents");
+	const userDir = resolve(agentDir(), "agents");
 	for (const name of scanAgentDir(userDir)) agentModelCache.add(name);
 
 	// 2. Project agents (.pi/agents/)
