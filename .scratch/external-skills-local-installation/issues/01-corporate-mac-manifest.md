@@ -70,7 +70,7 @@ só podem ser gravadas na máquina que tem acesso a elas.
   escolhem dependências.
 - O patch de `harness-eval` é reaplicado por `skills-sync`: editar o `SKILL.md`
   instalado direto é desfeito na próxima instalação. Patches novos entram em
-  `agents/.agents/skills-patches/<skill>.txt`, uma linha de frontmatter por linha.
+  `skills-patches/<skill>.txt`, uma linha de frontmatter por linha.
 
 ## Aceite
 
