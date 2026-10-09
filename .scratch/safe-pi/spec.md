@@ -10,7 +10,7 @@ Running Pi directly on the host gives every command the agent executes the run o
 
 A `safe-pi` command that builds a small image on first use and then runs Pi in a throwaway Docker container. The container sees the working repository (read-write), the Pi agent directory, the Pi configuration checkout, the Herdr socket directory, git and SSH material, and a named volume holding the mise-managed toolchain. It does not see the Docker socket, the host's toolchain tree, or the rest of the home directory.
 
-The development environment is declared once, in the repository's tracked mise configuration, and converged inside the container on every start, so `latest` pins follow the same behavior they have on the host. Herdr keeps working because the container reaches the real Herdr socket for state reports; Herdr's session restore fails closed for sandboxed panes instead of silently starting an unsandboxed Pi.
+The development environment is declared once, in the repository's tracked mise configuration, and converged inside the container on every start, so `latest` pins follow the same behavior they have on the host. Herdr keeps working because the container reaches the real Herdr socket for state reports; Herdr's session restore reopens a sandboxed pane inside the sandbox through the reporter's self-reported resume command, instead of coming back as a shell or silently starting an unsandboxed Pi.
 
 ## User Stories
 
@@ -31,8 +31,8 @@ The development environment is declared once, in the repository's tracked mise c
 15. As a Herdr user, I want the pane to be recognised as a Pi agent even though the foreground process is `docker`, so that labels, waits, and notifications keep working.
 16. As a Herdr user, I want a Herdr server restart to keep the socket reachable from a running sandbox, so that a server restart does not silently break state reporting.
 17. As a Herdr user, I want Herdr to know how to restore the sandboxed session, so that a server restart reopens the pane inside the sandbox in the same conversation.
-18. As a Herdr user, I want a restored sandboxed pane to come back as a shell rather than as an unsandboxed Pi, so that I am never surprised by isolation that is no longer there.
-19. As a Herdr user, I want to re-enter the previous conversation after such a restore with a single command, so that failing closed costs me one keystroke.
+18. As a Herdr user, I want a restored sandboxed pane to come back inside the sandbox in the same conversation, so that a server restart costs nothing and I am never surprised by isolation that is no longer there.
+19. As a Herdr user, I want a pane whose reporter never reached Herdr to come back as a shell rather than as an unsandboxed Pi, so that the one-keystroke recovery never risks isolation I no longer have.
 20. As a Pi user, I want every `pi` argument to pass through unchanged (`--continue`, `--session`, `--model`, `-p`, `--no-lens`), so that `safe-pi` is a drop-in replacement for `pi`.
 21. As a Pi user, I want my credentials to work inside the sandbox, including the rotating OAuth credential for the Codex provider, so that I do not have to log in again per run.
 22. As a Pi user, I want my sessions stored where the host Pi stores them, so that a conversation started in the sandbox is resumable from the host and vice versa.
