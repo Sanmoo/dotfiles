@@ -57,6 +57,7 @@ The development environment is declared once, in the repository's tracked mise c
 41. As the sandbox user, I want a succinct usage guide in the repository README, so that I can work day to day without re-reading the spec.
 42. As the sandbox user, I want the guide to lead with the recipes I actually repeat (continue, one-shot, debug shell, prepare, update), so that the common flows are one lookup away.
 43. As the sandbox user, I want the guide to name the surprising behaviors and their symptoms, so that I recognise a pane that came back as a plain shell instead of resuming, read-only extensions, and fail-open convergence instead of debugging them.
+44. As a Pi user, I want the `rtk` binary that the `pi-rtk-optimizer` extension shells out to available inside the sandbox, so that command rewriting and output compaction work there as they do on the host, instead of a start-time warning that the rewrites are bypassed.
 
 ## Implementation Decisions
 
