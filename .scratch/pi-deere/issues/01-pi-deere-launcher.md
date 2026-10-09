@@ -1,6 +1,6 @@
 # 01 — Disponibilizar pi-deere com segunda conta Copilot
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Spec: [pi-deere](../spec.md)
 
