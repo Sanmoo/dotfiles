@@ -23,9 +23,8 @@ mkdir -p "$HOME/.agents/skills" "$TMPDIR/store"
 cp "$MANIFEST" "$TMPDIR/store/skills-lock.json"
 ln -s "$TMPDIR/store/skills-lock.json" "$HOME/skills-lock.json"
 
-# Stow provides both the manifest and the patch directory; this HOME is not
-# stowed, so publish them the same way the package does.
-cp -r "$ROOT_DIR/agents/.agents/skills-patches" "$HOME/.agents/skills-patches"
+# The patches come from the checkout the script resolves, so the copy is not
+# needed here; harness-eval is asserted below to prove they were applied.
 
 expected=$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["skills"]))' "$MANIFEST")
 sources=$(python3 -c 'import json,sys;print(len({s["source"] for s in json.load(open(sys.argv[1]))["skills"].values()}))' "$MANIFEST")

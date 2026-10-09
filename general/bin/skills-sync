@@ -12,7 +12,6 @@ set -euo pipefail
 
 MANIFEST="$HOME/skills-lock.json"
 SKILLS_DIR="$HOME/.agents/skills"
-PATCH_DIR="$HOME/.agents/skills-patches"
 SKILLS_CLI=${SKILLS_CLI:-skills} # pin with SKILLS_CLI=skills@1.2.3
 SKILLS_AGENT=${SKILLS_AGENT:-pi} # universal agents share ~/.agents/skills
 
@@ -33,7 +32,7 @@ Usage: skills-sync [COMMAND] [ARGS]
   update                 Update only what changed upstream (cheaper).
   add SOURCE -s SKILL... Install skill(s) and record them in the manifest.
   remove SKILL...        Uninstall and drop from the manifest.
-  patches                Reapply the local patches under ~/.agents/skills-patches.
+  patches                Reapply the patches in <checkout>/skills-patches.
   sources                Print the manifest grouped by source, without installing.
   diff                   Compare this profile's manifest with its sibling
                          profiles; exits 1 when they differ.
@@ -129,12 +128,32 @@ frontmatter_has_line() { # <file> <line>
 	' "$1"
 }
 
+# Resolve the checkout holding this script. Stow links ~/bin/skills-sync to
+# general/bin/skills-sync, so follow the link chain before climbing to the root;
+# readlink -f is not portable to the BSD userland the corporate machine has.
+checkout_root() {
+	local self=$1 dir
+	while [[ -L "$self" ]]; do
+		dir=$(cd -- "$(dirname -- "$self")" && pwd -P)
+		self=$(readlink "$self")
+		[[ "$self" == /* ]] || self="$dir/$self"
+	done
+	cd -- "$(dirname -- "$self")/../.." && pwd -P
+}
+
 # Reapply the local tweaks the CLI overwrites on every install. A patch file is
-# named after its skill and holds one frontmatter line per line.
+# named after its skill and holds one frontmatter line per line. The patches are
+# checkout content read from the checkout itself: a copy under $HOME would be a
+# second source of truth, and publishing one depends on the agents package being
+# applicable, which a pre-existing Stow conflict can block.
 apply_patches() {
-	[[ -d "$PATCH_DIR" ]] || return 0
-	local patch skill target line tmp applied=0
-	for patch in "$PATCH_DIR"/*.txt; do
+	local patch dir skill target line tmp applied=0
+	dir=$(checkout_root "$0")/skills-patches
+	if [[ ! -d "$dir" ]]; then
+		warn "no patches directory at $dir"
+		return 0
+	fi
+	for patch in "$dir"/*.txt; do
 		[[ -e "$patch" ]] || continue
 		skill=$(basename "$patch" .txt)
 		target="$SKILLS_DIR/$skill/SKILL.md"

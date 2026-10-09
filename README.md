@@ -66,7 +66,7 @@ and `pi-mac`:
 
 Both packages provide the same path, so exactly one is stowed per machine; never
 both. `general/bin/skills-sync` replays that manifest through the CLI and
-reapplies the local patches published from `agents/.agents/skills-patches/`. See
+reapplies the patches tracked in `skills-patches/`. See
 [Manage external skills from the manifest](#manage-external-skills-from-the-manifest)
 and `skills-sync --help`.
 
@@ -119,6 +119,12 @@ changes as skills are added or updated. Review it with `git diff` and commit it
 like a lockfile. The two profiles drift independently by design — a skill added
 on one machine is not added to the other — and `skills-sync diff` is how the gap
 is spotted; the command exits 1 when the profiles differ.
+
+Local tweaks that the CLI would otherwise drop live in `skills-patches/`, one
+frontmatter line per line, keyed by skill name; `skills-sync` reapplies them after
+every install. Today that is only `harness-eval`, whose 836-character description
+would otherwise enter the system prompt of every session. The patches are read
+from the checkout, not from `$HOME`, so they need no package of their own.
 
 An alternative for a dependency that ships no usable manifest is an individual
 link under `~/.agents/skills` to a separately maintained checkout. Updates belong

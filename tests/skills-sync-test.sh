@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SYNC="$ROOT_DIR/general/bin/skills-sync"
 TMPDIR="$(mktemp -d)"
 export HOME="$TMPDIR/home"
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -34,7 +33,7 @@ run_capture() {
 # A stub stands in for the Skills CLI: it records its arguments and, crucially,
 # drains stdin the way the real npx does. Without that second behaviour the
 # manifest loop's stdin-consumption regression would not be caught here.
-mkdir -p "$TMPDIR/bin" "$HOME/.agents/skills" "$HOME/.agents/skills-patches"
+mkdir -p "$TMPDIR/bin" "$HOME/.agents/skills"
 cat >"$TMPDIR/bin/npx" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$NPX_LOG"
@@ -69,6 +68,15 @@ cat >"$profile_dir/skills-corporate/skills-lock.json" <<'JSON'
 JSON
 ln -s "$profile_dir/skills-personal/skills-lock.json" "$HOME/skills-lock.json"
 
+# Exercise the script through the shape it has on a machine: a Stow symlink under
+# ~/bin pointing into the checkout. The patches are read from the checkout, so
+# this fixture checkout — not the real one — has to supply them.
+mkdir -p "$profile_dir/general/bin" "$profile_dir/skills-patches"
+cp "$ROOT_DIR/general/bin/skills-sync" "$profile_dir/general/bin/skills-sync"
+chmod +x "$profile_dir/general/bin/skills-sync"
+ln -s "$profile_dir/general/bin/skills-sync" "$TMPDIR/bin/skills-sync"
+SYNC="$TMPDIR/bin/skills-sync"
+
 # sources: one line per source, both sorted.
 expected_sources=$'owner/repo-a\talpha beta\nowner/repo-b\tzeta'
 assert_equals "$expected_sources" "$("$SYNC" sources)" 'sources groups by source and sorts'
@@ -98,7 +106,7 @@ A body rule follows.
 
 End.
 MD
-printf 'disable-model-invocation: true\n' >"$HOME/.agents/skills-patches/alpha.txt"
+printf 'disable-model-invocation: true\n' >"$profile_dir/skills-patches/alpha.txt"
 "$SYNC" patches >/dev/null
 assert_equals '4:disable-model-invocation: true' "$(grep -n 'disable-model-invocation' "$HOME/.agents/skills/alpha/SKILL.md")" \
 	'patch lands in the frontmatter, not the body'
@@ -108,16 +116,23 @@ before=$(cat "$HOME/.agents/skills/alpha/SKILL.md")
 assert_equals "$before" "$(cat "$HOME/.agents/skills/alpha/SKILL.md")" 'patches are idempotent'
 
 # patches: a missing skill and a file without frontmatter are both survivable.
-printf 'disable-model-invocation: true\n' >"$HOME/.agents/skills-patches/absent.txt"
+printf 'disable-model-invocation: true\n' >"$profile_dir/skills-patches/absent.txt"
 run_capture "$SYNC" patches
 assert_equals '0' "$STATUS" 'a patch for a missing skill does not fail'
 assert_contains "$OUT" 'skipping patch, skill not installed: absent' 'a missing skill is reported'
 mkdir -p "$HOME/.agents/skills/beta"
 printf '# no frontmatter\n' >"$HOME/.agents/skills/beta/SKILL.md"
-printf 'disable-model-invocation: true\n' >"$HOME/.agents/skills-patches/beta.txt"
+printf 'disable-model-invocation: true\n' >"$profile_dir/skills-patches/beta.txt"
 run_capture "$SYNC" patches
 assert_equals '0' "$STATUS" 'a file without frontmatter does not fail'
 assert_equals '# no frontmatter' "$(cat "$HOME/.agents/skills/beta/SKILL.md")" 'a file without frontmatter is left alone'
+
+# patches: without the directory the script says so instead of failing silently.
+mv "$profile_dir/skills-patches" "$profile_dir/skills-patches.off"
+run_capture "$SYNC" patches
+assert_equals '0' "$STATUS" 'a missing patches directory does not fail'
+assert_contains "$OUT" 'no patches directory at' 'a missing patches directory is reported'
+mv "$profile_dir/skills-patches.off" "$profile_dir/skills-patches"
 
 # diff: reports the profile differences and exits 1 when they differ.
 run_capture "$SYNC" diff
