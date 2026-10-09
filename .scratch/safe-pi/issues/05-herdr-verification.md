@@ -2,7 +2,7 @@
 
 **What to build:** Verification that a sandboxed Pi is indistinguishable from a host Pi inside Herdr, and that the one deliberate difference — a restored pane comes back as a shell instead of an unsandboxed Pi — behaves as documented. This ticket needs the Herdr server restarted, which ends the panes currently running in it, so a human runs it at a moment of their choosing rather than an agent deciding when.
 
-**Blocked by:** 04 — Declared environment installed inside the container
+**Blocked by:** 08 — Container-side Herdr integration for the sandbox
 
 **Status:** ready-for-human
 

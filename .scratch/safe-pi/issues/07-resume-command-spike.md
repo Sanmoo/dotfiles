@@ -15,3 +15,12 @@
 - [ ] Nothing in the shipped path changes as a result of this ticket.
 
 ## Comments
+
+Ticket 05 pre-empted part of this spike on Herdr 0.9.3. A container-side
+integration under a custom source does get the pane attributed and reports
+state (`working`/`blocked`/`idle`), but a report carrying `agent_session_path`,
+`agent_session_id`, and `resume_argv` is accepted (`ok`) and never populates
+`agent_session`; only official `herdr:*` sources store a native session
+reference. The official docs put custom resume commands at Herdr ≥ 0.10.0, so
+the resume half of this spike cannot be answered on the installed 0.9.3. The
+state half is now ticket 08.
