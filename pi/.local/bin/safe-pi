@@ -342,8 +342,8 @@ record_mount "$HOST_PACKAGE_TREE_DIR" "$PI_AGENT_DIR/npm" rw
 # The host's package declaration is mounted only when it exists; with no lock
 # the entrypoint has nothing to install.
 add_mount "$PI_AGENT_DIR/extensions" "$PI_AGENT_DIR/extensions" ro
-# Git-installed Pi packages (`pi install git:...`) are cloned under `git/`, and the
-# host Pi loads their code on its next start, so they are held read-only too
+# Git-installed Pi packages (`pi install git:...`) are cloned under `git/`, and
+# the host Pi loads their code on its next start, so they are held read-only too
 # (ADR 0002). This is a fixed point, not an optional mount: the directory is
 # created on the host before a start, so it is always mounted and never reported
 # as missing. A sandboxed install or update would otherwise persist there.

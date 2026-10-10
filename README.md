@@ -370,9 +370,10 @@ and the connection and directory are removed when the sandbox exits.
   one in the directory, and Herdr types it into the restored pane's shell in
   the saved working directory.
 - Extensions and git-installed packages are read-only in the sandbox, but Pi's
-  npm packages are not the host's: the sandbox keeps its own package tree, because packages with native
-  parts carry one binding per platform and the host's tree holds only the
-  host's (on macOS, `darwin` bindings a Linux sandbox cannot load). On every
+  npm packages are not the host's: the sandbox keeps its own package tree,
+  because packages with native parts carry one binding per platform and the
+  host's tree holds only the host's (on macOS, `darwin` bindings a Linux
+  sandbox cannot load). On every
   start the sandbox installs the tree from the host's `package.json` and
   `package-lock.json` with `npm ci`, when those changed or the image's Node ABI
   did; an unchanged start installs nothing and prints nothing. The first start
