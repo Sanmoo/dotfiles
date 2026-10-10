@@ -5,14 +5,20 @@
 # Unlike tests/pi-deere-test.sh, nothing here is stubbed: the real `pi` loads the
 # resources the launcher prepared, reads and writes the shared session store,
 # and reports its model choices over the RPC protocol. The fixture is a
-# temporary home with a self-contained model catalog and fake credentials, and
-# Pi runs offline (PI_OFFLINE=1), so there is no network, no GitHub login, and
-# no request is sent to any model provider.
+# temporary agent profile with a self-contained model catalog and fake
+# credentials, and Pi runs offline (PI_OFFLINE=1), so no request is sent to any
+# model provider. HOME stays the real one: the installed `pi` wrapper resolves
+# its Node runtime through mise and its package through npm under HOME, so
+# pointing HOME at a temporary directory makes every launch install a whole Node
+# runtime and re-download the package. The profile is isolated by
+# PI_CODING_AGENT_DIR and PI_DEERE_AGENT_DIR instead, which is what the launcher
+# and the isolation extension both read.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAUNCHER="$repo_root/pi/.local/bin/pi-deere"
 ISOLATION_EXTENSION="$repo_root/pi/.pi/agent/extensions/session-model-isolation.ts"
+HOST_HOME="$HOME"
 
 command -v pi >/dev/null 2>&1 || {
 	printf 'FAIL: the real pi executable must be on PATH for this test\n' >&2
@@ -176,7 +182,7 @@ run_in() {
 	shift
 	set +e
 	(
-		cd "$cwd" && env -i PATH="$PATH" HOME="$HOME_DIR" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 \
+		cd "$cwd" && env -i PATH="$PATH" HOME="$HOST_HOME" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 \
 			${extra[@]+"${extra[@]}"} "$@"
 	) >"$OUT" 2>"$ERR"
 	STATUS=$?
@@ -231,13 +237,15 @@ test_isolation_extension_snapshots_into_the_second_profile_only() {
 	local before
 	before="$(digest "$SRC/settings.json")"
 	# The extension's snapshot exists only while the instance runs (it is removed
-	# at shutdown), so keep stdin open and observe it from outside.
+	# at shutdown), so keep stdin open and observe it from outside. The window
+	# covers a cold launch: the `pi` wrapper resolves its runtime and package
+	# before the session starts.
 	(
-		cd "$PROJ_A" && env -i PATH="$PATH" HOME="$HOME_DIR" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 \
-			"${DEERE_ENV[@]}" bash "$LAUNCHER" --mode rpc < <(rpc '{"id":"1","type":"get_state"}'; sleep 5)
+		cd "$PROJ_A" && env -i PATH="$PATH" HOME="$HOST_HOME" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 \
+			"${DEERE_ENV[@]}" bash "$LAUNCHER" --mode rpc < <(rpc '{"id":"1","type":"get_state"}'; sleep 15)
 	) >"$OUT" 2>"$ERR" &
 	local pid=$! seen=0 _attempt
-	for _attempt in $(seq 1 50); do
+	for _attempt in $(seq 1 75); do
 		if [[ -e "$PROF/settings.json.bak" ]]; then
 			seen=1
 			break
@@ -322,9 +330,12 @@ test_messages_written_in_the_second_profile_return_to_the_original() {
 	write_copilot_login
 
 
+	# The window must outlast a cold launch: the installed `pi` wrapper resolves its
+	# runtime and package before the session starts, so a four-second window races
+	# the launch and the command is never read.
 	run_in "$PROJ_A" "${DEERE_ENV[@]}" -- bash "$LAUNCHER" --mode rpc --session "$ID_A1" < <(
 		rpc '{"id":"1","type":"bash","command":"echo written-from-deere"}'
-		sleep 4
+		sleep 15
 	)
 	assert_eq 0 "$STATUS" "pi-deere bash status"
 	grep -Fq "written-from-deere" "$SRC"/sessions/*/*"$ID_A1".jsonl || fail "the message must persist in the shared session"

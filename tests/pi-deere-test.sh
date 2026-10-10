@@ -165,7 +165,11 @@ test_first_launch_prepares_private_profile_with_shared_links() {
 	pass
 	[[ ! -L "$PROF/auth.json" && ! -e "$PROF/auth.json" ]] || fail "launch must not create or link auth.json"
 	pass
-	assert_eq 700 "$(stat -f %Lp "$PROF" 2>/dev/null || stat -c %a "$PROF")" "profile permissions"
+	if stat -c %a "$PROF" >/dev/null 2>&1; then
+		assert_eq 700 "$(stat -c %a "$PROF")" "profile permissions"
+	else
+		assert_eq 700 "$(stat -f %Lp "$PROF")" "profile permissions"
+	fi
 }
 
 test_profile_writes_to_settings_never_reach_the_original() {
