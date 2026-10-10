@@ -526,7 +526,14 @@ assert_log "--volume $contract_home/.config/herdr:$contract_home/.config/herdr:r
 assert_log "--volume $contract_home/.gitconfig:$contract_home/.gitconfig:ro"
 assert_log "--volume $ssh_sock:/run/safe-pi/ssh-agent.sock:rw"
 assert_log "--volume safe-pi-toolchain-u$uid:$contract_home/.local/share/mise:rw"
+# The extension transpile cache is bound over the throwaway temporary directory,
+# because jiti caches the compiled extensions under `/tmp`, which the sandbox
+# would otherwise discard on every start. It is the sandbox's own directory, not
+# the host Pi's: a cache entry is a module the host Pi executes.
+assert_log "--volume $contract_home/.cache/safe-pi/jiti:/tmp/jiti:rw"
 assert_log "--tmpfs /tmp"
+[[ -d "$contract_home/.cache/safe-pi/jiti" ]] ||
+	fail "the transpile cache directory must be created as the invoking user"
 assert_log "--env SAFE_PI_SANDBOX=1"
 for name in HOME USER LANG LC_ALL LC_CTYPE TERM TZ; do
 	assert_log "--env $name"
@@ -587,6 +594,7 @@ SAFE_PI_TEST_HOME="$dry_home" \
 	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
 	run_safe_pi --dry-run -c >/dev/null || fail "dry run failed"
 [[ ! -e "$dry_home/.pi" ]] || fail "dry run created \$HOME/.pi on the host"
+[[ ! -e "$dry_home/.cache" ]] || fail "dry run created \$HOME/.cache on the host"
 
 # --- Prepare converges the declared environment and never starts Pi -------------
 

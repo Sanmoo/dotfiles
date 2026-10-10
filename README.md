@@ -253,7 +253,9 @@ installs the declared environment into the per-user toolchain volume
 `safe-pi-toolchain-u<uid>`: about 13 seconds inside mise, 17 seconds of wall
 clock for the whole run. The volume is shared by every repository, so the
 download happens once per user. Later runs start in about three seconds, almost
-all of it container startup.
+all of it container startup. The first start also compiles the TypeScript
+extensions Pi loads — about ten seconds, once — and keeps the result in the
+sandbox's own cache, so later starts reuse it instead of compiling again.
 
 The declared environment is converged on every start, so `latest` pins follow
 new releases the way they do on the host. Two tools are the exception:
@@ -320,6 +322,12 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 - `pi install` inside the sandbox fails on purpose, because extensions and
   packages are read-only. Install on the host; the sandbox picks it up
   immediately.
+- Pi compiles its TypeScript extensions on first use and caches the compiled
+  modules under `/tmp`, which the sandbox discards with the container. `safe-pi`
+  therefore binds a persistent directory there — the sandbox's own, not the one
+  the host Pi uses, because a cache entry is a module the host would execute. An
+  extension you install on the host is the only thing compiled on the next
+  start.
 - The sandbox is a filesystem boundary, not a credential boundary: it can read
   the credentials Pi uses.
 - `safe-pi` runs under your host locale. The image ships `en_US.UTF-8`, and a
@@ -339,9 +347,11 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 
 - Image: `safe-pi:current-u<uid>`, plus one tag per baked Pi version.
 - Toolchain volume: `safe-pi-toolchain-u<uid>`.
-- Starting over: remove the volume to reinstall the declared environment,
-  remove the image tags to rebuild the image; the next run recreates what is
-  missing.
+- Extension transpile cache: `~/.cache/safe-pi/jiti` on the host, mounted at
+  `/tmp/jiti` inside the sandbox.
+- Starting over: remove the volume to reinstall the declared environment, remove
+  the image tags to rebuild the image; the next run recreates what is missing.
+  Removing the transpile cache costs one recompilation and nothing else.
 
 ### Troubleshooting
 
@@ -351,6 +361,7 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 | Refuses to run | You are root; file-ownership parity needs your own uid |
 | Cannot find the build context | The script was copied instead of installed by stow; point the override at the Dockerfile |
 | The first run is slower than described above | The image build or the convergence is running; it reports which one |
+| A start is about ten seconds slower than usual | The extension transpile cache is cold: the first run after it was removed, or after extensions changed |
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
 | Herdr shows the pane as a plain terminal | You are not running inside a Herdr pane, or Herdr's socket is not reachable from the container, so the sandbox reporter cannot attribute the pane |
 | A restored pane comes back as a plain shell | No report reached Herdr before the restart, so the pane has no stored resume command; run `safe-pi -c` |

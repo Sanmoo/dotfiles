@@ -214,6 +214,16 @@ CONTAINER_MISE_DATA_DIR="$HOME/.local/share/mise"
 CONTAINER_MISE_CACHE_DIR="$CONTAINER_MISE_DATA_DIR/cache"
 CONTAINER_MISE_STATE_DIR="$CONTAINER_MISE_DATA_DIR/state"
 CONTAINER_SSH_SOCK="/run/safe-pi/ssh-agent.sock"
+# jiti compiles the TypeScript extensions Pi loads and caches the result under
+# the temporary directory (`$TMPDIR/jiti`), which the sandbox throws away on
+# every start: a cold compile of this extension set is about ten seconds of CPU
+# before Pi draws its first frame. The cache is bound outside the container
+# instead, in a directory private to the sandbox. It is deliberately not the
+# host's own `/tmp/jiti`: a cache entry is a module the host Pi executes, so a
+# sandbox-writable cache the host reads would undo what the read-only extension
+# and npm mounts are for.
+HOST_JITI_CACHE_DIR="$HOME/.cache/safe-pi/jiti"
+CONTAINER_JITI_CACHE_DIR="/tmp/jiti"
 
 # Pi groups sessions by working directory. The container-only sessions path
 # mirrors that grouping so a session written in the sandbox lands in the same
@@ -260,6 +270,11 @@ record_mount "$HOST_SESSION_DIR" "$CONTAINER_SESSION_DIR" rw
 # The toolchain volume is always mounted, even before anything is installed:
 # its content is the declared environment, not image content.
 record_mount "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
+# The transpile cache is a fixed point of the contract too: it is always
+# mounted at the path jiti looks in, so a start reuses the extensions it already
+# compiled. The destination is deeper than the temporary directory, so the bind
+# wins over the tmpfs and the rest of `/tmp` stays ephemeral.
+record_mount "$HOST_JITI_CACHE_DIR" "$CONTAINER_JITI_CACHE_DIR" rw
 
 # Installed code is held immutable while agent state stays writable. The mount
 # stays at its own path so the host's relative extension symlinks keep
@@ -422,9 +437,11 @@ warn_on_version_drift() {
 }
 
 # --- Ensure required host mount points exist ----------------------------------
-# Docker creates a missing bind source as a root-owned directory on the host,
-# so the agent and sessions directories are created as the invoking user first.
-mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR"
+# Docker creates a missing bind source as a root-owned directory on the host, so
+# the agent, sessions, and transpile cache directories are created as the
+# invoking user first. jiti refuses a cache directory it cannot write, and a
+# root-owned one would leave it recompiling the extension set on every start.
+mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR" "$HOST_JITI_CACHE_DIR"
 
 # --- Run Pi in the sandbox ----------------------------------------------------
 if [[ "$MODE" != "prepare" ]]; then
