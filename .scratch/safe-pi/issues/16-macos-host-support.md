@@ -1,26 +1,59 @@
 # 16 — `safe-pi` cannot start on macOS, where the Docker daemon runs in a VM
 
 **What to build:** `safe-pi` must start on the macOS host (Homebrew `docker` CLI
-against Colima) with the same contract it has on Linux, or with an explicitly
-documented subset of it. Today the container never starts: the wrapper
-bind-mounts the host's SSH agent socket, and the daemon cannot see it.
+against Colima) with the same contract it has on Linux: the sandbox user's home
+is the host's, every bind is a `--mount type=bind`, and the invoking shell's SSH
+agent and Herdr's socket reach the sandbox through a socket relay over the
+Colima VM's SSH (ADR 0008). Today the container never starts: the wrapper
+bind-mounts the host's SSH agent socket, and the Daemon VM cannot see it.
 
 This is a scope change. The spec lists "macOS support (`pi-mac`)" under *Out of
-Scope*; resolving this ticket brings it in, and the README and ADR 0002 are the
-living record that has to say so.
+Scope*; this ticket brings macOS with Colima in. The spec stays as archive; ADR
+0008 and the README are the living record.
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
-- [ ] `safe-pi` starts on the macOS host, and a missing or unreachable SSH agent
-      degrades to a warning instead of a failed `docker run`.
-- [ ] When the VM provides a forwarded agent, `ssh-add -l` inside the sandbox
-      lists the host's keys, and `git push` over SSH works from the sandbox.
-- [ ] No bind mount the wrapper emits can make the daemon create a missing source
-      path (no stray directories left in the VM).
-- [ ] The Herdr behaviour on macOS is decided and either working or documented as
-      unavailable.
-- [ ] The wrapper boundary test covers the macOS branch; the usage guide names
-      what the macOS host needs (e.g. Colima's agent forwarding) and what it lacks.
+- [ ] On Darwin the wrapper identifies the Colima profile from `docker info
+      --format '{{.Name}}'` (`colima`, or `colima-<profile>`, which is also the
+      `Host` alias in `~/.colima/ssh_config`), and refuses any other daemon with
+      `safe-pi on macOS supports Colima only`. Linux behaviour is unchanged
+      apart from the `--mount` switch.
+- [ ] A run or `--shell` start on Colima opens its own SSH connection to the VM
+      (its own control path, not Lima's master) with one remote unix-socket
+      forward per host socket present — the invoking shell's `$SSH_AUTH_SOCK`,
+      and `$HERDR_SOCKET_PATH` when the Herdr variables are set — into a private
+      per-start directory in the VM; mounts the forwarded sockets at the
+      container paths the contract already uses (`/run/safe-pi/ssh-agent.sock`,
+      and the reporter's `SAFE_PI_HERDR_SOCKET_PATH`); and closes the connection
+      and removes the directory when the sandbox exits. The connection is opened
+      alongside the pre-start checks to hide its ~0.9 s.
+- [ ] A relay that cannot be opened is a per-socket warning (`safe-pi: SSH agent
+      unavailable in the sandbox: <reason>`, and the Herdr equivalent), and the
+      sandbox starts without that socket.
+- [ ] `--prepare` opens no relay. `--dry-run` prints the relay command before the
+      Docker invocation and runs neither.
+- [ ] Every bind the wrapper emits is `--mount type=bind,...`, so a source the
+      daemon cannot see fails as a missing source instead of becoming a
+      directory the daemon creates. The toolchain volume and the tmpfs keep
+      their current form.
+- [ ] The image creates the sandbox user with the host's `$HOME` (a build
+      argument, recorded in a `safe-pi.home` label), and seeds the mount points
+      under it; an image whose label differs from the invoking `$HOME` is stale
+      and rebuilt. The `safe-pi.entrypoint` label is bumped so existing images
+      rebuild.
+- [ ] `tests/safe-pi-wrapper-test.sh` covers, with `uname`, `ssh` and
+      `docker info` stubbed: Linux unchanged except `--mount`; Darwin with the
+      default and a named Colima profile; Darwin with another daemon refused; a
+      failed relay warning and starting without the socket; the dry run printing
+      the relay; `--prepare` opening none; the home build argument and label; a
+      stale-home image rebuilt.
+- [ ] Verified on this macOS host and recorded here: `ssh-add -l` lists the
+      invoking shell's key and `git push` over SSH works from the sandbox; the
+      Herdr pane is attributed to Pi; a Herdr server restart brings the pane
+      back inside the sandbox; `safe-pi --prepare` converges the toolchain
+      volume.
+- [ ] The README gains a macOS section (Colima only, what the relay does, the
+      ~0.9 s it adds), and the usage guide's table of resources names the relay.
 
 ## What is known
 
@@ -60,6 +93,35 @@ directory onto a file (or vice-versa)?
   Docker Desktop reports `Docker Desktop`. `uname -s` on the host is `Darwin`.
 - Already fixed on the way here (da9350b): the image used `COPY --chmod`, which
   the legacy builder rejects; this host's CLI has no `buildx` plugin.
+- Second macOS gap, found once the socket was out of the way
+  (`SSH_AUTH_SOCK= safe-pi --prepare` → `mise ERROR ... Permission denied` on
+  `~/.local/share/mise/state`, and `flock: 9: Bad file descriptor`): the image
+  creates the user at `/home/<user>` (`useradd --create-home` and the seeded
+  mount points under `/home/${USERNAME}`), while the wrapper mounts everything at
+  host paths under `HOME=/Users/<user>`. The toolchain volume is mounted at a
+  path the image does not have, so Docker gives a new volume no user ownership
+  and it is root-owned. On Linux both homes are `/home/<user>`.
+- The relay was verified by hand: `ssh -F ~/.colima/ssh_config -N
+  -o ExitOnForwardFailure=yes -o StreamLocalBindUnlink=yes -R <vm>/agent.sock:$SSH_AUTH_SOCK
+  -R <vm>/herdr.sock:$HERDR_SOCKET_PATH colima`, then a container of
+  `safe-pi:current-u502` with both mounted via `--mount type=bind`: `ssh-add -l`
+  listed the host key and a unix connect to the Herdr socket succeeded. The VM
+  user is `lima` with uid 502, the host uid, so the `0600` forwarded sockets are
+  usable by the sandbox user. With `-f -M -S <own control path>`, the forwards
+  are ready in about 0.93 s.
+- `~/.colima/ssh_config` points at Lima's persistent master (`ControlMaster auto`,
+  `ControlPersist yes`, `ControlPath ~/.colima/_lima/colima/ssh.sock`) and says
+  Lima does not use the file itself.
+- The keys are chosen per shell: the history shows `eval "$(ssh-agent -s)"` then
+  `ssh-add ~/.ssh/id_bjd` or `~/.ssh/id_personal`. The launchd agent
+  (`/private/tmp/com.apple.launchd.*/Listeners`) holds no identities.
+- Herdr's socket is per session: `HERDR_SOCKET_PATH` was
+  `~/.config/herdr/sessions/study/herdr.sock`.
+- The wrapper already stays the parent of `docker run` (no `exec`), so it can
+  close the relay when the sandbox exits.
+- Not this ticket: `git/.gitconfig`'s `credential.helper = !/opt/homebrew/bin/gh
+  auth git-credential` does not exist in the sandbox, which is equally true on
+  Linux today.
 - Workaround until then: `SSH_AUTH_SOCK= safe-pi` starts the sandbox without an
   agent (commits work, SSH push/pull do not).
 
@@ -83,3 +145,23 @@ directory onto a file (or vice-versa)?
   into one stable agent first?
 
 ## Comments
+
+### Decision (2026-10-10)
+
+Settled in a grilling session; recorded in ADR 0008, with the terms Daemon VM
+and Socket relay in `CONTEXT.md`.
+
+- **Scope:** macOS with Colima only. Docker Desktop and other daemons on macOS
+  are refused; Linux is unchanged.
+- **Which agent:** the invoking shell's `$SSH_AUTH_SOCK`, as on Linux. Colima's
+  `forwardAgent` is rejected: it pins whichever agent `colima start` saw and does
+  nothing for Herdr. Consolidating the per-shell agents is therefore not needed.
+- **Transport:** a socket relay per start over the sandbox's own SSH connection
+  to the Colima VM, not Lima's persistent master and not a TCP relay.
+- **Herdr:** in scope, over the same relay.
+- **Detection:** Darwin plus `docker info` naming the Colima profile.
+- **Failure:** warn per socket and start without it.
+- **Modes:** run and `--shell` relay; `--prepare` does not; `--dry-run` prints.
+- **Binds:** all switch to `--mount type=bind`.
+- **Home:** the image takes the host's `$HOME` as a build argument and label.
+- **Records:** ADR 0008, a one-line pointer in ADR 0002, the README.

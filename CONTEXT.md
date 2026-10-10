@@ -86,6 +86,14 @@ _Avoid_: container locale, image locale
 Mounting a host directory into the sandbox at the same absolute path, so absolute paths and symlinks keep resolving.
 _Avoid_: mount mapping, path mapping
 
+**Daemon VM**:
+The virtual machine the Docker daemon runs in when it is not the host itself, as on macOS. Host paths outside what it shares, and every host socket, are invisible to the daemon there.
+_Avoid_: Colima (when meaning the role), the VM, Docker host
+
+**Socket relay**:
+The per-start bridge that makes a host socket — the invoking shell's SSH agent, or Herdr's — reachable inside a sandbox whose daemon runs in a Daemon VM. It lives exactly as long as the sandbox start that opened it.
+_Avoid_: tunnel, forward, proxy, agent forwarding (when meaning the relay)
+
 **Extension transpile cache**:
 The sandbox's own copy of the compiled output for the TypeScript extensions Pi loads — jiti's filesystem cache, which Pi's extensions write to `/tmp/jiti` and which the wrapper binds over the sandbox's throwaway temporary directory, so a start reuses it instead of recompiling the whole extension set (about ten seconds of CPU per start when it is cold). It is bound over `/tmp` rather than into it for the same reason the toolchain volume exists: the container that wrote it is thrown away. It is sandbox state, deliberately not the host's own `/tmp/jiti`, because a cache entry is a module the host Pi executes and the read-only extension and npm package mounts exist so a sandboxed turn cannot persist code into the host setup.
 _Avoid_: jiti cache, build cache, transpile tmp
