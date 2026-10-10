@@ -19,13 +19,18 @@ Chegar a uma especificação arquitetural fundamentada para desenvolvimento agê
 - Pesquisa: relatórios em branches descartáveis `research/agent-orchestration-<candidate>`, worktrees isoladas sob `.worktrees/`, sem merge e sem PR. A invocação de wayfinder prevê push dessas branches; nunca publicar credenciais ou detalhes internos. Pesquisadores não editam tickets: o responsável pelo mapa registra links e resolve pesquisas após verificar resultados.
 - Nesta etapa, pesquisas são leitura de fontes e redação de evidências; não instalar serviços, executar benchmarks ou implementar adaptadores. Mudança em código/configuração exige planejamento próprio e Full gate conforme AGENTS.
 - As propostas Q24–Q26 da conversa anterior (autoridade de publicação, Git exclusivo e um único scheduler) NÃO foram aceitas; continuam perguntas nos tickets apropriados.
-- As três pesquisas documentais terminaram no workflow `93313e50-aec4-41f6-8845-2e90e96d7866`. Não há filhos ativos nem pedidos pendentes de supervisor. Handoffs e relatórios foram lidos pelo responsável; SHAs imutáveis, caminhos locais e validações estão nos Comments de cada ticket. Relatórios não estão em `main` e não dependem dos artefatos temporários da sessão para recuperação.
-- A entrega está pendente: todos os pushes falharam com `Host key verification failed`. [Desbloquear a publicação das evidências com confiança SSH validada](issues/09-research-publication.md) exige intervenção/autorização humana; não houve fallback nem alteração de SSH. As pesquisas continuam `claimed` apenas por essa pendência; não relançar pesquisadores. Preservar suas branches/worktrees até publicação ou aceitação explícita de entrega local.
-- Na próxima sessão, confirmar a régua de avaliação e trabalhar uma decisão da fronteira; a publicação pode ser tratada separadamente. Não tratar evidência produzida como decisão humana. A escolha de motor permanece bloqueada.
+- As três pesquisas documentais terminaram no workflow `93313e50-aec4-41f6-8845-2e90e96d7866` e foram publicadas após nova tentativa autorizada. Não há filhos ativos nem pedidos pendentes de supervisor. Handoffs/relatórios foram lidos pelo responsável; os tickets resolvidos contêm URLs imutáveis por SHA, evidência e ressalvas. Relatórios NÃO foram integrados em `main`, conforme o fluxo de pesquisa do wayfinder. Não relançar pesquisadores.
+- Branches remotas de pesquisa preservam os relatórios; branches/worktrees locais ainda estão presentes e limpas sob `.worktrees/agent-orchestration-{temporal,hatchet,restate}/`. Links canônicos independem das worktrees. O bloqueio SSH histórico foi encerrado sem alterar configuração nem diagnosticar o que mudou no ambiente.
+- Na próxima sessão, confirmar a régua de avaliação e trabalhar uma decisão da fronteira. Não tratar evidência produzida como decisão humana. A escolha de motor permanece bloqueada pelos tickets de régua, harness e segurança, não pela publicação.
 
 ## Decisions so far
 
 - [Preservar os acordos e limites já confirmados](issues/01-confirmed-baseline.md): execução por tickets elegíveis e reservados, aprovação humana, ajuda por canais oficiais, sandbox contra prompt injection e harness substituível; detalhes e ressalvas vivem no ticket.
+
+- [Desbloquear a publicação das evidências com confiança SSH validada](issues/09-research-publication.md): nova tentativa autorizada publicou os três SHAs sem alteração de SSH; relatórios seguem fora de main.
+- [Investigar Temporal para orquestrar harnesses externos](issues/03-temporal.md): evidência publicada sobre replay, Activities, espera, versionamento e operação; sem prova de recuperação do harness.
+- [Investigar Hatchet para orquestrar harnesses externos](issues/04-hatchet.md): evidência publicada sobre durable tasks, eviction e concorrência; gaps de N e evolução explicitados.
+- [Investigar Restate para orquestrar harnesses externos](issues/05-restate.md): evidência publicada sobre journal, estado e espera; limites de concorrência e licença destacados.
 
 ## Not yet specified
 

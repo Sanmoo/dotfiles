@@ -1,7 +1,7 @@
 # Desbloquear a publicação das evidências com confiança SSH validada
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 01
 
 ## Question
@@ -16,4 +16,14 @@ Não usar `StrictHostKeyChecking=no`, não inserir chave coletada da rede sem va
 
 - Não houve tentativa de remediar SSH. As worktrees estão limpas e as branches/commits permanecem locais.
 - Evidências imutáveis e caminhos: [Investigar Temporal para orquestrar harnesses externos](03-temporal.md), [Investigar Hatchet para orquestrar harnesses externos](04-hatchet.md), [Investigar Restate para orquestrar harnesses externos](05-restate.md).
-- Não existe pesquisa rodando nem supervisor aguardando resposta. Nova sessão pode retomar pelo mapa e discutir a régua; escolha final continua bloqueada pelos tickets pendentes.
+- Não existe pesquisa rodando nem supervisor aguardando resposta. Nova sessão pode retomar pelo mapa e discutir a régua; escolha final continua bloqueada pelos tickets de decisão pendentes.
+
+## Answer
+
+O humano autorizou nova tentativa. Os três pushes tiveram sucesso e os SHAs remotos foram conferidos por `git ls-remote --heads origin 'research/agent-orchestration-*'`:
+
+- Temporal: `bc5dd53e2d8fa275503269e3ce930596f24da509`.
+- Hatchet: `b29b47f4e498aa6a010411d37d0714acc5bc8ac3`.
+- Restate: `e67e1fc28039c7cdda4c9379235ed0fcf21bb6ab`.
+
+Nenhuma configuração SSH, chave, remote ou protocolo foi alterado pelo agente. A falha original foi de verificação da chave do host, não de identidade do autor Git; não foi diagnosticado o que mudou no ambiente entre tentativas. Não houve push de main, merge ou PR. Relatórios seguem nas branches de pesquisa, enquanto mapa/tickets vivem em main. A publicação já não bloqueia os tickets de pesquisa. Recursos locais ainda preservados; evidências publicadas por SHA permitem limpeza posterior sem perda do conteúdo.

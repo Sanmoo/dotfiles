@@ -1,7 +1,7 @@
 # Investigar Temporal para orquestrar harnesses externos
 
 Type: research
-Status: claimed
+Status: resolved
 Blocked by: 01, 09
 
 ## Question
@@ -31,7 +31,7 @@ Worker caiu após commit e antes de registrar sucesso; resposta humana chega dia
 
 - Pesquisa documental terminada. Workflow: `93313e50-aec4-41f6-8845-2e90e96d7866`; child run: `de26476d-7889-434e-815e-745c0f81e98e`. Nenhum subagente deste ticket permanece ativo.
 - Branch preservada: `research/agent-orchestration-temporal`; worktree limpa: `.worktrees/agent-orchestration-temporal/`.
-- Commit local imutável: `bc5dd53e2d8fa275503269e3ce930596f24da509`. [Ler relatório local](../../../.worktrees/agent-orchestration-temporal/docs/research/agent-orchestration/temporal.md). Recuperação independente da worktree: `git show bc5dd53e2d8fa275503269e3ce930596f24da509:docs/research/agent-orchestration/temporal.md`.
+- Commit local imutável: `bc5dd53e2d8fa275503269e3ce930596f24da509`. [Ler relatório no commit publicado](https://github.com/Sanmoo/dotfiles/blob/bc5dd53e2d8fa275503269e3ce930596f24da509/docs/research/agent-orchestration/temporal.md). Recuperação independente da worktree: `git show bc5dd53e2d8fa275503269e3ce930596f24da509:docs/research/agent-orchestration/temporal.md`.
 - Validação do pesquisador: **FULL GATE: PASS**; 28/28 unidades; 14,88 s; orçamento dentro. O responsável conferiu commit exclusivo do relatório e worktree/index limpos; leu o relatório e handoff. Isso não é auditoria independente exaustiva de claims nem prova ponta a ponta.
 - Achados documentais para futura comparação, sem adoção: Replay não preserva sessão/dirty files/filhos; Activities e efeitos externos exigem reconciliação; Signals/Updates fornecem espera durável, não autorização; versionamento e operação de produção diferem do modo dev.
 - Publicação falhou: `git push -u origin research/agent-orchestration-temporal` → `Host key verification failed.` / `fatal: Could not read from remote repository.` Nenhuma mudança de SSH/credenciais nem fallback. Sem URL remota confirmada.
@@ -41,3 +41,16 @@ Worker caiu após commit e antes de registrar sucesso; resposta humana chega dia
 
 - Fontes iniciais: https://docs.temporal.io/ ; https://docs.temporal.io/self-hosted-guide ; https://learn.temporal.io/tutorials/ai/building-durable-ai-applications/human-in-the-loop/
 - Comparação inicial na conversa foi exploratória, não evidência suficiente de adoção.
+
+
+## Answer
+
+Pesquisa documental entregue e publicada após nova tentativa explicitamente autorizada pelo humano. `git push -u origin research/agent-orchestration-temporal` teve sucesso; `git ls-remote` confirmou o SHA `bc5dd53e2d8fa275503269e3ce930596f24da509` no remote. Nenhuma configuração SSH, known_hosts, remote ou mecanismo de autenticação foi alterado. A causa da diferença entre as tentativas não foi diagnosticada; não atribuir correção a uma mudança não observada.
+
+- Evidência canônica: [relatório publicado por SHA](https://github.com/Sanmoo/dotfiles/blob/bc5dd53e2d8fa275503269e3ce930596f24da509/docs/research/agent-orchestration/temporal.md). O detalhe técnico vive no relatório, não duplicado no mapa.
+- Síntese: Replay/Activities, ajuda durável, versionamento e operação investigados; recuperação do harness e reconciliação permanecem externas.
+- Full gate do relatório: **FULL GATE: PASS**. Leitura/revisão documental pelo responsável já registrada nos Comments; auditoria independente exaustiva e prova de execução não realizadas.
+- Sem vencedor, PoC, benchmark, integração em `main` ou PR. `/implement` continua sendo uma skill do fluxo Pi, não contrato universal.
+- Branch remota de pesquisa preservada; worktree e branch local ainda presentes e limpas. Links não dependem mais da worktree. Limpeza local pode ser tratada separadamente, sem apagar evidência remota.
+
+Os Comments anteriores registram o bloqueio histórico, agora resolvido; não descrevem mais o estado atual de entrega.
