@@ -13,7 +13,7 @@ optional dependencies (https://github.com/npm/cli/issues/4828). ...
 Hint: Start without extensions using "pi -ne".
 ```
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] **Mounts.** The wrapper creates `$HOME/.cache/safe-pi/npm` as the invoking
       user and binds it at `$HOME/.pi/agent/npm`, replacing the read-only mount
