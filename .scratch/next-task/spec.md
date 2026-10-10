@@ -107,3 +107,7 @@ the recommended ticket.
    package distributes exactly `jira-issue-formatting` and `next-task` under
    `agents/.agents/skills/`.
 9. `tests/run --full` ends with `FULL GATE: PASS`.
+
+## Comments
+
+- 2026-10-09 (owner): the Full gate was red on two pre-existing `pi-deere` units, unrelated to this spec. The owner asked for them to be fixed in this task rather than deferred, so the branch also carries `pi-deere: stop the tests from racing a cold pi launch and a GNU stat` (b368dfc). It fixes `tests/pi-deere-test.sh`'s `stat` idiom, which breaks on GNU coreutils because `stat -f %Lp` prints the filesystem dump to stdout *and* exits 1, so the `||` fallback appended `700` instead of replacing it; and `tests/pi-deere-real-pi-test.sh`, whose fixture pointed `HOME` at a temporary directory, making the installed `pi` wrapper install a Node runtime and re-download its package on every launch, so the session started only after the tests' fixed windows had closed. `HOME` now stays the real one and the profile is isolated through `PI_CODING_AGENT_DIR`/`PI_DEERE_AGENT_DIR`; the two windows were widened past a cold launch. Full gate after the fix: `FULL GATE: PASS`, 26 of 26 units.
