@@ -2,11 +2,11 @@
 
 **What to build:** A `safe-pi` start whose extension set is unchanged must reach Pi's first frame as fast as the host's `pi` does, the way the usage guide already describes a steady start ("about three seconds, almost all of it container startup"). Today it takes about fifteen, because the TypeScript extensions Pi loads are recompiled from scratch on every start.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A second `safe-pi` start reaches Pi's first frame in the low single-digit seconds, measurably no slower than the host `pi` measured the same way.
-- [ ] The compilation cache that makes it fast survives the container that wrote it, and it is private to the sandbox: nothing the sandbox writes is code the host Pi executes.
-- [ ] The `docker` boundary test asserts the cache mount and its mode, and the usage guide names the cache and where it lives.
+- [x] A second `safe-pi` start reaches Pi's first frame in the low single-digit seconds, measurably no slower than the host `pi` measured the same way.
+- [x] The compilation cache that makes it fast survives the container that wrote it, and it is private to the sandbox: nothing the sandbox writes is code the host Pi executes.
+- [x] The `docker` boundary test asserts the cache mount and its mode, and the usage guide names the cache and where it lives.
 
 ## What is known
 
@@ -75,3 +75,47 @@ frame inside a 120×32 tmux pane, five runs: **14.3 s, 16.6 s, 17.0 s**; the hos
   throwaway temporary directory.
 - **No image change.** This is wrapper-only, so the entrypoint label does not
   move and an existing image is not rebuilt.
+
+### Implemented (2026-10-09)
+
+Integrated as `7fb95c4` on `c70c699`, after rebasing onto the `main` commits that
+already carried the gate fix (`b368dfc`, `c70c699`). `FULL GATE: PASS` (26 of 26
+units) in the worktree that carried the change; the two `pi-deere` units that had
+blocked the first gate run were red on `main` before this work and are green
+there now, so nothing in this change was needed to unblock them.
+
+Measured with the installed `safe-pi`, by the same harness the diagnosis used
+(Pi's first drawn frame in a 120×32 tmux pane), interleaved in one batch so the
+comparison is within-batch:
+
+| Command | First frame |
+| --- | --- |
+| `pi` (host) | 2.86 s, 2.91 s |
+| `safe-pi --offline --no-extensions` | 2.49 s, 2.54 s |
+| `safe-pi --offline` (all extensions) | 3.86 s, 3.98 s |
+
+Before the change the same harness read 14.3–17.0 s for `safe-pi` against
+3.8–4.4 s for `pi` in the same batch. The extension cost is now about 1.4 s in
+the container against about 1.3 s on the host, and the container's copied Pi
+covers its own startup plus Docker in less than the host's `pi` spends resolving
+its package — which is why a sandbox start now lands within about a second of
+`pi` instead of ten.
+
+- **The cache persists and is the sandbox's own.** Removing
+  `~/.cache/safe-pi/jiti` and starting once recreates the directory as the
+  invoking user (the wrapper's `mkdir -p`), compiles the extension set in 16.7 s
+  and leaves 187 modules in it; every later start reuses them (the count settles
+  at 196 as the last few extensions load).
+- **The mount wins over the tmpfs.** The wrapper emits the bind before
+  `--tmpfs /tmp`. The reverse order was measured first and behaved the same way:
+  the cache files appeared in the host directory and later starts came back
+  warm, so Docker's depth ordering, not the argument order, is what puts the bind
+  inside the tmpfs.
+- **`--dry-run` still touches nothing.** With a throwaway `HOME` the dry run
+  prints `--volume <home>/.cache/safe-pi/jiti:/tmp/jiti:rw` and leaves both
+  `$HOME/.pi` and `$HOME/.cache` uncreated; the boundary test asserts both.
+
+Two limits are recorded in ADR 0005 rather than fixed here: the first start on a
+machine, or any start after the cache is removed, still pays the one-time compile
+(16.7 s measured); and the cache is a second writable path under `$HOME` beyond
+the working repository, the agent directory and the pi-lens directory.
