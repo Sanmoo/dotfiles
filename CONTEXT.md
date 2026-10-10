@@ -66,12 +66,16 @@ _Avoid_: dev environment, toolchain (when meaning the declaration)
 The named Docker volume that keeps the declared environment's installed tools, and mise's cache and state, across sandbox runs, distinct from the image itself.
 _Avoid_: cache volume, mise volume
 
+**Sandbox package tree**:
+The sandbox's own installation of the Pi packages the host declares, installed inside the sandbox from the host's package lock so its native parts match the sandbox's platform rather than the host's. It is sandbox state the host never executes; the host's own installation stays out of the sandbox's reach, and the host's lock stays the source of truth.
+_Avoid_: npm cache, npm volume, node_modules (when meaning the concept)
+
 **Converge**:
-The sandbox making its installed tools match the declared environment: probe, then install only what the probe reports missing, into the toolchain volume. Convergence runs on every sandbox start, before the command, and is silent when it has nothing to do.
+The sandbox making what it has installed match what is declared: its tools match the declared environment, in the toolchain volume, and its sandbox package tree matches the host's package lock. Probe, then install only what the probe reports out of date. Convergence runs on every sandbox start, before the command, and is silent when it has nothing to do.
 _Avoid_: sync, provisioning, install step
 
 **Steady start**:
-A sandbox start whose declared environment is already converged, so convergence installs nothing, prints nothing, and adds no noticeable delay. The counterpart of a first run.
+A sandbox start whose declared environment and sandbox package tree are already converged, so convergence installs nothing, prints nothing, and adds no noticeable delay. The counterpart of a first run.
 _Avoid_: warm start, second run, later run
 
 **Precompiled OTP target**:
