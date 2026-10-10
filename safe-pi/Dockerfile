@@ -124,15 +124,19 @@ RUN set -eux; \
 # The entrypoint converges the declared environment into the volume, puts its
 # shims ahead of the image's binaries, checks Pi's Node requirement, and then
 # runs the command. Every start goes through it, including the debug shell.
-COPY --chmod=0755 entrypoint.sh /usr/local/bin/safe-pi-entrypoint
-
-# The sandbox-owned Herdr reporter. It loads from the container-only extensions
-# view the entrypoint builds, because the mounted Herdr-managed integration is
-# ignored for a pane whose foreground process is not a detected Pi (docker).
-# The directory is created above (mode 0755): BuildKit applies `--chmod` to an
-# implicitly-created destination directory too, which would leave it
-# non-traversable and make the reporter unreadable to the sandbox user.
-COPY --chmod=0644 herdr-reporter.ts /usr/local/share/safe-pi/herdr-reporter.ts
+#
+# The sandbox-owned Herdr reporter ships beside it. It loads from the image
+# because the mounted Herdr-managed integration is ignored for a pane whose
+# foreground process is not a detected Pi (docker). Its directory is created
+# above (mode 0755) so it stays traversable to the sandbox user.
+#
+# Modes are set with an explicit chmod rather than `COPY --chmod`: that flag is
+# BuildKit-only, and a host whose Docker CLI lacks the buildx plugin builds with
+# the legacy builder, which rejects it.
+COPY entrypoint.sh /usr/local/bin/safe-pi-entrypoint
+COPY herdr-reporter.ts /usr/local/share/safe-pi/herdr-reporter.ts
+RUN chmod 0755 /usr/local/bin/safe-pi-entrypoint; \
+    chmod 0644 /usr/local/share/safe-pi/herdr-reporter.ts
 
 ENV HOME=/home/${USERNAME}
 # An image run without the wrapper has nothing to forward a locale from, so the

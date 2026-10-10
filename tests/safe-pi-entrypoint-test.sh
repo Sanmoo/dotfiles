@@ -404,10 +404,23 @@ expected="$(printf 'mise-begin mise-end %.0s' 1 2 3 4 | sed 's/ $//')"
 	fail "the sandbox reporter must live in the image build context"
 grep -Fq "herdr-reporter.ts" "$repo_root/safe-pi/Dockerfile" ||
 	fail "the image must copy the sandbox reporter"
-# BuildKit applies `--chmod` to an implicitly-created destination directory, so
-# a missing explicit `install -d` leaves the reporter directory non-traversable.
+# The reporter directory is created explicitly so it is traversable whatever
+# mode the COPY would give an implicitly-created destination directory.
 grep -Fq "install -d -m 0755 /usr/local/share/safe-pi" "$repo_root/safe-pi/Dockerfile" ||
 	fail "the reporter directory must be created traversable before the COPY"
+
+# --- The image builds without BuildKit -----------------------------------------
+# A host whose Docker CLI has no buildx plugin (Homebrew docker + Colima) falls
+# back to the legacy builder, which rejects BuildKit-only instruction flags. The
+# modes the entrypoint and reporter need are set with an explicit chmod instead.
+if grep -En '^[[:space:]]*(COPY|ADD|RUN)[[:space:]]+--(chmod|chown|link|mount|network|security|parents|exclude|checksum|keep-git-dir)' \
+	"$repo_root/safe-pi/Dockerfile"; then
+	fail "the image must build under the legacy builder (no BuildKit-only flags)"
+fi
+grep -Fq "chmod 0755 /usr/local/bin/safe-pi-entrypoint" "$repo_root/safe-pi/Dockerfile" ||
+	fail "the image must make the entrypoint executable explicitly"
+grep -Fq "chmod 0644 /usr/local/share/safe-pi/herdr-reporter.ts" "$repo_root/safe-pi/Dockerfile" ||
+	fail "the image must make the reporter world-readable explicitly"
 
 # --- The image ships the locale the wrapper forwards ---------------------------
 # The sandbox runs under the host's locale, and only the image can ship it: the
