@@ -23,3 +23,11 @@ Verified on the reference machine (8 cores, default worker count 8) after integr
 - Four files carry `# tier: slow`; see ticket 06 for the justified deviation from acceptance criterion 4.
 
 Because the Full gate is over budget, the corresponding box below is knowingly left unticked. Machine variance matters: back-to-back repetitions degrade under memory/swap pressure, so these are spaced measurements on an otherwise idle machine.
+
+Superseded on 2026-10-10: the 12s Full gate budget this ticket verifies was
+replaced by a declared 75s total plus a 60s slow-tier ceiling, with a breach
+reported as `OVER BUDGET` and never fatal. The unticked box above stays as the
+record of the original budget. See
+`docs/adr/0006-duration-is-reported-not-enforced.md` and
+`.scratch/quality-gateway-followups/issues/04-duration-budgets-and-real-pi-window.md`,
+where the re-measurement is recorded (Full gate 28 units in 36.57s, green).
