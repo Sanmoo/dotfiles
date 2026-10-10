@@ -4,11 +4,11 @@
 
 **Blocked by:** 08 — Container-side Herdr integration for the sandbox
 
-**Status:** ready-for-human
+**Status:** resolved
 
-- [ ] In a Herdr pane, a sandboxed Pi is attributed to Pi and shows `working` during a turn and `idle` after it settles.
-- [ ] A dangerous command that the approval extension gates shows the pane as `blocked` until it is answered.
-- [ ] After a Herdr server restart, the pane reopens inside the sandbox in the same conversation, driven by the reporter's self-reported resume command. (Herdr's native `agent_session` field is stored only for official `herdr:*` sources, so it is not expected for a custom-source pane.)
+- [x] In a Herdr pane, a sandboxed Pi is attributed to Pi and shows `working` during a turn and `idle` after it settles.
+- [x] A dangerous command that the approval extension gates shows the pane as `blocked` until it is answered.
+- [x] After a Herdr server restart, the pane reopens inside the sandbox in the same conversation, driven by the reporter's self-reported resume command. (Herdr's native `agent_session` field is stored only for official `herdr:*` sources, so it is not expected for a custom-source pane.)
 - [x] Restarting the Herdr server and reattaching returns the pane as a plain shell in the saved directory, never as an unsandboxed Pi.
 - [x] Continuing from that shell re-enters the sandbox with the same conversation.
 - [x] Detaching and reattaching the client keeps the sandboxed Pi running.
@@ -146,3 +146,21 @@ answerable now (ticket 07). The literal `agent_session` record is not achievable
 for a custom source and is recorded as by-design. Items 1–2 pass on the reporter
 from ticket 08; item 3 still needs the restart test once ticket 07/08 wire the
 resume command.
+
+### Closed: verification complete (maintainer run, 2026-10-10)
+
+The maintainer ran the live verification on the current build and all seven
+criteria are met; the ticket is resolved.
+
+- Items 4–6 were already recorded above. Items 1–3, which failed at the
+  2026-10-08 agent run, hold on the shipped reporter: the pane is attributed and
+  shows `working`/`idle`, the gated command shows `blocked`, and a restart
+  restores inside the sandbox through the self-reported resume command. The
+  supporting live evidence is ticket 08's end-to-end Herdr evidence and ticket
+  09's live-pane checks; item 3's restore is the reporter resume command from
+  ticket 13 with ticket 10's exact-session targeting.
+- The deviations raised above are closed: 03 and 04 are resolved, and 06
+  retired the usage guide's fail-closed wording.
+- `agent_session` stays `null` for a custom-source pane by design
+  (`is_official_agent_source` admits only `herdr:*` sources). That is the
+  recorded intentional boundary, not an open criterion.
