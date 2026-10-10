@@ -86,6 +86,10 @@ _Avoid_: container locale, image locale
 Mounting a host directory into the sandbox at the same absolute path, so absolute paths and symlinks keep resolving.
 _Avoid_: mount mapping, path mapping
 
+**Extension transpile cache**:
+The sandbox's own copy of the compiled output for the TypeScript extensions Pi loads — jiti's filesystem cache, which Pi's extensions write to `/tmp/jiti` and which the wrapper binds over the sandbox's throwaway temporary directory, so a start reuses it instead of recompiling the whole extension set (about ten seconds of CPU per start when it is cold). It is bound over `/tmp` rather than into it for the same reason the toolchain volume exists: the container that wrote it is thrown away. It is sandbox state, deliberately not the host's own `/tmp/jiti`, because a cache entry is a module the host Pi executes and the read-only extension and npm package mounts exist so a sandboxed turn cannot persist code into the host setup.
+_Avoid_: jiti cache, build cache, transpile tmp
+
 **Self-reported resume command**:
 The `resume_argv` a sandboxed pane's reporter attaches to its Herdr reports (`safe-pi --session <id>`, naming the session that was running, with `safe-pi -c` as the fallback): Herdr persists it with the pane and, after a server restart, types it into the restored pane's shell in the saved working directory, so the pane comes back inside a fresh sandbox in the same conversation. Herdr consults it before its built-in official resume table, and it is the sandbox's substitute for the native `agent_session` reference, which is stored only for official `herdr:*` sources.
 _Avoid_: resume hook, restore command, resume path

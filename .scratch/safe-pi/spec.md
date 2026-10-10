@@ -107,6 +107,7 @@ The development environment is declared once, in the repository's tracked mise c
 | git configuration file | same path | read-only |
 | SSH agent socket | container path | read-write |
 | named toolchain volume | container mise data directory | read-write |
+| extension transpile cache directory | container path | read-write, over the temporary directory |
 | — | temporary directory | tmpfs |
 | Docker socket | — | not mounted |
 
@@ -114,6 +115,7 @@ The development environment is declared once, in the repository's tracked mise c
 - The configuration checkout is mounted because Pi's settings file, keybindings, prompts, extension files, and the pi-lens configuration are symlinks into it. Without it, Pi loses settings, prompts, the approval extension that feeds Herdr's blocked state, and pi-lens configuration.
 - The shared agent skills directory is mounted because the agent directory's skill entries are symlinks into it.
 - Herdr's configuration *directory* is mounted rather than the socket file, so a Herdr server restart (which recreates the socket) does not leave a stale socket inside running containers.
+- The extension transpile cache is bound over the temporary directory, because jiti — the compiler Pi uses for its TypeScript extensions — caches its output in `os.tmpdir()/jiti`, and a throwaway `/tmp` makes every start recompile the whole extension set: measured at about ten seconds of CPU before the first frame, against 3.8–4.4 s for the host's `pi`. The cache is a sandbox-private host directory, deliberately not the host's own: a cache entry is a module the host Pi executes, and the read-only extension and npm package mounts exist so a sandboxed turn cannot persist code into the host setup.
 - Environment contract: host identity variables needed by tools and Pi (`HOME`, `USER`, locale, terminal, timezone), the mise data directory pointing at the volume, the session directory environment variable pointing at the container-only sessions path, the SSH agent socket path, and the Herdr variables (`HERDR_ENV`, `HERDR_SOCKET_PATH`, `HERDR_PANE_ID`) forwarded only when they are set on the host. The wrapper advertises itself to Herdr as a Pi process so the pane is attributed to Pi even though the foreground process is Docker.
 - Pi's agent directory needs no explicit override: with `HOME` preserved and the directory mounted at its host path, Pi's defaults resolve correctly.
 - Toolchain convergence: the entrypoint runs mise's install step non-interactively before starting Pi, which is idempotent and fast when satisfied, and prints progress on the first (long) run. The declared tool shims are placed before the image's own binaries on `PATH`, so the declaration wins for project tools. The image's Node remains the fallback when the declaration does not pin Node; the entrypoint verifies that the Node Pi will run on satisfies Pi's engine requirement and fails with a clear message otherwise, rather than starting a broken Pi.
