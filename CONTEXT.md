@@ -106,6 +106,20 @@ _Avoid_: clear agent, unregister, detach
 Herdr's fallback that clears a self-reported agent once the pane's shell is back at its prompt with nothing running, for a reporter that never sent a pane release. It applies only to agents Herdr cannot identify by its own process detection, so a reporter that claims a process-detectable agent name gets no fallback.
 _Avoid_: shell-return cleanup, timeout, keepalive
 
+## pi-sandbox
+
+**pi-sandbox**:
+The Pi runtime built on Docker Sandboxes (`sbx`), where each sandbox is a microVM with its own kernel and network. It coexists with `safe-pi` and does not replace it until it covers `safe-pi`'s use cases.
+_Avoid_: safe-pi 2, new safe-pi, container sandbox
+
+**Credential**:
+A secret or signing capability that lets the agent act as the user against an external service: model provider keys and OAuth tokens, the SSH agent and its keys, forge tokens such as `gh`, and secret variables in the environment. Under pi-sandbox the agent can neither read nor use one.
+_Avoid_: secret (when meaning the broader set), token, key
+
+**Proxy-managed credential**:
+A credential the host-side `sbx` proxy injects into outbound requests. The sandbox holds only a placeholder, never the real value.
+_Avoid_: injected key, sentinel (when meaning the concept)
+
 ## aws-console
 
 **AWS profile**:
