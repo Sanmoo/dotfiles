@@ -298,7 +298,7 @@ assert_equals 'local conflict' "$(<"$transition_home/.agents/skills/mine/SKILL.m
 [[ ! -e "$transition_home/.agents/skills/mine/EXTRA.md" ]] || { echo 'FAIL: applied despite conflict' >&2; exit 1; }
 
 # The current package must not distribute third-party skills even if patched.
-assert_equals 'jira-issue-formatting' "$(find "$ROOT_DIR/agents/.agents/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)" 'only independently maintained authorship remains'
+assert_equals $'jira-issue-formatting\nnext-task' "$(find "$ROOT_DIR/agents/.agents/skills" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)" 'only independently maintained authorship remains'
 [[ ! -e "$ROOT_DIR/agents/.agents/.skill-lock.json" ]] || { echo 'FAIL: tracked installation lock remains' >&2; exit 1; }
 
 for dependency in article-summarizer coding-guidelines docx ppt-master skill-architect; do
