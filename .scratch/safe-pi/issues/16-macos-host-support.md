@@ -11,14 +11,14 @@ This is a scope change. The spec lists "macOS support (`pi-mac`)" under *Out of
 Scope*; this ticket brings macOS with Colima in. The spec stays as archive; ADR
 0008 and the README are the living record.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] On Darwin the wrapper identifies the Colima profile from `docker info
+- [x] On Darwin the wrapper identifies the Colima profile from `docker info
       --format '{{.Name}}'` (`colima`, or `colima-<profile>`, which is also the
       `Host` alias in `~/.colima/ssh_config`), and refuses any other daemon with
       `safe-pi on macOS supports Colima only`. Linux behaviour is unchanged
       apart from the `--mount` switch.
-- [ ] A run or `--shell` start on Colima opens its own SSH connection to the VM
+- [x] A run or `--shell` start on Colima opens its own SSH connection to the VM
       (its own control path, not Lima's master) with one remote unix-socket
       forward per host socket present — the invoking shell's `$SSH_AUTH_SOCK`,
       and `$HERDR_SOCKET_PATH` when the Herdr variables are set — into a private
@@ -27,32 +27,32 @@ Scope*; this ticket brings macOS with Colima in. The spec stays as archive; ADR
       and the reporter's `SAFE_PI_HERDR_SOCKET_PATH`); and closes the connection
       and removes the directory when the sandbox exits. The connection is opened
       alongside the pre-start checks to hide its ~0.9 s.
-- [ ] A relay that cannot be opened is a per-socket warning (`safe-pi: SSH agent
+- [x] A relay that cannot be opened is a per-socket warning (`safe-pi: SSH agent
       unavailable in the sandbox: <reason>`, and the Herdr equivalent), and the
       sandbox starts without that socket.
-- [ ] `--prepare` opens no relay. `--dry-run` prints the relay command before the
+- [x] `--prepare` opens no relay. `--dry-run` prints the relay command before the
       Docker invocation and runs neither.
-- [ ] Every bind the wrapper emits is `--mount type=bind,...`, so a source the
+- [x] Every bind the wrapper emits is `--mount type=bind,...`, so a source the
       daemon cannot see fails as a missing source instead of becoming a
       directory the daemon creates. The toolchain volume and the tmpfs keep
       their current form.
-- [ ] The image creates the sandbox user with the host's `$HOME` (a build
+- [x] The image creates the sandbox user with the host's `$HOME` (a build
       argument, recorded in a `safe-pi.home` label), and seeds the mount points
       under it; an image whose label differs from the invoking `$HOME` is stale
       and rebuilt. The `safe-pi.entrypoint` label is bumped so existing images
       rebuild.
-- [ ] `tests/safe-pi-wrapper-test.sh` covers, with `uname`, `ssh` and
+- [x] `tests/safe-pi-wrapper-test.sh` covers, with `uname`, `ssh` and
       `docker info` stubbed: Linux unchanged except `--mount`; Darwin with the
       default and a named Colima profile; Darwin with another daemon refused; a
       failed relay warning and starting without the socket; the dry run printing
       the relay; `--prepare` opening none; the home build argument and label; a
       stale-home image rebuilt.
-- [ ] Verified on this macOS host and recorded here: `ssh-add -l` lists the
+- [x] Verified on this macOS host and recorded here: `ssh-add -l` lists the
       invoking shell's key and `git push` over SSH works from the sandbox; the
       Herdr pane is attributed to Pi; a Herdr server restart brings the pane
       back inside the sandbox; `safe-pi --prepare` converges the toolchain
       volume.
-- [ ] The README gains a macOS section (Colima only, what the relay does, the
+- [x] The README gains a macOS section (Colima only, what the relay does, the
       ~0.9 s it adds), and the usage guide's table of resources names the relay.
 
 ## What is known
@@ -165,3 +165,47 @@ and Socket relay in `CONTEXT.md`.
 - **Binds:** all switch to `--mount type=bind`.
 - **Home:** the image takes the host's `$HOME` as a build argument and label.
 - **Records:** ADR 0008, a one-line pointer in ADR 0002, the README.
+
+### Implementation and verification (2026-10-10)
+
+Built on `feat/safe-pi-macos` and integrated into `main`; `tests/run --full`
+ended with `FULL GATE: PASS`.
+
+Verified on this macOS host (arm64, Docker CLI 29.5.2, Colima 0.10.1 `vz`/virtiofs,
+Herdr 0.9.3), with the image rebuilt for `HOME=/Users/samuel.santos`:
+
+- **Agent.** With a throwaway key in a fresh `ssh-agent`, `ssh-add -l` in
+  `safe-pi --shell` lists the same fingerprint as on the host, and `ssh -v` to
+  GitHub from the sandbox offers the agent's key. **Not verified:** a real
+  `git push` over SSH — this host's keys are passphrase-protected and none is in
+  the keychain, so there was nothing to load non-interactively. Please confirm
+  once with a loaded key.
+- **Herdr attribution.** In an isolated headless session (`macverify`), the
+  sandboxed pane showed `agent: safe-pi`, `display_agent: Pi`, `idle`.
+- **Herdr restart.** After `herdr server stop` and a restart, the pane came back
+  inside the sandbox in the same conversation (the stored command was
+  `safe-pi --session <id>`) and was re-attributed to Pi over a fresh relay. A
+  session with no message yet has no file, so `--session` reports "No session
+  found" — as on Linux.
+- **`--prepare`.** Converged all 21 tools into the toolchain volume (about
+  2.5 minutes including the image build); a second run exits 0 in half a second.
+- No relay directory or SSH master was left on the host or in the VM after any
+  of the runs.
+
+Findings that shaped the build:
+
+- A socket on the shared home cannot be mounted over: the daemon fails with
+  `openat2 .../herdr.sock: operation not supported`. The relayed Herdr socket is
+  therefore mounted at `/run/safe-pi/herdr.sock` and the reporter's
+  `SAFE_PI_HERDR_SOCKET_PATH` points there (named only when the relay is up).
+  Recorded in ADR 0008.
+- The relay is one master connection plus a `mkdir` and one `-O forward` per
+  socket, so a refused forward costs only its own socket.
+- A dry run on macOS asks the daemon for its name (`docker info --format`), the
+  one thing it needs to pick the host alias; it refuses an unsupported daemon
+  like a real run, and assumes `colima` when none is reachable.
+- The "table of resources" in the usage guide is the README's "What the sandbox
+  sees" list; it names the relay, and a macOS section and two troubleshooting
+  rows were added.
+- The wrapper test now takes about 12 s on this machine (about 7 s before), over
+  the Fast gate's 5 s unit budget, which it already exceeded here.
