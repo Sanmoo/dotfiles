@@ -13,16 +13,16 @@ optional dependencies (https://github.com/npm/cli/issues/4828). ...
 Hint: Start without extensions using "pi -ne".
 ```
 
-**Status:** claimed
+**Status:** resolved
 
-- [ ] **Mounts.** The wrapper creates `$HOME/.cache/safe-pi/npm` as the invoking
+- [x] **Mounts.** The wrapper creates `$HOME/.cache/safe-pi/npm` as the invoking
       user and binds it at `$HOME/.pi/agent/npm`, replacing the read-only mount
       of the host's tree. The host's `~/.pi/agent/npm/package.json` and
       `package-lock.json` are mounted read-only at a container-only path
       (`/run/safe-pi/host-npm/`). Each is mounted only when it exists. The
       host's tree is not reachable from the sandbox. `--dry-run` shows the
       mounts, and `--dry-run` creates nothing on the host.
-- [ ] **Convergence.** The entrypoint converges the sandbox package tree on
+- [x] **Convergence.** The entrypoint converges the sandbox package tree on
       every start, the debug shell included, alongside the toolchain:
       - The key is a hash of the host's `package.json` and `package-lock.json`
         plus the image's Node ABI (`process.versions.modules`).
@@ -34,13 +34,13 @@ Hint: Start without extensions using "pi -ne".
       - Installs run under a `flock`, so concurrent starts do not install over
         each other. A second start waits, then finds the tree converged.
       - With no host lock, convergence skips silently.
-- [ ] **Failure.** A failed install warns with a message that names the step,
+- [x] **Failure.** A failed install warns with a message that names the step,
       and the sandbox starts with the tree it already has, as toolchain
       convergence does. Under `--prepare`, a failed install fails the command,
       and `--prepare` converges the package tree as well as the toolchain.
-- [ ] **Image.** The `safe-pi.entrypoint` label is bumped, so existing images
+- [x] **Image.** The `safe-pi.entrypoint` label is bumped, so existing images
       rebuild.
-- [ ] **Tests.** `tests/safe-pi-wrapper-test.sh` covers the cache-directory bind
+- [x] **Tests.** `tests/safe-pi-wrapper-test.sh` covers the cache-directory bind
       at the npm path, the read-only lock sources, their absence when the host
       has no lock, and the directory being created by the wrapper but not by a
       dry run. `tests/safe-pi-entrypoint-test.sh` covers, with `npm` stubbed:
@@ -50,11 +50,11 @@ Hint: Start without extensions using "pi -ne".
       - no stamp after a failed install;
       - the warning on a failed install, and the error under `--prepare`;
       - the silent skip without a host lock.
-- [ ] **Verified on this macOS host and recorded here.** `safe-pi` starts
+- [x] **Verified on this macOS host and recorded here.** `safe-pi` starts
       without `-ne`. `pi-md-export`, `pi-lens` and the keyring users load. A
       steady start installs nothing and its time is measured. `safe-pi
       --prepare` converges the tree.
-- [ ] **Docs.** The README's safe-pi section and the usage guide's table of
+- [x] **Docs.** The README's safe-pi section and the usage guide's table of
       resources name the sandbox package tree and its directory. "Starting
       over" mentions removing it. `CONTEXT.md` and ADR 0009 are already
       written.
@@ -142,3 +142,38 @@ Steady start widened to cover it).
   isolation gap, not a platform one, and it goes to ticket 18.
 - **Settled by fact:** the transpile cache needs no invalidation (jiti validates
   by source hash).
+
+### Implementation (2026-10-10)
+
+Integrated into `main` as `3d85fef` and `fa2b477`. `tests/run --full` ended
+`FULL GATE: PASS` (28 of 28 units).
+
+Verified on this macOS host (Colima aarch64, image rebuilt for entrypoint 9):
+
+- `safe-pi --prepare` converged the tree: `added 279 packages in 10s` on the
+  first run (cold npm cache, the tree installed with the image's npm 11.20.0
+  and Node 26), then stamp written in `~/.cache/safe-pi/npm`.
+- A steady `safe-pi --prepare` took 0.58 s end to end and printed nothing.
+- `require()` of `@mariozechner/clipboard`, `@napi-rs/keyring` and
+  `@ast-grep/napi` loaded in the sandbox; `pi-md-export` and `pi-lens` are in the
+  tree with the `linux-arm64-gnu` bindings.
+- `safe-pi --offline -p ...` starts without `-ne` and no extension fails to load
+  (the only output was an unrelated expired Anthropic OAuth refresh), in about
+  2.1 s. The host's `~/.pi/agent/npm` was untouched (still darwin).
+- npm 11.20 prints an `install-scripts ... not yet covered by allowScripts`
+  warning for `@ast-grep/cli`, `esbuild` and `pi-rtk-optimizer`; the scripts did
+  run (native `esbuild` and `ast-grep` binaries are in place). The warning is
+  advisory today; a later npm that blocks unapproved scripts would need an
+  `allowScripts` entry.
+
+Notes from review:
+
+- `npm ci` removes `node_modules` first, so a failed reinstall can leave a
+  partial tree; the warning says "starting with whatever the tree holds" and Pi
+  installs missing packages itself (ADR 0009).
+- The wrapper also creates the host's `~/.pi/agent/npm` directory (empty if
+  absent) so the daemon does not create the mount point root-owned.
+- The entrypoint honours `SAFE_PI_HOST_NPM_DIR` as a test seam; convergence also
+  skips when `package.json` is missing.
+- The usage guide's "table of resources" is the README's "What the sandbox sees"
+  list, as in ticket 16.
