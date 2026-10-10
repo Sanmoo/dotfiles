@@ -23,3 +23,11 @@ Measured on the reference machine (8 cores, default worker count):
 The windows were not the whole cost: 17 real launches at ~3.1s each are ~53s, and only the split moves that off the critical path.
 
 The 12s budget is superseded, not rewritten. `.scratch/quality-gateway/spec.md` is an archive of what was decided at the time and a later decision never rewrites it (see `docs/agents/issue-tracker.md`); ticket 10 keeps its unticked box as the record of the original budget.
+
+Integrated into `main` as `0360ea6`. The final Full gate, on the branch rebased
+onto `main`: 28 units in 31.20s, `duration budget (fast unit <=5s, slow unit
+<=60s, Full gate <=75s): WITHIN`, last line `FULL GATE: PASS`. The critical path
+is still one unit — `tests/pi-deere-real-pi-sessions-test.sh` at 31.2s in the
+pool against its 60s ceiling — so a further split is the next lever if it grows,
+and the `sleep 1` that separates two fixture mtimes is the next window to settle
+on a condition.
