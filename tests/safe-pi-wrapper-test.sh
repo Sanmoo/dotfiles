@@ -686,6 +686,60 @@ grep -Fq "target=/run/safe-pi/host-npm/package-lock.json,readonly" <<<"$dry_lock
 	fail "the dry run must show the host's lock mount: $dry_lock"
 [[ ! -e "$dry_lock_home/.cache" ]] || fail "dry run created the sandbox package tree directory"
 
+# The host's git-installed Pi packages are read-only in the sandbox (ADR 0002).
+# The directory is a fixed point: it is mounted read-only at its own path on
+# every start, and created as the invoking user first when the host lacks it,
+# so Docker never creates it root-owned and it is never reported as missing.
+owner_of() { stat -c %u "$1" 2>/dev/null || stat -f %u "$1"; }
+
+# Absent on the host before the start: created as the invoking user, mounted ro.
+git_absent_home="$tmpdir/git-absent-home"
+mkdir -p "$git_absent_home/.pi/agent/npm" "$git_absent_home/.pi/agent/sessions"
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$git_absent_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$invoked" -c || fail "run without a host git directory failed"
+[[ -d "$git_absent_home/.pi/agent/git" ]] ||
+	fail "the git package directory must be created on the host when absent"
+[[ "$(owner_of "$git_absent_home/.pi/agent/git")" == "$uid" ]] ||
+	fail "the git package directory must be owned by the invoking user"
+assert_log "--mount type=bind,source=$git_absent_home/.pi/agent/git,target=$git_absent_home/.pi/agent/git,readonly"
+
+# Present on the host before the start: its contents are left alone and it is
+# mounted read-only the same way.
+git_present_home="$tmpdir/git-present-home"
+mkdir -p "$git_present_home/.pi/agent/git/github.com/obra/superpowers" "$git_present_home/.pi/agent/sessions"
+printf 'clone\n' >"$git_present_home/.pi/agent/git/github.com/obra/superpowers/marker"
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$git_present_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$invoked" -c || fail "run with a host git directory failed"
+assert_log "--mount type=bind,source=$git_present_home/.pi/agent/git,target=$git_present_home/.pi/agent/git,readonly"
+[[ "$(cat "$git_present_home/.pi/agent/git/github.com/obra/superpowers/marker")" == "clone" ]] ||
+	fail "a start must leave an installed git package untouched"
+
+# A debug shell reports the directory as part of the read-only contract.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$git_absent_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$invoked" --shell || fail "shell run failed"
+assert_log "report $git_absent_home/.pi/agent/git ro;"
+
+# A dry run shows the read-only git mount and creates nothing on the host.
+git_dry_home="$tmpdir/git-dry-home"
+mkdir -p "$git_dry_home/.pi/agent/npm"
+reset_stubs
+git_dry="$(SAFE_PI_TEST_HOME="$git_dry_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --dry-run -c)" || fail "dry run without a host git directory failed"
+git_dry="${git_dry//\\/}" # the dry run shell-quotes the commas inside --mount
+grep -Fq "source=$git_dry_home/.pi/agent/git,target=$git_dry_home/.pi/agent/git,readonly" <<<"$git_dry" ||
+	fail "the dry run must show the read-only git mount: $git_dry"
+[[ ! -e "$git_dry_home/.pi/agent/git" ]] || fail "dry run created the git package directory"
+
 # A dry run prints the invocation without touching the host.
 dry_home="$tmpdir/dry-home"
 mkdir -p "$dry_home"

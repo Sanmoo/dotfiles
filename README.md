@@ -306,6 +306,12 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 - Your Pi configuration, credentials, sessions, skills, prompts, agents, and
   extensions, shared with the host Pi. Extensions are read-only inside the
   sandbox.
+- Pi's git-installed packages (`pi install git:...`, cloned under
+  `~/.pi/agent/git`), shared with the host Pi and read-only inside the sandbox.
+  Installing, updating or removing a git package must be done from the host
+  Pi: inside the sandbox those commands fail with a read-only file system error.
+  A git package whose clone or dependencies are missing fails to install in the
+  sandbox, and the host Pi installs it on its next start.
 - Pi's npm packages, as the sandbox's own **sandbox package tree**, installed
   inside the sandbox from your host's `package.json` and `package-lock.json` so
   their native parts match the sandbox's platform. It lives in
@@ -363,8 +369,8 @@ and the connection and directory are removed when the sandbox exits.
   resume command, naming the session that was running rather than the newest
   one in the directory, and Herdr types it into the restored pane's shell in
   the saved working directory.
-- Extensions are read-only in the sandbox, but Pi's npm packages are not the
-  host's: the sandbox keeps its own package tree, because packages with native
+- Extensions and git-installed packages are read-only in the sandbox, but Pi's
+  npm packages are not the host's: the sandbox keeps its own package tree, because packages with native
   parts carry one binding per platform and the host's tree holds only the
   host's (on macOS, `darwin` bindings a Linux sandbox cannot load). On every
   start the sandbox installs the tree from the host's `package.json` and
