@@ -19,7 +19,9 @@ Chegar a uma especificação arquitetural fundamentada para desenvolvimento agê
 - Pesquisa: relatórios em branches descartáveis `research/agent-orchestration-<candidate>`, worktrees isoladas sob `.worktrees/`, sem merge e sem PR. A invocação de wayfinder prevê push dessas branches; nunca publicar credenciais ou detalhes internos. Pesquisadores não editam tickets: o responsável pelo mapa registra links e resolve pesquisas após verificar resultados.
 - Nesta etapa, pesquisas são leitura de fontes e redação de evidências; não instalar serviços, executar benchmarks ou implementar adaptadores. Mudança em código/configuração exige planejamento próprio e Full gate conforme AGENTS.
 - As propostas Q24–Q26 da conversa anterior (autoridade de publicação, Git exclusivo e um único scheduler) NÃO foram aceitas; continuam perguntas nos tickets apropriados.
-- Na próxima sessão, confirmar a régua de avaliação e trabalhar uma decisão da fronteira. Pesquisas podem continuar em paralelo. Não tratar evidência produzida como decisão humana.
+- As três pesquisas documentais terminaram no workflow `93313e50-aec4-41f6-8845-2e90e96d7866`. Não há filhos ativos nem pedidos pendentes de supervisor. Handoffs e relatórios foram lidos pelo responsável; SHAs imutáveis, caminhos locais e validações estão nos Comments de cada ticket. Relatórios não estão em `main` e não dependem dos artefatos temporários da sessão para recuperação.
+- A entrega está pendente: todos os pushes falharam com `Host key verification failed`. [Desbloquear a publicação das evidências com confiança SSH validada](issues/09-research-publication.md) exige intervenção/autorização humana; não houve fallback nem alteração de SSH. As pesquisas continuam `claimed` apenas por essa pendência; não relançar pesquisadores. Preservar suas branches/worktrees até publicação ou aceitação explícita de entrega local.
+- Na próxima sessão, confirmar a régua de avaliação e trabalhar uma decisão da fronteira; a publicação pode ser tratada separadamente. Não tratar evidência produzida como decisão humana. A escolha de motor permanece bloqueada.
 
 ## Decisions so far
 
