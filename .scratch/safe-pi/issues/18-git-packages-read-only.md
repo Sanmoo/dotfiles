@@ -9,16 +9,16 @@ moved to the sandbox's own tree, ADR 0009). `git/` is reached through the
 read-write agent-directory mount, so a sandboxed turn can edit code the host Pi
 loads on its next start.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The wrapper creates `$HOME/.pi/agent/git` on the host as the invoking user
+- [x] The wrapper creates `$HOME/.pi/agent/git` on the host as the invoking user
       when it is absent, and always mounts it read-only at its own path. It is
       never listed as a missing optional mount.
-- [ ] `tests/safe-pi-wrapper-test.sh` covers the read-only mount, including on
+- [x] `tests/safe-pi-wrapper-test.sh` covers the read-only mount, including on
       a host where the directory did not exist before the start.
-- [ ] Verified on this host: writing under `~/.pi/agent/git/` from
+- [x] Verified on this host: writing under `~/.pi/agent/git/` from
       `safe-pi --shell` fails with a read-only file system error.
-- [ ] The README's "What the sandbox sees" list says git-installed Pi packages
+- [x] The README's "What the sandbox sees" list says git-installed Pi packages
       are read-only in the sandbox, and that `pi install git:...` (and
       `update`/`remove` of a git package) does not work inside the sandbox.
 
@@ -101,19 +101,19 @@ ADR 0002's rule that Pi packages are read-only in the sandbox. Confirmed with
   extensions are read-only in the sandbox.
 
 **Acceptance criteria:**
-- [ ] `safe-pi --dry-run` shows `--mount type=bind,source=$HOME/.pi/agent/git,target=$HOME/.pi/agent/git,readonly`.
-- [ ] Starting the wrapper on a home with no `~/.pi/agent/git` leaves that
+- [x] `safe-pi --dry-run` shows `--mount type=bind,source=$HOME/.pi/agent/git,target=$HOME/.pi/agent/git,readonly`.
+- [x] Starting the wrapper on a home with no `~/.pi/agent/git` leaves that
       directory existing and owned by the invoking user, mounts it read-only,
       and does not report it as missing.
-- [ ] The wrapper test covers both cases: directory present, and directory
+- [x] The wrapper test covers both cases: directory present, and directory
       absent before the start.
-- [ ] On this host, `safe-pi --shell` then `touch ~/.pi/agent/git/x` fails with
+- [x] On this host, `safe-pi --shell` then `touch ~/.pi/agent/git/x` fails with
       "Read-only file system", and `touch ~/.pi/agent/x` still succeeds (remove
       it afterwards).
-- [ ] The README says git-installed Pi packages are read-only in the sandbox and
+- [x] The README says git-installed Pi packages are read-only in the sandbox and
       that installing, updating or removing a git package must be done from the
       host Pi.
-- [ ] `tests/run --full` ends with `FULL GATE: PASS`.
+- [x] `tests/run --full` ends with `FULL GATE: PASS`.
 
 **Out of scope:**
 - A sandbox-owned tree for git packages (ADR 0009 style) or converging git
@@ -124,3 +124,13 @@ ADR 0002's rule that Pi packages are read-only in the sandbox. Confirmed with
 - Loading or declaring `obra/superpowers` or any other git package.
 - Amending ADR 0002 or ADR 0009: this ticket implements ADR 0002's existing
   read-only rule for Pi packages.
+
+Notes from implementation (commit `931a682` on `main`, after `aa0bbdf`):
+
+- `tests/run --full` ends with `FULL GATE: PASS` (28 of 28 units).
+- On this host, `safe-pi --shell`: `touch ~/.pi/agent/git/x` failed with
+  `Read-only file system`; `touch ~/.pi/agent/x` succeeded and was removed. The
+  host's `~/.pi/agent/git` already existed, so the absent-directory start is
+  covered by the wrapper test only.
+- The absent-start mount assertion is what separates a fixed point from an
+  optional mount: making the git mount `add_mount` fails the test.
