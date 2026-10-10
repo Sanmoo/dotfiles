@@ -23,9 +23,11 @@ mkdir -p "$BIN"
 
 DOCKER_LOG="$tmpdir/docker.log"
 NPM_LOG="$tmpdir/npm.log"
+SSH_LOG="$tmpdir/ssh.log"
 PI_LOG="$tmpdir/pi.log"
 : >"$DOCKER_LOG"
 : >"$NPM_LOG"
+: >"$SSH_LOG"
 : >"$PI_LOG"
 
 uid="$(id -u)"
@@ -52,6 +54,9 @@ case "$cmd" in
 			printf 'Cannot connect to the Docker daemon\n' >&2
 			exit 1
 		fi
+		if [[ "$*" == *"--format"* ]]; then
+			printf '%s\n' "${SAFE_PI_FAKE_DAEMON_NAME:-colima}"
+		fi
 		exit 0
 		;;
 	run)
@@ -69,6 +74,8 @@ case "$cmd" in
 		if grep -Fxq -- "$tag" <<<"${SAFE_PI_FAKE_IMAGES:-}"; then
 			if [[ "$*" == *"safe-pi.entrypoint"* ]]; then
 				printf '%s\n' "${SAFE_PI_FAKE_ENTRYPOINT-}"
+			elif [[ "$*" == *"safe-pi.home"* ]]; then
+				printf '%s\n' "${SAFE_PI_FAKE_HOME_LABEL:-$HOME}"
 			elif [[ " $* " == *" --format "* ]]; then
 				printf '%s\n' "${SAFE_PI_FAKE_PI_VERSION:-1.1.0}"
 			fi
@@ -83,6 +90,32 @@ case "$cmd" in
 esac
 DOCKER
 chmod +x "$BIN/docker"
+
+# Stub the host OS: Linux unless a test plays the macOS host.
+cat >"$BIN/uname" <<'UNAME'
+#!/usr/bin/env bash
+printf '%s\n' "${SAFE_PI_FAKE_UNAME:-Linux}"
+UNAME
+chmod +x "$BIN/uname"
+
+# Stub the SSH client the macOS relay runs. It records every invocation. The
+# master connection (-M) fails when SAFE_PI_FAKE_SSH_MASTER_FAIL is set; a
+# forward whose host socket path contains SAFE_PI_FAKE_SSH_FORWARD_FAIL fails.
+cat >"$BIN/ssh" <<'SSH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ssh %s\n' "$*" >>"${SAFE_PI_SSH_LOG:?}"
+if [[ " $* " == *" -M "* && -n "${SAFE_PI_FAKE_SSH_MASTER_FAIL-}" ]]; then
+	printf '%s\n' "$SAFE_PI_FAKE_SSH_MASTER_FAIL" >&2
+	exit 255
+fi
+if [[ "$*" == *"-O forward"* && -n "${SAFE_PI_FAKE_SSH_FORWARD_FAIL-}" && "$*" == *"${SAFE_PI_FAKE_SSH_FORWARD_FAIL}"* ]]; then
+	printf 'forward refused\n' >&2
+	exit 255
+fi
+exit 0
+SSH
+chmod +x "$BIN/ssh"
 
 # Stub the npm registry lookup used by the refresh flag.
 cat >"$BIN/npm" <<'NPM'
@@ -109,14 +142,20 @@ chmod +x "$BIN/pi"
 reset_stubs() {
 	: >"$DOCKER_LOG"
 	: >"$NPM_LOG"
+	: >"$SSH_LOG"
 	: >"$PI_LOG"
+	FAKE_UNAME="Linux"
+	FAKE_DAEMON_NAME="colima"
+	FAKE_HOME_LABEL=""
+	FAKE_SSH_MASTER_FAIL=""
+	FAKE_SSH_FORWARD_FAIL=""
 	FAKE_IMAGES=""
 	FAKE_PI_VERSION="1.1.0"
 	FAKE_LATEST_PI="9.9.9"
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
-	FAKE_ENTRYPOINT="7"
+	FAKE_ENTRYPOINT="8"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]
@@ -137,6 +176,7 @@ run_safe_pi() {
 		esac
 		case "${SAFE_PI_TEST_HERDR-}" in
 		set) export HERDR_ENV=1 HERDR_SOCKET_PATH=/tmp/safe-pi-test-herdr.sock HERDR_PANE_ID=wtest:p1 ;;
+		sock) export HERDR_ENV=1 HERDR_SOCKET_PATH="${SAFE_PI_TEST_HERDR_SOCK-}" HERDR_PANE_ID=wtest:p1 ;;
 		unset) unset HERDR_ENV HERDR_SOCKET_PATH HERDR_PANE_ID ;;
 		esac
 		if [[ -n "${SAFE_PI_TEST_PATH-}" ]]; then
@@ -146,6 +186,12 @@ run_safe_pi() {
 		fi
 		SAFE_PI_DOCKER_LOG="$DOCKER_LOG" \
 			SAFE_PI_NPM_LOG="$NPM_LOG" \
+			SAFE_PI_SSH_LOG="$SSH_LOG" \
+			SAFE_PI_FAKE_UNAME="${FAKE_UNAME-Linux}" \
+			SAFE_PI_FAKE_DAEMON_NAME="${FAKE_DAEMON_NAME-colima}" \
+			SAFE_PI_FAKE_HOME_LABEL="${FAKE_HOME_LABEL-}" \
+			SAFE_PI_FAKE_SSH_MASTER_FAIL="${FAKE_SSH_MASTER_FAIL-}" \
+			SAFE_PI_FAKE_SSH_FORWARD_FAIL="${FAKE_SSH_FORWARD_FAIL-}" \
 			SAFE_PI_PI_LOG="$PI_LOG" \
 			PATH="$path" \
 			SAFE_PI_FAKE_IMAGES="${FAKE_IMAGES-}" \
@@ -204,7 +250,7 @@ run_safe_pi -- --model test/model "a b" || fail "normal run failed"
 assert_log "docker build --tag $current_tag"
 assert_log "docker run --rm"
 assert_log "--workdir $PWD"
-assert_log "--volume $PWD:$PWD"
+assert_log "--mount type=bind,source=$PWD,target=$PWD"
 assert_log " pi $reporter --model test/model a b"
 
 build_line="$(log_line_of "docker build --tag $current_tag")"
@@ -228,7 +274,7 @@ invoked="$tmpdir/invoked"
 mkdir -p "$invoked"
 run_safe_pi --cwd "$invoked" -c || fail "run from another directory failed"
 assert_log "--workdir $invoked"
-assert_log "--volume $invoked:$invoked"
+assert_log "--mount type=bind,source=$invoked,target=$invoked"
 assert_log "--env SAFE_PI_SANDBOX=1"
 
 # --- Forced rebuild rebuilds the current tag -----------------------------------
@@ -518,24 +564,24 @@ FAKE_IMAGES="$current_tag"
 ) || fail "contract run failed"
 
 assert_log "--workdir $invoked"
-assert_log "--volume $invoked:$invoked:rw"
-assert_log "--volume $contract_home/.pi/agent:$contract_home/.pi/agent:rw"
-assert_log "--volume $contract_home/.pi/agent/extensions:$contract_home/.pi/agent/extensions:ro"
-assert_log "--volume $contract_home/.pi/agent/npm:$contract_home/.pi/agent/npm:ro"
-assert_log "--volume $contract_home/.pi/agent/sessions:/run/safe-pi/sessions:rw"
-assert_log "--volume $contract_home/.agents/skills:$contract_home/.agents/skills:ro"
-assert_log "--volume $repo_root:$repo_root:ro"
-assert_log "--volume $contract_home/.pi-lens:$contract_home/.pi-lens:rw"
-assert_log "--volume $repo_root/mise/.config/mise:$contract_home/.config/mise:ro"
-assert_log "--volume $contract_home/.config/herdr:$contract_home/.config/herdr:ro"
-assert_log "--volume $contract_home/.gitconfig:$contract_home/.gitconfig:ro"
-assert_log "--volume $ssh_sock:/run/safe-pi/ssh-agent.sock:rw"
+assert_log "--mount type=bind,source=$invoked,target=$invoked"
+assert_log "--mount type=bind,source=$contract_home/.pi/agent,target=$contract_home/.pi/agent"
+assert_log "--mount type=bind,source=$contract_home/.pi/agent/extensions,target=$contract_home/.pi/agent/extensions,readonly"
+assert_log "--mount type=bind,source=$contract_home/.pi/agent/npm,target=$contract_home/.pi/agent/npm,readonly"
+assert_log "--mount type=bind,source=$contract_home/.pi/agent/sessions,target=/run/safe-pi/sessions"
+assert_log "--mount type=bind,source=$contract_home/.agents/skills,target=$contract_home/.agents/skills,readonly"
+assert_log "--mount type=bind,source=$repo_root,target=$repo_root,readonly"
+assert_log "--mount type=bind,source=$contract_home/.pi-lens,target=$contract_home/.pi-lens"
+assert_log "--mount type=bind,source=$repo_root/mise/.config/mise,target=$contract_home/.config/mise,readonly"
+assert_log "--mount type=bind,source=$contract_home/.config/herdr,target=$contract_home/.config/herdr,readonly"
+assert_log "--mount type=bind,source=$contract_home/.gitconfig,target=$contract_home/.gitconfig,readonly"
+assert_log "--mount type=bind,source=$ssh_sock,target=/run/safe-pi/ssh-agent.sock"
 assert_log "--volume safe-pi-toolchain-u$uid:$contract_home/.local/share/mise:rw"
 # The extension transpile cache is bound over the throwaway temporary directory,
 # because jiti caches the compiled extensions under `/tmp`, which the sandbox
 # would otherwise discard on every start. It is the sandbox's own directory, not
 # the host Pi's: a cache entry is a module the host Pi executes.
-assert_log "--volume $contract_home/.cache/safe-pi/jiti:/tmp/jiti:rw"
+assert_log "--mount type=bind,source=$contract_home/.cache/safe-pi/jiti,target=/tmp/jiti"
 assert_log "--tmpfs /tmp"
 [[ -d "$contract_home/.cache/safe-pi/jiti" ]] ||
 	fail "the transpile cache directory must be created as the invoking user"
@@ -578,7 +624,7 @@ FAKE_IMAGES="$current_tag"
 SAFE_PI_TEST_HOME="$contract_home" \
 	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
 	run_safe_pi --cwd "$repo_root" -c || fail "checkout working-directory run failed"
-assert_log "--volume $repo_root:$repo_root:rw"
+assert_log "--mount type=bind,source=$repo_root,target=$repo_root"
 assert_no_log "--volume $repo_root:$repo_root:ro"
 
 # A working directory inside the checkout still gets the read-only checkout
@@ -588,8 +634,8 @@ FAKE_IMAGES="$current_tag"
 SAFE_PI_TEST_HOME="$contract_home" \
 	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
 	run_safe_pi --cwd "$repo_root/pi" -c || fail "checkout subdirectory run failed"
-assert_log "--volume $repo_root:$repo_root:ro"
-assert_log "--volume $repo_root/pi:$repo_root/pi:rw"
+assert_log "--mount type=bind,source=$repo_root,target=$repo_root,readonly"
+assert_log "--mount type=bind,source=$repo_root/pi,target=$repo_root/pi"
 
 # A dry run prints the invocation without touching the host.
 dry_home="$tmpdir/dry-home"
@@ -650,6 +696,247 @@ prepare_dry="$(run_safe_pi --dry-run --prepare)" || fail "prepare dry run failed
 case "$prepare_dry" in
 *"$current_tag --prepare"*) ;;
 *) fail "prepare dry run output missing the prepare invocation: $prepare_dry" ;;
+esac
+
+# --- The image's home is the host's ---------------------------------------------
+
+# The sandbox user's home is the host's $HOME, passed as a build argument and
+# recorded in a label; the label is what lets a wrapper tell a stale image.
+reset_stubs
+run_safe_pi -c || fail "build run failed"
+assert_log "--build-arg USER_HOME=$HOME"
+grep -Fq 'safe-pi.home="${USER_HOME}"' "$repo_root/safe-pi/Dockerfile" ||
+	fail "the Dockerfile must record the sandbox user's home in the safe-pi.home label"
+grep -Fq 'ENV HOME=${USER_HOME}' "$repo_root/safe-pi/Dockerfile" ||
+	fail "the Dockerfile must give the sandbox user the build argument's home"
+
+# An image built for another home is stale and rebuilt, with the reason said.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_HOME_LABEL="/home/someone-else"
+run_safe_pi -c 2>"$tmpdir/stale-home.err" || fail "stale-home image run failed"
+assert_log "docker build --tag $current_tag"
+assert_log "--build-arg USER_HOME=$HOME"
+assert_log "docker run --rm"
+grep -Fq "home" "$tmpdir/stale-home.err" || fail "stale-home rebuild should say why"
+
+# An image built for this home is kept.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_HOME_LABEL="$HOME"
+run_safe_pi -c || fail "matching-home image run failed"
+assert_no_log "docker build"
+
+# --- Binds are `--mount type=bind`; volumes and the tmpfs keep their form -------
+
+reset_stubs
+FAKE_IMAGES="$current_tag"
+run_safe_pi -c || fail "mount form run failed"
+assert_no_log "--volume $PWD"
+assert_log "--volume safe-pi-toolchain-u$uid:"
+assert_log "--tmpfs /tmp"
+# A comma would split a --mount argument, so the field is quoted.
+comma_dir="$tmpdir/with,comma"
+mkdir -p "$comma_dir"
+reset_stubs
+FAKE_IMAGES="$current_tag"
+run_safe_pi --cwd "$comma_dir" -c || fail "comma working directory run failed"
+assert_log "--mount type=bind,\"source=$comma_dir\",\"target=$comma_dir\""
+
+# --- macOS: sockets reach the Colima VM over a relay ----------------------------
+
+mac_home="$tmpdir/mac-home"
+relay_tmp="$tmpdir/relay-tmp"
+herdr_sock="$tmpdir/herdr.sock"
+mkdir -p "$mac_home/.pi/agent" "$relay_tmp"
+python3 - "$herdr_sock" <<'PY'
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+PY
+ssh_config="$mac_home/.colima/ssh_config"
+
+run_mac() { # [args...]; the invoking shell has an agent and a Herdr pane
+	TMPDIR="$relay_tmp" SAFE_PI_TEST_HOME="$mac_home" \
+		SAFE_PI_TEST_SSH=set SAFE_PI_TEST_SSH_SOCK="$ssh_sock" \
+		SAFE_PI_TEST_HERDR=sock SAFE_PI_TEST_HERDR_SOCK="$herdr_sock" \
+		run_safe_pi "$@"
+}
+
+assert_ssh() {
+	grep -Fq -- "$1" "$SSH_LOG" || {
+		printf 'ssh log:\n' >&2
+		cat "$SSH_LOG" >&2
+		fail "expected ssh log to contain: $1"
+	}
+}
+
+# The private directory the relay uses inside the VM, from the mkdir it ran.
+relay_vm_dir() {
+	grep -o 'mkdir -m 0700 -- /tmp/safe-pi\.[A-Za-z0-9]*' "$SSH_LOG" | head -1 | grep -o '/tmp/safe-pi\..*'
+}
+
+# Linux is unchanged: the agent socket is bind-mounted by path and no relay runs.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+run_mac -c || fail "Linux run with an agent failed"
+assert_log "--mount type=bind,source=$ssh_sock,target=/run/safe-pi/ssh-agent.sock"
+[[ ! -s "$SSH_LOG" ]] || fail "Linux must not open a relay"
+assert_no_log "docker info --format"
+
+# Darwin with the default Colima profile.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+run_mac -c || fail "Darwin run failed"
+assert_log "docker info --format"
+assert_ssh "-F $ssh_config"
+# The sandbox's own connection: its own control path, in the background.
+assert_ssh "-M -S $relay_tmp/"
+assert_ssh " -f -N "
+assert_ssh " colima"
+vm_dir="$(relay_vm_dir)" || fail "the relay never created its directory in the VM"
+assert_ssh "-O forward -R $vm_dir/ssh-agent.sock:$ssh_sock colima"
+assert_ssh "-O forward -R $vm_dir/herdr.sock:$herdr_sock colima"
+# The forwarded sockets are mounted at the paths the contract already uses.
+assert_log "--mount type=bind,source=$vm_dir/ssh-agent.sock,target=/run/safe-pi/ssh-agent.sock"
+assert_log "--mount type=bind,source=$vm_dir/herdr.sock,target=/run/safe-pi/herdr.sock"
+assert_log "--env SSH_AUTH_SOCK=/run/safe-pi/ssh-agent.sock"
+# The reporter's socket is the relayed one, at a container-only path: the host
+# path sits in the shared home, where the daemon cannot mount over a socket.
+assert_log "--env SAFE_PI_HERDR_SOCKET_PATH=/run/safe-pi/herdr.sock"
+assert_log "--env SAFE_PI_HERDR_PANE_ID=wtest:p1"
+assert_no_log "source=$ssh_sock"
+assert_no_log "--volume $PWD"
+# The connection and its directory are closed when the sandbox exits.
+assert_ssh "rm -rf -- $vm_dir"
+assert_ssh "-O exit colima"
+[[ -z "$(ls -A "$relay_tmp")" ]] || fail "the relay's host directory must be removed on exit"
+# The connection is the relay's first command, opened before the image checks.
+first_ssh="$(head -1 "$SSH_LOG")"
+case "$first_ssh" in
+*" -M "*) ;;
+*) fail "the master connection must be the relay's first command: $first_ssh" ;;
+esac
+
+# A named Colima profile is the Host alias in ~/.colima/ssh_config.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+FAKE_DAEMON_NAME=colima-work
+run_mac -c || fail "Darwin named-profile run failed"
+assert_ssh " colima-work"
+assert_ssh "-O forward -R $(relay_vm_dir)/ssh-agent.sock:$ssh_sock colima-work"
+assert_ssh "-O exit colima-work"
+
+# The debug shell relays too, and lists the relayed mount points.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+run_mac --shell || fail "Darwin shell run failed"
+assert_ssh "-O forward -R $(relay_vm_dir)/ssh-agent.sock:$ssh_sock colima"
+assert_log "/run/safe-pi/ssh-agent.sock"
+
+# Another daemon on macOS is refused, before anything starts.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+FAKE_DAEMON_NAME="Docker Desktop"
+set +e
+refuse_stderr="$(run_mac -c 2>&1 >/dev/null)"
+refuse_status=$?
+set -e
+[[ "$refuse_status" == "2" ]] || fail "another macOS daemon should exit 2, got $refuse_status"
+case "$refuse_stderr" in
+*"safe-pi on macOS supports Colima only"*) ;;
+*) fail "the refusal must say Colima only: $refuse_stderr" ;;
+esac
+assert_no_log "docker run"
+assert_no_log "docker build"
+[[ ! -s "$SSH_LOG" ]] || fail "a refused daemon must not open a relay"
+# --prepare is refused on another daemon too: the daemon is what is unsupported.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+FAKE_DAEMON_NAME="Docker Desktop"
+[[ "$(status_of run_mac --prepare 2>/dev/null)" == "2" ]] || fail "--prepare on another macOS daemon should exit 2"
+
+# Without an agent or a Herdr pane there is nothing to relay.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+TMPDIR="$relay_tmp" SAFE_PI_TEST_HOME="$mac_home" SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi -c || fail "Darwin run without sockets failed"
+[[ ! -s "$SSH_LOG" ]] || fail "no sockets, no relay"
+assert_no_log "ssh-agent.sock"
+
+# A relay that cannot be opened is a warning per socket, and the sandbox starts
+# without the sockets.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+FAKE_SSH_MASTER_FAIL="ssh: connect to host 127.0.0.1 port 51234: Connection refused"
+set +e
+run_mac -c 2>"$tmpdir/relay-fail.err"
+relay_fail_status=$?
+set -e
+[[ "$relay_fail_status" == "0" ]] || fail "a failed relay must not block the sandbox, got $relay_fail_status"
+grep -Fq "safe-pi: SSH agent unavailable in the sandbox: ssh: connect to host 127.0.0.1 port 51234: Connection refused" "$tmpdir/relay-fail.err" ||
+	fail "missing the SSH agent warning: $(cat "$tmpdir/relay-fail.err")"
+grep -Fq "safe-pi: Herdr socket unavailable in the sandbox: ssh: connect to host" "$tmpdir/relay-fail.err" ||
+	fail "missing the Herdr warning: $(cat "$tmpdir/relay-fail.err")"
+assert_log "docker run --rm"
+assert_no_log "ssh-agent.sock"
+assert_no_log "herdr.sock"
+assert_no_log "--env SSH_AUTH_SOCK"
+assert_no_log "--env SAFE_PI_HERDR_SOCKET_PATH"
+[[ -z "$(ls -A "$relay_tmp")" ]] || fail "a failed relay must still clean up after itself"
+
+# One socket failing leaves the other relayed.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+FAKE_SSH_FORWARD_FAIL="herdr.sock"
+run_mac -c 2>"$tmpdir/herdr-fail.err" || fail "a failed Herdr forward must not block the sandbox"
+grep -Fq "safe-pi: Herdr socket unavailable in the sandbox: forward refused" "$tmpdir/herdr-fail.err" ||
+	fail "missing the Herdr warning: $(cat "$tmpdir/herdr-fail.err")"
+if grep -Fq "SSH agent unavailable" "$tmpdir/herdr-fail.err"; then
+	fail "the SSH agent was relayed and must not be reported"
+fi
+assert_log "target=/run/safe-pi/ssh-agent.sock"
+assert_no_log "herdr.sock"
+
+# A dry run prints the relay before the Docker invocation, and runs neither.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+mac_dry="$(run_mac --dry-run -c)" || fail "Darwin dry run failed"
+[[ ! -s "$SSH_LOG" ]] || fail "a dry run must not run the relay"
+assert_no_log "docker run"
+assert_no_log "docker build"
+relay_line="$(grep -n -- "-O forward -R .*/ssh-agent.sock:$ssh_sock colima" <<<"$mac_dry" | head -1 | cut -d: -f1)"
+docker_line="$(grep -n "^docker run --rm" <<<"$mac_dry" | head -1 | cut -d: -f1)"
+[[ -n "$relay_line" && -n "$docker_line" && "$relay_line" -lt "$docker_line" ]] ||
+	fail "the dry run must print the relay before the Docker invocation: $mac_dry"
+grep -Fq -- "-M -S" <<<"$mac_dry" || fail "the dry run must print the connection: $mac_dry"
+grep -Fq -- "target=/run/safe-pi/ssh-agent.sock" <<<"$mac_dry" ||
+	fail "the dry run must print the relayed mount: $mac_dry"
+[[ -z "$(ls -A "$relay_tmp")" ]] || fail "a dry run must not leave a relay directory behind"
+
+# --prepare opens no relay.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+run_mac --prepare 2>"$tmpdir/mac-prepare.err" || fail "Darwin prepare run failed"
+[[ ! -s "$tmpdir/mac-prepare.err" ]] || fail "--prepare must not warn about sockets: $(cat "$tmpdir/mac-prepare.err")"
+[[ ! -s "$SSH_LOG" ]] || fail "--prepare must not open a relay"
+assert_log "$current_tag --prepare"
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+mac_prepare_dry="$(run_mac --dry-run --prepare)" || fail "Darwin prepare dry run failed"
+case "$mac_prepare_dry" in
+*"-O forward"*) fail "the prepare dry run must not print a relay: $mac_prepare_dry" ;;
 esac
 
 printf 'safe-pi wrapper tests passed\n'

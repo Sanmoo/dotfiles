@@ -306,8 +306,11 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 - Your Pi configuration, credentials, sessions, skills, prompts, agents,
   extensions, and packages, shared with the host Pi. Extensions and packages are
   read-only inside the sandbox.
-- Herdr's socket, plus a sandbox reporter that reports the pane as `working`
-  and `idle`. Herdr's own Pi integration is disabled inside the sandbox,
+- Your shell's SSH agent and Herdr's socket, plus a sandbox reporter that
+  reports the pane as `working`
+  and `idle`. On macOS both sockets arrive through a socket relay over the
+  Colima VM's SSH (see below). Herdr's own Pi integration is disabled inside the
+  sandbox,
   because Herdr ignores it for a pane whose foreground process is `docker`.
   The `permission-gate` extension registers nothing inside the sandbox — the
   container is the boundary there, so dangerous commands run without a prompt,
@@ -316,6 +319,33 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
   tracked mise configuration, kept in the toolchain volume.
 - Not your host toolchain, not other repositories, not the rest of your home
   directory, not the Docker socket.
+
+### On macOS (Colima only)
+
+`safe-pi` runs on macOS against [Colima](https://github.com/abiosoft/colima)
+(`brew install colima docker`). The Docker daemon lives in a VM that cannot see
+your shell's SSH agent socket or Herdr's, and a unix socket does not cross the
+shared filesystem anyway, so each start opens a **socket relay**: its own SSH
+connection to the Colima VM, with one forward per socket into a directory private
+to that start. The forwarded sockets are mounted where the sandbox expects them,
+and the connection and directory are removed when the sandbox exits.
+
+- The relay follows the invoking shell's `$SSH_AUTH_SOCK`, so `ssh-add` in the
+  shell you start `safe-pi` from decides which keys the sandbox can sign with.
+  Herdr's socket is relayed when the Herdr variables are set.
+- It opens while the image checks run, and adds about 0.9 seconds to a start
+  that has to wait for it.
+- A relay that cannot be opened is a warning, per socket
+  (`safe-pi: SSH agent unavailable in the sandbox: <reason>`), and the sandbox
+  starts without that socket.
+- `--prepare` opens no relay; `--dry-run` prints the relay commands before the
+  Docker command and runs neither.
+- Any other daemon on macOS (Docker Desktop, OrbStack, plain Lima) is refused with
+  `safe-pi on macOS supports Colima only`. For a Colima profile other than the
+  default, `safe-pi` uses the `colima-<profile>` host alias in
+  `~/.colima/ssh_config`.
+- The sandbox user's home is your `$HOME` (`/Users/<you>`), so every path matches
+  the host's. An image built for another home is rebuilt on the next start.
 
 ### Things worth knowing
 
@@ -372,6 +402,8 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 | The first run is slower than described above | The image build or the convergence is running; it reports which one |
 | A start is about ten seconds slower than usual | The extension transpile cache is cold: the first run after it was removed, or after extensions changed |
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
+| `safe-pi on macOS supports Colima only` | The Docker daemon is not a Colima one (Docker Desktop, OrbStack, plain Lima); start Colima and point the Docker context at it |
+| `SSH agent unavailable in the sandbox: ...` (macOS) | The relay to the Colima VM could not be opened or forwarded; the sandbox started without the agent. Check `colima status` and that `~/.colima/ssh_config` exists |
 | Herdr shows the pane as a plain terminal | You are not running inside a Herdr pane, or Herdr's socket is not reachable from the container, so the sandbox reporter cannot attribute the pane |
 | A restored pane comes back as a plain shell | No report reached Herdr before the restart, so the pane has no stored resume command; run `safe-pi -c` |
 | Dangerous commands run without a prompt | Expected inside the sandbox: the `permission-gate` extension registers nothing there, because the container is the boundary |

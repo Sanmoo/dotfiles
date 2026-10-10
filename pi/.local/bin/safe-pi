@@ -10,6 +10,10 @@ set -euo pipefail
 readonly SCRIPT_NAME="safe-pi"
 readonly IMAGE_REPO="safe-pi"
 readonly SANDBOX_MARKER="SAFE_PI_SANDBOX"
+# Darwin means the Docker daemon runs in a VM (ADR 0008); an absent uname is
+# treated as Linux.
+HOST_OS="$(uname -s 2>/dev/null || true)"
+readonly HOST_OS
 
 usage() {
 	cat <<'USAGE'
@@ -155,10 +159,26 @@ image_pi_version() {
 
 # The entrypoint label versions the sandbox's convergence contract: 2 added the
 # reporter, 3 the precompiled OTP target, 4 the sandbox locale, 5 the reporter's
-# pane release, 6 the image's stow and PyYAML, 7 zsh. An image carrying anything else is
-# stale and rebuilt, so the change reaches a machine that already has one.
+# pane release, 6 the image's stow and PyYAML, 7 zsh, 8 the host's home as the
+# sandbox user's. An image carrying anything else is stale and rebuilt, so the
+# change reaches a machine that already has one.
 image_has_entrypoint() {
-	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "7" ]]
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "8" ]]
+}
+
+# The sandbox user's home is the host's, so an image built for another home (a
+# different machine's, or a different user's) is stale.
+image_has_home() {
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.home" }}' "$1" 2>/dev/null || true)" == "$HOME" ]]
+}
+
+# Prints why an image must be rebuilt, or nothing when it is current.
+image_stale_reason() {
+	if ! image_has_entrypoint "$1"; then
+		printf 'an older sandbox entrypoint'
+	elif ! image_has_home "$1"; then
+		printf 'another home directory'
+	fi
 }
 
 build_image() { # $1 = tag, $2 = optional Pi version
@@ -169,6 +189,7 @@ build_image() { # $1 = tag, $2 = optional Pi version
 		--build-arg "UID=$(id -u)"
 		--build-arg "GID=$(id -g)"
 		--build-arg "USERNAME=$(id -un)"
+		--build-arg "USER_HOME=$HOME"
 	)
 	if [[ -n "$version" ]]; then
 		args+=(--build-arg "PI_VERSION=$version")
@@ -214,6 +235,9 @@ CONTAINER_MISE_DATA_DIR="$HOME/.local/share/mise"
 CONTAINER_MISE_CACHE_DIR="$CONTAINER_MISE_DATA_DIR/cache"
 CONTAINER_MISE_STATE_DIR="$CONTAINER_MISE_DATA_DIR/state"
 CONTAINER_SSH_SOCK="/run/safe-pi/ssh-agent.sock"
+# Where a relayed Herdr socket lands on macOS. Not the host path: that sits in
+# the shared home, where the daemon cannot resolve a socket to mount over.
+CONTAINER_HERDR_SOCK="/run/safe-pi/herdr.sock"
 # jiti compiles the TypeScript extensions Pi loads and caches the result under
 # the temporary directory (`$TMPDIR/jiti`), which the sandbox throws away on
 # every start: a cold compile of this extension set is about ten seconds of CPU
@@ -248,7 +272,31 @@ mount_args=()
 contract_paths=() # "container-path:mode" for the debug shell
 missing_paths=()  # contract paths absent on the host
 
-record_mount() { # $1 = host path or volume, $2 = container path, $3 = mode
+# A bind is `--mount type=bind`, never `--volume`: a source the daemon cannot see
+# is an error instead of a directory the daemon creates in its own filesystem.
+# --mount is comma-separated, so a field holding a comma or a quote is quoted.
+mount_field() { # $1 = key, $2 = value
+	local value="$2"
+	if [[ "$value" == *[,\"]* ]]; then
+		value="\"$1=${value//\"/\"\"}\""
+		printf '%s' "$value"
+	else
+		printf '%s=%s' "$1" "$value"
+	fi
+}
+
+bind_mount_arg() { # $1 = host path, $2 = container path, $3 = mode
+	local arg="type=bind,$(mount_field source "$1"),$(mount_field target "$2")"
+	[[ "$3" == "ro" ]] && arg+=",readonly"
+	printf '%s' "$arg"
+}
+
+record_mount() { # $1 = host path, $2 = container path, $3 = mode
+	mount_args+=(--mount "$(bind_mount_arg "$1" "$2" "$3")")
+	contract_paths+=("$2:$3")
+}
+
+record_volume() { # $1 = volume, $2 = container path, $3 = mode
 	mount_args+=(--volume "$1:$2:$3")
 	contract_paths+=("$2:$3")
 }
@@ -269,7 +317,7 @@ record_mount "$PI_AGENT_DIR" "$PI_AGENT_DIR" rw
 record_mount "$HOST_SESSION_DIR" "$CONTAINER_SESSION_DIR" rw
 # The toolchain volume is always mounted, even before anything is installed:
 # its content is the declared environment, not image content.
-record_mount "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
+record_volume "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
 # The transpile cache is a fixed point of the contract too: it is always
 # mounted at the path jiti looks in, so a start reuses the extensions it already
 # compiled. The destination is deeper than the temporary directory, so the bind
@@ -316,15 +364,187 @@ env_args+=(--env "PI_CODING_AGENT_SESSION_DIR=$CONTAINER_PROJECT_SESSION_DIR")
 # HERDR_PANE_ID, and leaving it unactivated is what keeps exactly one source
 # (the reporter below) owning the pane. The reporter gets the socket and pane
 # under sandbox-owned names instead.
+# On macOS the socket is named only once the relay has put it in the VM.
 if [[ "${HERDR_ENV-}" == "1" && -n "${HERDR_SOCKET_PATH-}" && -n "${HERDR_PANE_ID-}" ]]; then
-	env_args+=(--env "SAFE_PI_HERDR_SOCKET_PATH=$HERDR_SOCKET_PATH")
+	if [[ "$HOST_OS" != "Darwin" ]]; then
+		env_args+=(--env "SAFE_PI_HERDR_SOCKET_PATH=$HERDR_SOCKET_PATH")
+	fi
 	env_args+=(--env "SAFE_PI_HERDR_PANE_ID=$HERDR_PANE_ID")
 fi
-# The SSH agent socket is mounted only when the host provides one.
+
+# --- Host sockets -------------------------------------------------------------
+# The invoking shell's SSH agent, and Herdr's socket, reach the sandbox only
+# when the host provides them. On Linux the daemon shares the host's filesystem,
+# so the SSH agent socket is bind-mounted by path (Herdr's is reachable through
+# its mounted directory). On macOS the daemon runs in the Colima VM (ADR 0008),
+# which sees neither and cannot connect to a host socket through the share, so
+# each is relayed into the VM over the sandbox's own SSH connection and the
+# forwarded socket is mounted instead.
+relay_names=()      # short name, also the forwarded socket's file name in the VM
+relay_hosts=()      # host socket path
+relay_containers=() # path the sandbox sees
+relay_labels=()     # what the warning calls it
+relay_ok=()         # "1" once the forward is up (or assumed up, for a dry run)
+
+add_relay() { # $1 = name, $2 = host socket, $3 = container path, $4 = label
+	relay_names+=("$1")
+	relay_hosts+=("$2")
+	relay_containers+=("$3")
+	relay_labels+=("$4")
+	relay_ok+=("")
+}
+
 if [[ -n "${SSH_AUTH_SOCK-}" && -S "${SSH_AUTH_SOCK}" ]]; then
-	add_mount "$SSH_AUTH_SOCK" "$CONTAINER_SSH_SOCK" rw
-	env_args+=(--env "SSH_AUTH_SOCK=$CONTAINER_SSH_SOCK")
+	if [[ "$HOST_OS" == "Darwin" ]]; then
+		add_relay ssh-agent "$SSH_AUTH_SOCK" "$CONTAINER_SSH_SOCK" "SSH agent"
+	else
+		add_mount "$SSH_AUTH_SOCK" "$CONTAINER_SSH_SOCK" rw
+		env_args+=(--env "SSH_AUTH_SOCK=$CONTAINER_SSH_SOCK")
+	fi
 fi
+if [[ "$HOST_OS" == "Darwin" && "${HERDR_ENV-}" == "1" && -n "${HERDR_PANE_ID-}" &&
+	-n "${HERDR_SOCKET_PATH-}" && -S "${HERDR_SOCKET_PATH}" ]]; then
+	add_relay herdr "$HERDR_SOCKET_PATH" "$CONTAINER_HERDR_SOCK" "Herdr socket"
+fi
+
+# --- Socket relay (macOS) -----------------------------------------------------
+# One SSH connection per sandbox start, to the Colima VM, on its own control
+# path (not Lima's persistent master, whose config says Lima does not use it).
+# It carries one remote unix-socket forward per host socket into a directory
+# private to this start, and is closed, with the directory, when the sandbox
+# exits. Opening it costs about 0.9 s, so it opens in the background while the
+# image checks run.
+RELAY_DIR=""    # host directory holding the control socket and the results
+RELAY_PID=""
+RELAY_ALIAS=""  # Host alias in ~/.colima/ssh_config
+RELAY_CTL=""
+RELAY_VM_DIR="" # private directory inside the VM
+
+# Colima names its daemon `colima`, or `colima-<profile>`, which is also the
+# Host alias in the ssh_config it writes.
+colima_alias_of() { # $1 = docker info Name
+	case "$1" in
+	colima | colima-?*) printf '%s' "$1" ;;
+	*) return 1 ;;
+	esac
+}
+
+refuse_unsupported_daemon() {
+	die "safe-pi on macOS supports Colima only (the Docker daemon here is '${1:-unknown}')"
+}
+
+relay_ssh() { # $@ = ssh arguments; the host alias is the caller's
+	ssh -F "$HOME/.colima/ssh_config" -o BatchMode=yes -o ConnectTimeout=10 \
+		-o LogLevel=ERROR "$@"
+}
+
+# The relay's commands, for one start. Held in arrays so that the real run and
+# the dry run print and execute exactly the same thing.
+plan_relay() { # $1 = host directory, $2 = VM directory suffix, $3 = alias
+	RELAY_DIR="$1"
+	RELAY_ALIAS="$3"
+	RELAY_CTL="$1/c"
+	RELAY_VM_DIR="/tmp/safe-pi.$2"
+	RELAY_MASTER=(-M -S "$RELAY_CTL" -f -N -o ControlPersist=no -o ExitOnForwardFailure=yes
+		-o StreamLocalBindUnlink=yes "$RELAY_ALIAS")
+	RELAY_MKDIR=(-S "$RELAY_CTL" "$RELAY_ALIAS" -- mkdir -m 0700 -- "$RELAY_VM_DIR")
+}
+
+relay_forward_args() { # $1 = index; sets RELAY_FORWARD
+	RELAY_FORWARD=(-S "$RELAY_CTL" -O forward
+		-R "$RELAY_VM_DIR/${relay_names[$1]}.sock:${relay_hosts[$1]}" "$RELAY_ALIAS")
+}
+
+relay_vm_socket() { # $1 = index
+	printf '%s/%s.sock' "$RELAY_VM_DIR" "${relay_names[$1]}"
+}
+
+# Runs in the background. Leaves one status file per socket: `ok`, or the reason
+# the socket is unavailable.
+open_relay() {
+	local i reason
+	local fail_all=""
+	if ! relay_ssh "${RELAY_MASTER[@]}" </dev/null >/dev/null 2>"$RELAY_DIR/err"; then
+		fail_all="$(relay_reason "$RELAY_DIR/err" "cannot open an SSH connection to the Colima VM")"
+	else
+		: >"$RELAY_DIR/master.ok"
+		if ! relay_ssh "${RELAY_MKDIR[@]}" </dev/null >/dev/null 2>"$RELAY_DIR/err"; then
+			fail_all="$(relay_reason "$RELAY_DIR/err" "cannot create the relay directory in the Colima VM")"
+		fi
+	fi
+	for i in "${!relay_names[@]}"; do
+		if [[ -n "$fail_all" ]]; then
+			printf '%s\n' "$fail_all" >"$RELAY_DIR/${relay_names[$i]}.status"
+			continue
+		fi
+		relay_forward_args "$i"
+		if relay_ssh "${RELAY_FORWARD[@]}" </dev/null >/dev/null 2>"$RELAY_DIR/err"; then
+			printf 'ok\n' >"$RELAY_DIR/${relay_names[$i]}.status"
+		else
+			reason="$(relay_reason "$RELAY_DIR/err" "the forward was refused")"
+			printf '%s\n' "$reason" >"$RELAY_DIR/${relay_names[$i]}.status"
+		fi
+	done
+}
+
+relay_reason() { # $1 = stderr file, $2 = fallback
+	local line=""
+	[[ -s "$1" ]] && line="$(head -n1 "$1")"
+	printf '%s' "${line:-$2}"
+}
+
+start_relay() { # $1 = alias
+	((${#relay_names[@]})) || return 0
+	local dir
+	dir="$(mktemp -d "${TMPDIR:-/tmp}/safe-pi.XXXXXX")"
+	plan_relay "$dir" "${dir##*.}" "$1"
+	trap close_relay EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM HUP
+	open_relay &
+	RELAY_PID=$!
+}
+
+# Waits for the relay, warns per socket that did not come up, and mounts the
+# ones that did.
+finish_relay() {
+	local i status
+	[[ -n "$RELAY_DIR" ]] || return 0 # no relay was started (--prepare, or no sockets)
+	wait "$RELAY_PID" 2>/dev/null || true
+	for i in "${!relay_names[@]}"; do
+		status="$(head -n1 "$RELAY_DIR/${relay_names[$i]}.status" 2>/dev/null || true)"
+		if [[ "$status" == "ok" ]]; then
+			relay_ok[i]=1
+		else
+			printf '%s: %s unavailable in the sandbox: %s\n' "$SCRIPT_NAME" "${relay_labels[$i]}" \
+				"${status:-the relay did not finish}" >&2
+		fi
+	done
+}
+
+close_relay() {
+	[[ -n "$RELAY_DIR" ]] || return 0
+	wait "$RELAY_PID" 2>/dev/null || true
+	if [[ -e "$RELAY_DIR/master.ok" || -S "$RELAY_CTL" ]]; then
+		relay_ssh -S "$RELAY_CTL" "$RELAY_ALIAS" -- rm -rf -- "$RELAY_VM_DIR" </dev/null >/dev/null 2>&1 || true
+		relay_ssh -S "$RELAY_CTL" -O exit "$RELAY_ALIAS" </dev/null >/dev/null 2>&1 || true
+	fi
+	rm -rf "$RELAY_DIR"
+	RELAY_DIR=""
+}
+
+# Mounts each forwarded socket in the sandbox and points its variable at it.
+mount_relayed_sockets() {
+	local i
+	for i in "${!relay_names[@]}"; do
+		[[ -n "${relay_ok[$i]}" ]] || continue
+		record_mount "$(relay_vm_socket "$i")" "${relay_containers[$i]}" rw
+		case "${relay_names[$i]}" in
+		ssh-agent) env_args+=(--env "SSH_AUTH_SOCK=$CONTAINER_SSH_SOCK") ;;
+		herdr) env_args+=(--env "SAFE_PI_HERDR_SOCKET_PATH=$CONTAINER_HERDR_SOCK") ;;
+		esac
+	done
+}
 
 # A debug shell prints the contract it landed in before handing over a shell.
 build_shell_banner() {
@@ -344,41 +564,68 @@ build_shell_banner() {
 }
 
 # --- Resolve the Docker invocation before touching Docker ---------------------
-run_args=(
-	run
-	--rm
-)
-if [[ -t 0 && -t 1 ]]; then
-	run_args+=(--interactive --tty)
-fi
-run_args+=(--workdir "$PWD")
-run_args+=("${mount_args[@]}")
-# The temporary directory is writable but thrown away with the container.
-run_args+=(--tmpfs /tmp)
-run_args+=("${env_args[@]}")
-run_args+=("$CURRENT_TAG")
-# The image's entrypoint converges the declared environment before whatever
-# command follows the image name runs.
-case "$MODE" in
-shell)
-	build_shell_banner
-	run_args+=(bash -c "$SHELL_BANNER")
-	;;
-prepare)
-	run_args+=(--prepare)
-	;;
-*)
-	# The sandbox reporter is loaded explicitly: it lives in the image, and the
-	# host extensions directory is mounted read-only at its own path.
-	run_args+=(pi -e "$CONTAINER_REPORTER")
-	;;
-esac
-if ((${#pi_args[@]})); then
-	run_args+=("${pi_args[@]}")
-fi
+build_run_args() {
+	run_args=(
+		run
+		--rm
+	)
+	if [[ -t 0 && -t 1 ]]; then
+		run_args+=(--interactive --tty)
+	fi
+	run_args+=(--workdir "$PWD")
+	run_args+=("${mount_args[@]}")
+	# The temporary directory is writable but thrown away with the container.
+	run_args+=(--tmpfs /tmp)
+	run_args+=("${env_args[@]}")
+	run_args+=("$CURRENT_TAG")
+	# The image's entrypoint converges the declared environment before whatever
+	# command follows the image name runs.
+	case "$MODE" in
+	shell)
+		build_shell_banner
+		run_args+=(bash -c "$SHELL_BANNER")
+		;;
+	prepare)
+		run_args+=(--prepare)
+		;;
+	*)
+		# The sandbox reporter is loaded explicitly: it lives in the image, and the
+		# host extensions directory is mounted read-only at its own path.
+		run_args+=(pi -e "$CONTAINER_REPORTER")
+		;;
+	esac
+	if ((${#pi_args[@]})); then
+		run_args+=("${pi_args[@]}")
+	fi
+}
 
 # --- Dry run: print the invocation without touching Docker --------------------
 if ((DRY_RUN)); then
+	if [[ "$HOST_OS" == "Darwin" ]] && ((${#relay_names[@]})) && [[ "$MODE" != "prepare" ]]; then
+		# The profile is the one thing a dry run asks the daemon; with none
+		# reachable it assumes the default. The relay is printed, never run.
+		dry_name="$(docker info --format '{{.Name}}' 2>/dev/null || true)"
+		dry_alias="colima"
+		if [[ -n "$dry_name" ]]; then
+			dry_alias="$(colima_alias_of "$dry_name")" || refuse_unsupported_daemon "$dry_name"
+		fi
+		plan_relay "${TMPDIR:-/tmp}/safe-pi.XXXXXX" XXXXXX "$dry_alias"
+		printf 'ssh -F %q' "$HOME/.colima/ssh_config"
+		printf ' %q' "${RELAY_MASTER[@]}"
+		printf '\n'
+		printf 'ssh -F %q' "$HOME/.colima/ssh_config"
+		printf ' %q' "${RELAY_MKDIR[@]}"
+		printf '\n'
+		for i in "${!relay_names[@]}"; do
+			relay_forward_args "$i"
+			printf 'ssh -F %q' "$HOME/.colima/ssh_config"
+			printf ' %q' "${RELAY_FORWARD[@]}"
+			printf '\n'
+			relay_ok[i]=1
+		done
+		mount_relayed_sockets
+	fi
+	build_run_args
 	printf 'docker'
 	printf ' %q' "${run_args[@]}"
 	printf '\n'
@@ -389,7 +636,15 @@ fi
 if ! command -v docker >/dev/null 2>&1; then
 	die "Docker is not installed or not on PATH"
 fi
-if ! docker info >/dev/null 2>&1; then
+if [[ "$HOST_OS" == "Darwin" ]]; then
+	daemon_name="$(docker info --format '{{.Name}}' 2>/dev/null)" ||
+		die "cannot reach the Docker daemon; is it running and accessible to you?"
+	daemon_alias="$(colima_alias_of "$daemon_name")" || refuse_unsupported_daemon "$daemon_name"
+	# --prepare converges the toolchain volume and needs neither socket.
+	if [[ "$MODE" != "prepare" ]]; then
+		start_relay "$daemon_alias"
+	fi
+elif ! docker info >/dev/null 2>&1; then
 	die "cannot reach the Docker daemon; is it running and accessible to you?"
 fi
 
@@ -401,7 +656,7 @@ if ((UPDATE)); then
 		exit 1
 	fi
 	latest_tag="$(version_tag "$latest")"
-	if ! image_exists "$latest_tag" || ! image_has_entrypoint "$latest_tag"; then
+	if ! image_exists "$latest_tag" || [[ -n "$(image_stale_reason "$latest_tag")" ]]; then
 		build_image "$latest_tag" "$latest"
 	fi
 	docker tag "$latest_tag" "$CURRENT_TAG"
@@ -412,8 +667,8 @@ elif ((REBUILD)); then
 elif ! image_exists "$CURRENT_TAG"; then
 	build_image "$CURRENT_TAG"
 	tag_baked_version
-elif ! image_has_entrypoint "$CURRENT_TAG"; then
-	printf '%s: the current image carries an older sandbox entrypoint; rebuilding it\n' "$SCRIPT_NAME" >&2
+elif stale_reason="$(image_stale_reason "$CURRENT_TAG")" && [[ -n "$stale_reason" ]]; then
+	printf '%s: the current image carries %s; rebuilding it\n' "$SCRIPT_NAME" "$stale_reason" >&2
 	version="$(image_pi_version "$CURRENT_TAG" || true)"
 	build_image "$CURRENT_TAG" "$version"
 	tag_baked_version
@@ -447,4 +702,7 @@ mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR" "$HOST_JITI_CACHE_DIR"
 if [[ "$MODE" != "prepare" ]]; then
 	warn_on_version_drift
 fi
+finish_relay
+mount_relayed_sockets
+build_run_args
 docker "${run_args[@]}"

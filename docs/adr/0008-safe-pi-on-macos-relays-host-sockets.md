@@ -15,5 +15,7 @@ ADR 0002 assumed a Docker daemon on the host itself, where the SSH agent and Her
 - The sandbox user's home is the host's `$HOME` (`/Users/<user>` on macOS), passed to the image build and recorded in a label; an image built for another home is stale and rebuilt. Host path parity requires it, and on Linux it is the `/home/<user>` it always was.
 - Binds use `--mount type=bind`, so a source the daemon cannot see fails as a missing source instead of becoming a root-owned directory the daemon creates.
 - A relay that cannot be opened is a warning, and the sandbox starts without that socket — the same fail-open policy as a missing agent on Linux and as toolchain convergence.
+- Herdr's relayed socket is mounted at a container-only path (`/run/safe-pi/herdr.sock`, which the reporter is pointed at) rather than over the host path: that path sits inside the shared home, where the daemon cannot resolve a socket to mount over (`openat2 ...: operation not supported`).
+- The relay is built from one connection plus the commands that ride it (a `mkdir` of the per-start directory, then one `-O forward` per socket), so a refused forward costs only its own socket.
 - `--prepare` opens no relay; `--dry-run` prints the relay command next to the Docker invocation and runs neither.
 - The sandbox user's uid matches the Colima VM user's (Lima mirrors the host uid), which is what lets the container use a forwarded socket owned by that user with mode `0600`.

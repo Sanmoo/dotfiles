@@ -16,6 +16,9 @@
 #   MISE_VERSION  Pinned mise release.
 #   UID, GID      Host uid/gid the sandbox user must match.
 #   USERNAME      Host user name for that uid/gid.
+#   USER_HOME     Host $HOME, which becomes the sandbox user's home: the wrapper
+#                 mounts everything at host paths, so the home has to be the
+#                 host's (/Users/<user> on macOS, /home/<user> on Linux).
 
 ARG BASE_IMAGE=node:26-bookworm-slim
 FROM ${BASE_IMAGE}
@@ -26,12 +29,14 @@ ARG MISE_VERSION=2026.10.4
 ARG UID=1000
 ARG GID=1000
 ARG USERNAME=sandbox
+ARG USER_HOME=/home/${USERNAME}
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="7" \
+      safe-pi.entrypoint="8" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \
+      safe-pi.home="${USER_HOME}" \
       safe-pi.uid="${UID}" \
       safe-pi.gid="${GID}"
 
@@ -99,15 +104,16 @@ RUN set -eux; \
     else \
         groupadd --gid "${GID}" "${USERNAME}"; \
     fi; \
+    mkdir -p "$(dirname "${USER_HOME}")"; \
     if getent passwd "${UID}" >/dev/null; then \
-        usermod --login "${USERNAME}" --home "/home/${USERNAME}" --move-home --gid "${GID}" "$(name_for_id passwd "${UID}")"; \
+        usermod --login "${USERNAME}" --home "${USER_HOME}" --move-home --gid "${GID}" "$(name_for_id passwd "${UID}")"; \
     else \
-        useradd --create-home --uid "${UID}" --gid "${GID}" --shell /bin/bash "${USERNAME}"; \
+        useradd --create-home --home-dir "${USER_HOME}" --uid "${UID}" --gid "${GID}" --shell /bin/bash "${USERNAME}"; \
     fi
 
-# Mount points the wrapper binds at run time. The SSH agent socket must exist
-# as a file so Docker binds the host socket over a file instead of creating a
-# directory; the sessions directory is the container-only path Pi reports.
+# Mount points the wrapper binds at run time. The SSH agent socket (and, on
+# macOS, the relayed Herdr socket) must exist as a file so Docker binds a
+# socket over a file instead of creating a directory; the sessions directory is the container-only path Pi reports.
 # The mise data directory is seeded (empty, user-owned) so a fresh toolchain
 # volume inherits the right ownership on first use. Every level down to it is
 # created user-owned: `install -d` owns only the leaf it is given, and a
@@ -115,10 +121,11 @@ RUN set -eux; \
 RUN set -eux; \
     install -d -o "${USERNAME}" -g "${USERNAME}" \
         /run/safe-pi /run/safe-pi/sessions \
-        "/home/${USERNAME}/.local" \
-        "/home/${USERNAME}/.local/share" \
-        "/home/${USERNAME}/.local/share/mise"; \
+        "${USER_HOME}/.local" \
+        "${USER_HOME}/.local/share" \
+        "${USER_HOME}/.local/share/mise"; \
     install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/ssh-agent.sock; \
+    install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/herdr.sock; \
     install -d -m 0755 /usr/local/share/safe-pi
 
 # The entrypoint converges the declared environment into the volume, puts its
@@ -138,12 +145,12 @@ COPY herdr-reporter.ts /usr/local/share/safe-pi/herdr-reporter.ts
 RUN chmod 0755 /usr/local/bin/safe-pi-entrypoint; \
     chmod 0644 /usr/local/share/safe-pi/herdr-reporter.ts
 
-ENV HOME=/home/${USERNAME}
+ENV HOME=${USER_HOME}
 # An image run without the wrapper has nothing to forward a locale from, so the
 # image's own default is glibc's built-in C.UTF-8 rather than the POSIX charmap.
 ENV LANG=C.UTF-8
 USER ${USERNAME}
-WORKDIR /home/${USERNAME}
+WORKDIR ${USER_HOME}
 
 ENTRYPOINT ["/usr/local/bin/safe-pi-entrypoint"]
 
