@@ -14,17 +14,17 @@ start therefore warns:
 Ticket 14 verified rtk on x86_64 only, where mise picks the static
 `x86_64-unknown-linux-musl` asset.
 
-**Status:** claimed
+**Status:** resolved
 
-- [ ] `safe-pi/Dockerfile` defaults `BASE_IMAGE` to `node:26-trixie-slim`, and
+- [x] `safe-pi/Dockerfile` defaults `BASE_IMAGE` to `node:26-trixie-slim`, and
       the entrypoint label (Dockerfile and wrapper) is bumped so an existing
       bookworm image is rebuilt on the next start.
-- [ ] On this macOS (arm64) host, a rebuilt sandbox runs `rtk --version`, and a
+- [x] On this macOS (arm64) host, a rebuilt sandbox runs `rtk --version`, and a
       Pi start no longer prints the `rtk binary unavailable` warning.
-- [ ] The other declared tools still run in the rebuilt image, in particular the
+- [x] The other declared tools still run in the rebuilt image, in particular the
       Ubuntu 22.04 precompiled Erlang/OTP (`erl`).
-- [ ] ADR 0002's Erlang consequence names trixie instead of bookworm.
-- [ ] `tests/run --full` prints `FULL GATE: PASS`.
+- [x] ADR 0002's Erlang consequence names trixie instead of bookworm.
+- [x] `tests/run --full` prints `FULL GATE: PASS`.
 
 ## What is known
 
@@ -41,3 +41,14 @@ Rejected: building rtk from source (`cargo:rtk`) on arm64 only (a Rust
 toolchain and a compile on every fresh volume), and pinning an older rtk whose
 arm64 build needed less glibc (freezes a `latest` tool and breaks again on the
 next bump).
+
+## Comments
+
+### Resolution (2026-10-11)
+
+Integrated as `3467a56`. The rebuilt `safe-pi:current-u502` runs Debian trixie
+(glibc 2.41); against the existing toolchain volume `rtk --version` prints
+`rtk 0.51.0`, `erl` starts OTP 29, Elixir 1.20.2 runs, and the other declared
+tools answer `--version`. `libssl.so.3` and `libncursesw.so.6` are present. A
+`safe-pi --mode json -p` run printed no rtk warning, and its `git log -3` came
+back in rtk's compacted one-line form. `tests/run --full`: `FULL GATE: PASS`.
