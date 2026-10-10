@@ -141,3 +141,21 @@ _Avoid_: slow suite, full test run (when meaning this phase), nightly
 **Slow tier**:
 The tests excluded from the Fast gate because they alone cost about as much as the whole Fast gate budget. A slow-tier test is marked as such in its own file and is still a required test, not an optional extra.
 _Avoid_: slow test, e2e test (when meaning this tier), flaky test
+
+## Agent workflow
+
+**Issue tracker**:
+Where a repository's issues live, declared per repository in `docs/agents/issue-tracker.md`; this repository's is local markdown under `.scratch/`.
+_Avoid_: tracker, backlog (when meaning a WorkQ-style queue), GitHub (when meaning the tracker in general)
+
+**Available task**:
+A ticket the repository's issue tracker declares ready for an agent and that no one has claimed.
+_Avoid_: ready ticket, open ticket, next task (when meaning the selection rather than the state)
+
+**Claim**:
+The tracker-native act of reserving a task for one worker, made by `/implement` before implementation starts — never by `/next-task`, which only reports.
+_Avoid_: assign, take, lock
+
+**Work in progress (WIP)**:
+Tasks with a native claim plus the local git traces of work already begun (a worktree, a branch, uncommitted changes); live agent sessions are not part of it.
+_Avoid_: busy, in-flight
