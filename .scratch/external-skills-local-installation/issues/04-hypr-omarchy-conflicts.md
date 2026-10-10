@@ -1,6 +1,6 @@
 # 04 — Conflitos do pacote `hypr` com o Omarchy (e o comportamento de idle)
 
-**Status:** ready-for-human
+**Status:** wontfix
 **Blocked by:** None — precisa da decisão do owner sobre o comportamento de idle e o papel do pacote `hypr`
 
 Achado enquanto se executava o item "(2)" da limpeza desta máquina. **Nada foi
@@ -79,3 +79,45 @@ ser dono desses arquivos.
 - `hyprctl -j monitors` (via `/run/user/1000/hypr/`): só `eDP-1 1920x1080@60.00 scale=1 pos=0x160` — posição que casa com o repo, não com a cópia local (`0x360`).
 - `hypr/.config/hypr/monitors.conf`: cópia da máquina = versão commitada `5183ae15`, escrita em disco em 2026-08-30; repo mudou em `d589509` (2026-09-26, "wip").
 - Nenhum dos 4 arquivos da máquina é igual ao stock do Omarchy (`cmp` contra `config/hypr/` e `default/hypr/`), ou seja: são misturas de stock do Omarchy com edições anteriores do repo.
+
+## Comments
+
+### wontfix (owner, 2026-10-10)
+
+Decisão do owner: **não vale o retorno** frente ao trabalho recorrente exigido.
+Nada foi alterado — nem no pacote `hypr`, nem no README, nem nos arquivos da
+máquina.
+
+Estado em que a máquina fica, aceito conscientemente:
+
+- Os 5 arquivos disputados (`autostart`, `monitors`, `input`, `bindings`,
+  `hypridle`) continuam arquivos regulares em `~/.config/hypr/`; os outros 5 do
+  pacote continuam links do repo. `stow hypr` continua abortando.
+- O `hypridle.conf` em vigor é a cópia da máquina, sem nenhum listener: a sessão
+  não trava e a tela não apaga por ociosidade. O README §"For `Omarchy`"
+  descreve o oposto ("It only locks the session and turns the display off after
+  inactivity"), então essa descrição **não vale nesta máquina**. Registrado, não
+  corrigido.
+- A linha `Music TUI/cliamp` que as migrations do Omarchy escreveram em
+  `bindings.conf` permanece só na cópia da máquina, fora do repo.
+
+Mecânica do `stow` medida em 2026-10-10 (stow 2.4.1), para quem retomar:
+
+- O conflito é por *arquivo regular no destino*, não por conteúdo: o
+  `autostart.conf` idêntico ao repo conflita igual (`neither a link nor a
+  directory and --adopt not specified`).
+- É tudo-ou-nada por pacote: qualquer conflito → `All operations aborted.`
+- **Correção ao "agravante" acima:** um re-stow abortado **preserva** os links já
+  existentes. O cenário realmente perigoso é reconciliar *apagando* as cópias da
+  máquina — aí as apagadas ficam sem link e sem arquivo. Por isso os 5 só podem
+  sair numa passada única.
+- `stow --adopt hypr` funciona como mecanismo de reconciliação: move a cópia da
+  máquina para dentro do pacote e cria o link, e o `git diff` resultante mostra o
+  que o Omarchy escreveu. Custo: clobbera a cópia do repo, então backup e revisão
+  do diff são obrigatórios.
+
+Direções que ficaram levantadas nesta sessão, caso o ticket seja reaberto: a
+coluna "Direção" da tabela acima para os 4 arquivos (repo, com merge no
+`bindings.conf`), e a recomendação de manter o repo como dono dos 10 arquivos com
+reconciliação por `--adopt` + diff. A pergunta do `hypridle` (versão do repo vs
+nada) não foi respondida — o wontfix a torna irrelevante por ora.
