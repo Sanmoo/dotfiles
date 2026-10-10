@@ -1,5 +1,7 @@
 # pi-sandbox runs beside safe-pi on Docker Sandboxes instead of replacing it
 
+Status: deferred. The work is parked; nothing here is implemented, and `sbx` is not installed. The analysis below stays as the record of what was found.
+
 ADR 0002 kept Pi on plain Docker and rejected Docker Sandboxes, accepting that the sandbox is "a filesystem boundary, not a credential boundary". That decision stays in force for `safe-pi`. The new runtime, `pi-sandbox`, is built on `sbx` (Docker Sandboxes), where each sandbox is a microVM with network denied by default and credentials injected by a host-side proxy, so the agent holds no credential it can read or use. The two coexist: `safe-pi` is unchanged, and `pi-sandbox` replaces it only once it covers the use cases `safe-pi` serves today (Herdr state and session restore, the declared toolchain, the host's Pi configuration, and session continuity with the host).
 
 Herdr is outside the first cut of `pi-sandbox`. The microVM does not reach the host's Unix socket by default, so the reporter that `safe-pi` relies on has no path there yet.
