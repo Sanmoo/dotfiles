@@ -9,6 +9,9 @@
 #
 # Build arguments:
 #   BASE_IMAGE    Base image, defaulting to the Node major the host Pi runs on.
+#                 Debian trixie rather than bookworm: tools the declaration
+#                 installs ship glibc-linked builds for linux/arm64 (rtk needs
+#                 GLIBC_2.39), and bookworm's glibc is 2.36.
 #   PI_VERSION    Pi release to bake in. The default is the latest release at
 #                 the time of writing so a plain build is deterministic and its
 #                 version label is truthful; safe-pi passes the release it
@@ -20,7 +23,7 @@
 #                 mounts everything at host paths, so the home has to be the
 #                 host's (/Users/<user> on macOS, /home/<user> on Linux).
 
-ARG BASE_IMAGE=node:26-bookworm-slim
+ARG BASE_IMAGE=node:26-trixie-slim
 FROM ${BASE_IMAGE}
 
 ARG BASE_IMAGE
@@ -32,7 +35,7 @@ ARG USERNAME=sandbox
 ARG USER_HOME=/home/${USERNAME}
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="9" \
+      safe-pi.entrypoint="10" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \

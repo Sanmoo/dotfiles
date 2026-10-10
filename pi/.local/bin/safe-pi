@@ -160,10 +160,10 @@ image_pi_version() {
 # The entrypoint label versions the sandbox's convergence contract: 2 added the
 # reporter, 3 the precompiled OTP target, 4 the sandbox locale, 5 the reporter's
 # pane release, 6 the image's stow and PyYAML, 7 zsh, 8 the host's home as the
-# sandbox user's, 9 the sandbox package tree. An image carrying anything else is stale and rebuilt, so the
+# sandbox user's, 9 the sandbox package tree, 10 the trixie base. An image carrying anything else is stale and rebuilt, so the
 # change reaches a machine that already has one.
 image_has_entrypoint() {
-	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "9" ]]
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "10" ]]
 }
 
 # The sandbox user's home is the host's, so an image built for another home (a
