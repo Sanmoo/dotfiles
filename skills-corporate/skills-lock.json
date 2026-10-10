@@ -55,6 +55,12 @@
       "skillPath": "skills/productivity/handoff/SKILL.md",
       "computedHash": "20e5f4afdef502637510bc5c64d27645d3c85c88df9cb006824bbb0980166319"
     },
+    "harness-eval": {
+      "source": "tech-leads-club/agent-skills",
+      "sourceType": "github",
+      "skillPath": "packages/skills-catalog/skills/(development)/harness-eval/SKILL.md",
+      "computedHash": "9e700543a60f8976f07ef0d8e065df3684de1d7edcf6d1abbe5895f4333d2739"
+    },
     "implement": {
       "source": "bancojohndeere/enablers-product-engineering-skills",
       "sourceType": "github",
