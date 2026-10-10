@@ -1,3 +1,7 @@
+[settings]
+# Packages installed into each Python mise installs; see the file for why.
+python.default_packages_file = "~/.config/mise/python-default-packages.txt"
+
 [tools]
 go = "1.26.3"
 golangci-lint = "latest"
@@ -7,7 +11,9 @@ kotlin = "latest"
 node = "22"
 erlang = "29.0.4"
 elixir = "1.20.2-otp-29"
-python = "latest"
+# Pinned to a minor: a brand-new Python can lack wheels for the packages in
+# python-default-packages.txt, and a failed install of them leaves Python without.
+python = "3.14"
 ruby = "latest"
 yt-dlp = "latest"
 ktlint = "latest"

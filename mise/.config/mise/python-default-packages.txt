@@ -1,0 +1,4 @@
+# Packages every Python that mise installs gets, so repository tools that
+# import them run under the declared interpreter. One requirement per line.
+pyyaml
+boto3

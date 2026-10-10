@@ -155,10 +155,10 @@ image_pi_version() {
 
 # The entrypoint label versions the sandbox's convergence contract: 2 added the
 # reporter, 3 the precompiled OTP target, 4 the sandbox locale, 5 the reporter's
-# pane release, 6 the image's stow and PyYAML. An image carrying anything else is
+# pane release, 6 the image's stow and PyYAML, 7 zsh. An image carrying anything else is
 # stale and rebuilt, so the change reaches a machine that already has one.
 image_has_entrypoint() {
-	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "6" ]]
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "7" ]]
 }
 
 build_image() { # $1 = tag, $2 = optional Pi version

@@ -28,7 +28,7 @@ ARG GID=1000
 ARG USERNAME=sandbox
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="6" \
+      safe-pi.entrypoint="7" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \
@@ -37,7 +37,8 @@ LABEL safe-pi.base.image="${BASE_IMAGE}" \
 
 # Base utilities: Pi's tool probes (git, ripgrep, fd, jq), the sandbox's needs
 # (curl, an SSH client), the locale source data, build tooling, and the
-# Stow and PyYAML the repository's own tools import.
+# Stow the repository's own tools use, and zsh, which the http oc shell
+# integration runs under.
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -51,10 +52,10 @@ RUN set -eux; \
         openssh-client \
         pkg-config \
         python3 \
-        python3-yaml \
         ripgrep \
         stow \
-        xz-utils; \
+        xz-utils \
+        zsh; \
     ln -s /usr/bin/fdfind /usr/local/bin/fd; \
     # The wrapper forwards the host's locale as host identity, so the image has
     # to ship it: what glibc cannot resolve it falls back to POSIX, and that is
