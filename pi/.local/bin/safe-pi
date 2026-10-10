@@ -254,7 +254,7 @@ CONTAINER_JITI_CACHE_DIR="/tmp/jiti"
 # the entrypoint installs from the host's package.json and package-lock.json.
 # The two files are mounted read-only at a container-only path; the host's tree
 # itself is not reachable from the sandbox.
-HOST_NPM_CACHE_DIR="$HOME/.cache/safe-pi/npm"
+HOST_PACKAGE_TREE_DIR="$HOME/.cache/safe-pi/npm"
 CONTAINER_HOST_NPM_DIR="/run/safe-pi/host-npm"
 
 # Pi groups sessions by working directory. The container-only sessions path
@@ -333,7 +333,7 @@ record_volume "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
 record_mount "$HOST_JITI_CACHE_DIR" "$CONTAINER_JITI_CACHE_DIR" rw
 # The sandbox package tree is a fixed point as well, bound over the host's tree
 # inside the agent directory (the deeper mount wins).
-record_mount "$HOST_NPM_CACHE_DIR" "$PI_AGENT_DIR/npm" rw
+record_mount "$HOST_PACKAGE_TREE_DIR" "$PI_AGENT_DIR/npm" rw
 
 # Installed code is held immutable while agent state stays writable. The mount
 # stays at its own path so the host's relative extension symlinks keep
@@ -727,7 +727,7 @@ warn_on_version_drift() {
 # The sandbox package tree is created here for the same reason, and so is the
 # host's own `npm` directory it is bound over: a missing mount point inside the
 # agent directory would be created by the daemon, root-owned.
-mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR" "$HOST_JITI_CACHE_DIR" "$HOST_NPM_CACHE_DIR" \
+mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR" "$HOST_JITI_CACHE_DIR" "$HOST_PACKAGE_TREE_DIR" \
 	"$PI_AGENT_DIR/npm"
 
 # --- Run Pi in the sandbox ----------------------------------------------------

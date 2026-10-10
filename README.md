@@ -421,7 +421,7 @@ and the connection and directory are removed when the sandbox exits.
 | The first run is slower than described above | The image build or the convergence is running; it reports which one |
 | A start is about ten seconds slower than usual | The extension transpile cache is cold: the first run after it was removed, or after extensions changed |
 | A start installs the Pi packages | The host's package lock, or the image's Node ABI, changed since the sandbox package tree was last installed |
-| `package tree convergence failed at 'npm ci --legacy-peer-deps'` | The install failed (usually the network); the sandbox started with the tree it had, and the next start retries |
+| `package tree convergence failed at 'npm ci --legacy-peer-deps'` | The install failed (usually the network); the sandbox started with whatever the tree held, and the next start retries |
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
 | `safe-pi on macOS supports Colima only` | The Docker daemon is not a Colima one (Docker Desktop, OrbStack, plain Lima); start Colima and point the Docker context at it |
 | `SSH agent unavailable in the sandbox: ...` (macOS) | The relay to the Colima VM could not be opened or forwarded; the sandbox started without the agent. Check `colima status` and that `~/.colima/ssh_config` exists |

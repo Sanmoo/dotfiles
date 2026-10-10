@@ -223,7 +223,7 @@ if ! (PATH="$IMAGE_PATH" converge_npm); then
 		printf "%s: package tree convergence failed at '%s'\n" "$SCRIPT_NAME" "$NPM_CONVERGE_STEP" >&2
 		converge_failed=1
 	else
-		warn "package tree convergence failed at '$NPM_CONVERGE_STEP'; starting with the packages already in the tree"
+		warn "package tree convergence failed at '$NPM_CONVERGE_STEP'; starting with whatever the tree holds (Pi installs missing packages itself)"
 	fi
 fi
 

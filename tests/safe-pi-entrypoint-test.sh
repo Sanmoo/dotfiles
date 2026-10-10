@@ -2,9 +2,9 @@
 # tier: slow
 # Tests for the sandbox entrypoint at its external boundaries.
 #
-# The entrypoint converges the declared environment with `mise`, puts the
-# declared shims ahead of the image's binaries, checks Pi's Node engine
-# requirement, and then runs the command. This harness runs the real script
+# The entrypoint converges the declared environment with `mise` and the sandbox
+# package tree with `npm ci`, puts the declared shims ahead of the image's
+# binaries, checks Pi's Node engine requirement, and then runs the command. This harness runs the real script
 # with stubs for `mise`, `pi`, and `npm` on a controlled PATH and asserts on
 # the calls, environment, ordering, and exit codes it produces. No Docker
 # daemon is required.
