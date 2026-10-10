@@ -89,8 +89,9 @@
 #
 # Every unit runs with stdin closed and a hard per-unit timeout: several tests
 # in this repository block forever when stdin is left open. The runner never
-# sets or touches TMPDIR/TMP/TEMP for its children, because the Bun tests
-# create their scratch directories with mkdtempSync(tmpdir(), ...).
+# sets or touches TMPDIR/TMP/TEMP for its children, except inside the safe-pi
+# sandbox (see "Sandbox scratch" below), because the Bun tests create their
+# scratch directories with mkdtempSync(tmpdir(), ...).
 
 set -uo pipefail
 
@@ -346,6 +347,21 @@ TOTAL_UNITS=$(( ${#FILES[@]} + 1 ))
 
 TMP_DIR=$(mktemp -d) || runner_error 'cannot create a temporary directory'
 
+# Sandbox scratch. Inside safe-pi, /tmp is a tmpfs mounted noexec, so the test
+# stubs that units write into their mktemp directories cannot be executed. When
+# the sandbox marker is set and the caller has not chosen a TMPDIR, the units
+# get a scratch directory under /var/tmp instead: it is executable inside the
+# container and lies outside HOME. It must lie outside HOME because the
+# session-model-isolation extension walks up from the working directory looking
+# for a `.pi` directory, and would take HOME for a project root. The directory
+# is removed on exit. Outside the sandbox nothing changes.
+SANDBOX_SCRATCH=''
+if [[ -n "${SAFE_PI_SANDBOX-}" && -z "${TMPDIR-}" ]]; then
+	SANDBOX_SCRATCH=$(mktemp -d /var/tmp/tests-run.XXXXXX) ||
+		runner_error 'cannot create the sandbox scratch directory under /var/tmp'
+	export TMPDIR=$SANDBOX_SCRATCH
+fi
+
 # Completion channel: a worker writes its unit index to this FIFO the moment it
 # is done, so the parent reports a unit as it finishes (in finish order) instead
 # of buffering every unit's output to the end of the run. The parent holds the
@@ -361,6 +377,9 @@ cleanup() {
 		kill "$pid" 2>/dev/null || true
 	done
 	rm -rf -- "$TMP_DIR"
+	if [[ -n "$SANDBOX_SCRATCH" ]]; then
+		rm -rf -- "$SANDBOX_SCRATCH"
+	fi
 }
 trap cleanup EXIT
 

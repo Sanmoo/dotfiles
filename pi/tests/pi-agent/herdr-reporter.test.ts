@@ -440,14 +440,20 @@ describe("herdr-reporter", () => {
 	it("gives up on the release when Herdr accepts but never answers", async () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "herdr-silent-"));
 		const socketPath = path.join(dir, "herdr.sock");
-		const server = net.createServer(() => {
+		const accepted = new Set<net.Socket>();
+		const server = net.createServer((socket) => {
 			// Accept and stay silent: the reporter must stop waiting on its own.
+			accepted.add(socket);
+			socket.on("close", () => accepted.delete(socket));
 		});
 		await new Promise<void>((resolve, reject) => {
 			server.once("error", reject);
 			server.listen(socketPath, () => resolve());
 		});
 		cleanups.push(async () => {
+			// server.close() waits for accepted connections to end; this server
+			// never ends them, so destroy them first or the cleanup hangs.
+			for (const socket of accepted) socket.destroy();
 			await new Promise<void>((resolve) => server.close(() => resolve()));
 			fs.rmSync(dir, { recursive: true, force: true });
 		});

@@ -13,6 +13,11 @@ bash_bin="$(command -v bash)"
 tmpdir="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$tmpdir"' EXIT
 
+# The suite plays the host. Inside the sandbox the marker is already set, and
+# the wrapper's re-entry guard would then exec Pi directly instead of asking
+# docker for a container. Clear it; the re-entry case sets it explicitly.
+unset SAFE_PI_SANDBOX
+
 BIN="$tmpdir/bin"
 mkdir -p "$BIN"
 
@@ -111,7 +116,7 @@ reset_stubs() {
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
-	FAKE_ENTRYPOINT="5"
+	FAKE_ENTRYPOINT="6"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]
