@@ -32,7 +32,7 @@ ARG USERNAME=sandbox
 ARG USER_HOME=/home/${USERNAME}
 
 LABEL safe-pi.base.image="${BASE_IMAGE}" \
-      safe-pi.entrypoint="8" \
+      safe-pi.entrypoint="9" \
       safe-pi.pi.version="${PI_VERSION}" \
       safe-pi.mise.version="${MISE_VERSION}" \
       safe-pi.username="${USERNAME}" \
@@ -128,9 +128,9 @@ RUN set -eux; \
     install -o "${USERNAME}" -g "${USERNAME}" -m 600 /dev/null /run/safe-pi/herdr.sock; \
     install -d -m 0755 /usr/local/share/safe-pi
 
-# The entrypoint converges the declared environment into the volume, puts its
-# shims ahead of the image's binaries, checks Pi's Node requirement, and then
-# runs the command. Every start goes through it, including the debug shell.
+# The entrypoint converges the declared environment into the volume and the Pi
+# packages into the sandbox package tree, puts the declared shims ahead of the
+# image's binaries, checks Pi's Node requirement, and then runs the command. Every start goes through it, including the debug shell.
 #
 # The sandbox-owned Herdr reporter ships beside it. It loads from the image
 # because the mounted Herdr-managed integration is ignored for a pane whose

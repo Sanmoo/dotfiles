@@ -160,10 +160,10 @@ image_pi_version() {
 # The entrypoint label versions the sandbox's convergence contract: 2 added the
 # reporter, 3 the precompiled OTP target, 4 the sandbox locale, 5 the reporter's
 # pane release, 6 the image's stow and PyYAML, 7 zsh, 8 the host's home as the
-# sandbox user's. An image carrying anything else is stale and rebuilt, so the
+# sandbox user's, 9 the sandbox package tree. An image carrying anything else is stale and rebuilt, so the
 # change reaches a machine that already has one.
 image_has_entrypoint() {
-	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "8" ]]
+	[[ "$(docker image inspect --format '{{ index .Config.Labels "safe-pi.entrypoint" }}' "$1" 2>/dev/null || true)" == "9" ]]
 }
 
 # The sandbox user's home is the host's, so an image built for another home (a
@@ -248,6 +248,14 @@ CONTAINER_HERDR_SOCK="/run/safe-pi/herdr.sock"
 # and npm mounts are for.
 HOST_JITI_CACHE_DIR="$HOME/.cache/safe-pi/jiti"
 CONTAINER_JITI_CACHE_DIR="/tmp/jiti"
+# Pi's npm packages carry one native binding per platform, and the host's tree
+# holds only the host's, so the sandbox keeps its own tree (ADR 0009): a
+# directory private to the sandbox, bound where Pi looks for its packages, that
+# the entrypoint installs from the host's package.json and package-lock.json.
+# The two files are mounted read-only at a container-only path; the host's tree
+# itself is not reachable from the sandbox.
+HOST_NPM_CACHE_DIR="$HOME/.cache/safe-pi/npm"
+CONTAINER_HOST_NPM_DIR="/run/safe-pi/host-npm"
 
 # Pi groups sessions by working directory. The container-only sessions path
 # mirrors that grouping so a session written in the sandbox lands in the same
@@ -323,13 +331,19 @@ record_volume "$TOOLCHAIN_VOLUME" "$CONTAINER_MISE_DATA_DIR" rw
 # compiled. The destination is deeper than the temporary directory, so the bind
 # wins over the tmpfs and the rest of `/tmp` stays ephemeral.
 record_mount "$HOST_JITI_CACHE_DIR" "$CONTAINER_JITI_CACHE_DIR" rw
+# The sandbox package tree is a fixed point as well, bound over the host's tree
+# inside the agent directory (the deeper mount wins).
+record_mount "$HOST_NPM_CACHE_DIR" "$PI_AGENT_DIR/npm" rw
 
 # Installed code is held immutable while agent state stays writable. The mount
 # stays at its own path so the host's relative extension symlinks keep
 # resolving; the Herdr-managed integration is neutralised by withholding the
 # variables that activate it (see the environment below), not by hiding it.
+# The host's package declaration is mounted only when it exists; with no lock
+# the entrypoint has nothing to install.
 add_mount "$PI_AGENT_DIR/extensions" "$PI_AGENT_DIR/extensions" ro
-add_mount "$PI_AGENT_DIR/npm" "$PI_AGENT_DIR/npm" ro
+add_mount "$PI_AGENT_DIR/npm/package.json" "$CONTAINER_HOST_NPM_DIR/package.json" ro
+add_mount "$PI_AGENT_DIR/npm/package-lock.json" "$CONTAINER_HOST_NPM_DIR/package-lock.json" ro
 add_mount "$SHARED_SKILLS_DIR" "$SHARED_SKILLS_DIR" ro
 # The checkout is read-only unless the working directory *is* the checkout; a
 # working directory inside it keeps its read-write mount, because Docker orders
@@ -710,7 +724,11 @@ warn_on_version_drift() {
 # the agent, sessions, and transpile cache directories are created as the
 # invoking user first. jiti refuses a cache directory it cannot write, and a
 # root-owned one would leave it recompiling the extension set on every start.
-mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR" "$HOST_JITI_CACHE_DIR"
+# The sandbox package tree is created here for the same reason, and so is the
+# host's own `npm` directory it is bound over: a missing mount point inside the
+# agent directory would be created by the daemon, root-owned.
+mkdir -p "$PI_AGENT_DIR" "$HOST_SESSION_DIR" "$HOST_JITI_CACHE_DIR" "$HOST_NPM_CACHE_DIR" \
+	"$PI_AGENT_DIR/npm"
 
 # --- Run Pi in the sandbox ----------------------------------------------------
 if [[ "$MODE" != "prepare" ]]; then

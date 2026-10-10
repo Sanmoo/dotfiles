@@ -71,6 +71,17 @@ if [[ "${1-} ${2-}" == "root -g" ]]; then
 	printf '%s\n' "${SAFE_PI_TEST_NPM_ROOT:?}"
 	exit 0
 fi
+if [[ "${1-}" == "ci" ]]; then
+	# The package tree install: record where and with what, leave a marker the
+	# tests can see, and exit with the scripted status.
+	printf 'npm-ci-begin cwd=%s path=%s\n' "$PWD" "$PATH" >>"$SAFE_PI_TEST_LOG"
+	sleep "${SAFE_PI_FAKE_NPM_CI_SLEEP:-0}"
+	printf 'npm-ci-end\n' >>"$SAFE_PI_TEST_LOG"
+	printf 'npm-ci-output\n'
+	[[ "${SAFE_PI_FAKE_NPM_CI_STATUS:-0}" == "0" ]] || exit "$SAFE_PI_FAKE_NPM_CI_STATUS"
+	mkdir -p node_modules
+	exit 0
+fi
 exit 99
 NPM
 chmod +x "$IMAGE_BIN/npm"
@@ -96,7 +107,18 @@ exit "${SAFE_PI_FAKE_PI_STATUS:-0}"
 PI
 chmod +x "$IMAGE_BIN/pi"
 
-ln -s "$(command -v node)" "$IMAGE_BIN/node"
+# The real node, except that the Node ABI the key is built from can be scripted:
+# the image's Node major cannot be swapped in a test.
+real_node="$(command -v node)"
+cat >"$IMAGE_BIN/node" <<NODE
+#!/usr/bin/env bash
+if [[ "\$*" == "-p process.versions.modules" && -n "\${SAFE_PI_FAKE_NODE_ABI-}" ]]; then
+	printf '%s\n' "\$SAFE_PI_FAKE_NODE_ABI"
+	exit 0
+fi
+exec "$real_node" "\$@"
+NODE
+chmod +x "$IMAGE_BIN/node"
 
 # Pi's engine check reads npm's bundled semver. Locate the host's copy so the
 # test uses the real range logic rather than a double.
@@ -122,13 +144,18 @@ mkdir -p "$npm_no_pi"
 
 data="$tmpdir/mise-data"
 home="$tmpdir/home"
+host_npm="$tmpdir/host-npm"
+sandbox_npm="$home/.pi/agent/npm"
 workdir="$tmpdir/repo"
 mkdir -p "$home" "$workdir"
 
 reset_stubs() {
 	: >"$CALL_LOG"
-	rm -rf "$data"
+	rm -rf "$data" "$host_npm" "$home/.pi"
 	mkdir -p "$data"
+	FAKE_NODE_ABI=127
+	FAKE_NPM_CI_STATUS=0
+	FAKE_NPM_CI_SLEEP=0
 	npm_root="$npm_ok"
 	FAKE_MISE_STATUS=0
 	FAKE_MISE_SLEEP=0
@@ -169,6 +196,10 @@ run_entrypoint() {
 			SAFE_PI_FAKE_MISE_FAIL_CWD="$FAKE_MISE_FAIL_CWD" \
 			SAFE_PI_FAKE_MISE_MISSING="$FAKE_MISE_MISSING" \
 			SAFE_PI_FAKE_PI_STATUS="$FAKE_PI_STATUS" \
+			SAFE_PI_HOST_NPM_DIR="$host_npm" \
+			SAFE_PI_FAKE_NODE_ABI="$FAKE_NODE_ABI" \
+			SAFE_PI_FAKE_NPM_CI_STATUS="$FAKE_NPM_CI_STATUS" \
+			SAFE_PI_FAKE_NPM_CI_SLEEP="$FAKE_NPM_CI_SLEEP" \
 			"$bash_bin" "$ENTRYPOINT" "$@"
 	)
 }
@@ -395,6 +426,156 @@ wait "$second_pid" || fail "second concurrent prepare failed"
 sequence="$(grep -E '^mise-(begin|end)$' "$CALL_LOG" | paste -sd' ' -)"
 expected="$(printf 'mise-begin mise-end %.0s' 1 2 3 4 | sed 's/ $//')"
 [[ "$sequence" == "$expected" ]] || fail "concurrent convergence overlapped: $sequence"
+
+# --- The sandbox package tree --------------------------------------------------
+# Pi's npm packages carry one native binding per platform, so the sandbox installs
+# its own tree from the host's package.json and package-lock.json (ADR 0009). The
+# wrapper mounts those two files at SAFE_PI_HOST_NPM_DIR's default; the tests
+# point it at a fixture. `npm` is a stub, so nothing is downloaded.
+make_host_npm() { # writes a host declaration into $host_npm
+	mkdir -p "$host_npm"
+	printf '{"name":"pi-extensions","dependencies":{"a":"1"}}\n' >"$host_npm/package.json"
+	printf '{"lockfileVersion":3,"packages":{}}\n' >"$host_npm/package-lock.json"
+}
+
+ci_count() { grep -c '^npm-ci-begin' "$CALL_LOG" || true; }
+
+# A first start installs, in the tree, from a copy of the host's declaration,
+# with the image's own PATH and the flag Pi's installs use, and starts Pi after.
+reset_stubs
+make_host_npm
+FAKE_MISE_MISSING=0
+run_entrypoint pi --version >"$tmpdir/first-npm.out" 2>"$tmpdir/first-npm.err" ||
+	fail "first start with a host lock failed"
+[[ "$(ci_count)" == "1" ]] || fail "a first start must install once, got $(ci_count)"
+assert_call "npm ci --legacy-peer-deps"
+assert_call "npm-ci-begin cwd=$sandbox_npm path=$IMAGE_BIN:"
+assert_no_call "path=$data/shims"
+cmp -s "$host_npm/package-lock.json" "$sandbox_npm/package-lock.json" ||
+	fail "the install must run from the host's lock"
+cmp -s "$host_npm/package.json" "$sandbox_npm/package.json" ||
+	fail "the install must run from the host's package.json"
+[[ -s "$sandbox_npm/.safe-pi-stamp" ]] || fail "a successful install must write the stamp"
+grep -Fq "npm-ci-output" "$tmpdir/first-npm.err" ||
+	fail "the install's progress must be shown: $(cat "$tmpdir/first-npm.err")"
+[[ "$(<"$tmpdir/first-npm.out")" == "" ]] || fail "the install must not write to stdout"
+assert_call "pi --version"
+ci_line="$(line_of "npm-ci-begin")"
+pi_line="$(line_of "pi --version")"
+[[ "$ci_line" -lt "$pi_line" ]] || fail "the package tree must converge before Pi starts"
+
+# An unchanged key installs nothing and prints nothing: a steady start.
+: >"$CALL_LOG"
+steady_out="$(run_entrypoint pi --version 2>&1)" || fail "steady start with a host lock failed"
+[[ "$steady_out" == "" || "$steady_out" == "pi --version" ]] ||
+	fail "a steady start must print nothing, got: $steady_out"
+[[ "$(ci_count)" == "0" ]] || fail "an unchanged key must install nothing"
+
+# The debug shell converges the tree too: any start does.
+reset_stubs
+make_host_npm
+run_entrypoint "$bash_bin" -c true 2>/dev/null || fail "shell start with a host lock failed"
+[[ "$(ci_count)" == "1" ]] || fail "a shell start must converge the package tree"
+
+# A changed lock reinstalls, and so does a changed Node ABI.
+reset_stubs
+make_host_npm
+run_entrypoint pi --version >/dev/null 2>&1 || fail "start before the lock changed failed"
+printf '{"lockfileVersion":3,"packages":{"x":{}}}\n' >"$host_npm/package-lock.json"
+run_entrypoint pi --version >/dev/null 2>&1 || fail "start after the lock changed failed"
+[[ "$(ci_count)" == "2" ]] || fail "a changed lock must reinstall, got $(ci_count) installs"
+cmp -s "$host_npm/package-lock.json" "$sandbox_npm/package-lock.json" ||
+	fail "the reinstall must use the changed lock"
+FAKE_NODE_ABI=141
+run_entrypoint pi --version >/dev/null 2>&1 || fail "start after the Node ABI changed failed"
+[[ "$(ci_count)" == "3" ]] || fail "a changed Node ABI must reinstall, got $(ci_count) installs"
+run_entrypoint pi --version >/dev/null 2>&1 || fail "start after the reinstall failed"
+[[ "$(ci_count)" == "3" ]] || fail "a converged tree must not reinstall again"
+
+# A changed package.json reinstalls as well: it is part of the key.
+printf '{"name":"pi-extensions","dependencies":{"b":"2"}}\n' >"$host_npm/package.json"
+run_entrypoint pi --version >/dev/null 2>&1 || fail "start after package.json changed failed"
+[[ "$(ci_count)" == "4" ]] || fail "a changed package.json must reinstall"
+
+# A failed install writes no stamp, warns naming the step, and Pi still starts;
+# the next start tries again.
+reset_stubs
+make_host_npm
+FAKE_NPM_CI_STATUS=7
+FAKE_PI_STATUS=5
+npm_fail_status="$(status_of run_entrypoint pi -c 2>"$tmpdir/npm-fail.err")"
+[[ "$npm_fail_status" == "5" ]] ||
+	fail "a failed install must still start Pi and exit with its status, got $npm_fail_status"
+[[ ! -e "$sandbox_npm/.safe-pi-stamp" ]] || fail "a failed install must not write the stamp"
+grep -Fq "warning" "$tmpdir/npm-fail.err" || fail "a failed install must warn: $(cat "$tmpdir/npm-fail.err")"
+grep -Fq "npm ci --legacy-peer-deps" "$tmpdir/npm-fail.err" ||
+	fail "the warning must name the failed step: $(cat "$tmpdir/npm-fail.err")"
+assert_call "pi -c"
+FAKE_NPM_CI_STATUS=0
+FAKE_PI_STATUS=0
+run_entrypoint pi -c >/dev/null 2>&1 || fail "the start after a failed install failed"
+[[ "$(ci_count)" == "2" ]] || fail "a failed install must be retried on the next start"
+[[ -s "$sandbox_npm/.safe-pi-stamp" ]] || fail "the retry must write the stamp"
+
+# A failed reinstall leaves no stamp from the previous key either.
+printf '{"lockfileVersion":3,"packages":{"y":{}}}\n' >"$host_npm/package-lock.json"
+FAKE_NPM_CI_STATUS=7
+run_entrypoint pi -c >/dev/null 2>&1 || fail "a failed reinstall must still start Pi"
+[[ ! -e "$sandbox_npm/.safe-pi-stamp" ]] ||
+	fail "a failed reinstall must not leave the previous key's stamp"
+
+# Under --prepare the same failure is an error naming the step, and Pi does not
+# start; --prepare converges the package tree as well as the toolchain.
+reset_stubs
+make_host_npm
+FAKE_NPM_CI_STATUS=7
+prepare_npm_status="$(status_of run_entrypoint --prepare 2>"$tmpdir/prepare-npm.err")"
+[[ "$prepare_npm_status" == "1" ]] || fail "prepare must exit 1 on a failed install, got $prepare_npm_status"
+grep -Fq "npm ci --legacy-peer-deps" "$tmpdir/prepare-npm.err" ||
+	fail "prepare failure must name the failed step: $(cat "$tmpdir/prepare-npm.err")"
+assert_no_call "pi "
+reset_stubs
+make_host_npm
+run_entrypoint --prepare >/dev/null 2>&1 || fail "prepare with a host lock failed"
+[[ "$(ci_count)" == "1" && -s "$sandbox_npm/.safe-pi-stamp" ]] ||
+	fail "prepare must converge the package tree"
+
+# The two convergences are independent: a failed toolchain does not skip the
+# package tree, and prepare reports each.
+reset_stubs
+make_host_npm
+FAKE_MISE_STATUS=3
+both_status="$(status_of run_entrypoint --prepare 2>"$tmpdir/both.err")"
+[[ "$both_status" == "1" ]] || fail "prepare must exit 1 when the toolchain fails, got $both_status"
+[[ "$(ci_count)" == "1" ]] || fail "a failed toolchain must not skip the package tree"
+
+# No host lock: nothing is declared, so convergence skips, silently. A lock
+# without a package.json cannot be installed from and skips the same way.
+reset_stubs
+FAKE_MISE_MISSING=0
+silent_out="$(run_entrypoint pi --version 2>&1)" || fail "start without a host lock failed"
+[[ "$silent_out" == "" || "$silent_out" == "pi --version" ]] ||
+	fail "no host lock must skip silently, got: $silent_out"
+[[ "$(ci_count)" == "0" ]] || fail "no host lock must install nothing"
+[[ ! -e "$sandbox_npm/.safe-pi-stamp" ]] || fail "no host lock must write no stamp"
+mkdir -p "$host_npm"
+printf '{}\n' >"$host_npm/package-lock.json"
+run_entrypoint pi --version >/dev/null 2>&1 || fail "start with a lock but no package.json failed"
+[[ "$(ci_count)" == "0" ]] || fail "a lock without a package.json must install nothing"
+
+# Starts sharing the tree install one at a time: the second waits, then finds
+# the tree converged.
+reset_stubs
+make_host_npm
+FAKE_NPM_CI_SLEEP=1
+run_entrypoint "$bash_bin" -c true >"$tmpdir/npm-first.out" 2>&1 &
+npm_first_pid=$!
+run_entrypoint "$bash_bin" -c true >"$tmpdir/npm-second.out" 2>&1 &
+npm_second_pid=$!
+wait "$npm_first_pid" || fail "first concurrent start failed"
+wait "$npm_second_pid" || fail "second concurrent start failed"
+[[ "$(ci_count)" == "1" ]] || fail "concurrent starts must install once, got $(ci_count)"
+[[ "$(grep -c '^npm-ci-end' "$CALL_LOG")" == "1" ]] || fail "the install must finish once"
 
 # --- The sandbox reporter ships in the image -----------------------------------
 # The wrapper loads it explicitly with `-e`, so the image must carry it and its

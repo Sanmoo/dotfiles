@@ -155,7 +155,7 @@ reset_stubs() {
 	FAKE_DOCKER_UP=1
 	FAKE_RUN_STATUS=0
 	FAKE_HOST_PI_VERSION=""
-	FAKE_ENTRYPOINT="8"
+	FAKE_ENTRYPOINT="9"
 }
 
 # run_safe_pi [--cwd DIR] [script args...]
@@ -546,6 +546,8 @@ mkdir -p \
 	"$contract_home/.config/herdr" \
 	"$invoked"
 touch "$contract_home/.gitconfig"
+printf '{}\n' >"$contract_home/.pi/agent/npm/package.json"
+printf '{}\n' >"$contract_home/.pi/agent/npm/package-lock.json"
 ssh_sock="$tmpdir/agent.sock"
 python3 - "$ssh_sock" <<'PY'
 import socket, sys
@@ -567,7 +569,16 @@ assert_log "--workdir $invoked"
 assert_log "--mount type=bind,source=$invoked,target=$invoked"
 assert_log "--mount type=bind,source=$contract_home/.pi/agent,target=$contract_home/.pi/agent"
 assert_log "--mount type=bind,source=$contract_home/.pi/agent/extensions,target=$contract_home/.pi/agent/extensions,readonly"
-assert_log "--mount type=bind,source=$contract_home/.pi/agent/npm,target=$contract_home/.pi/agent/npm,readonly"
+# The sandbox keeps its own package tree (ADR 0009): a directory private to the
+# sandbox is bound where Pi looks for its packages, and the host's tree is not
+# reachable. Only the host's declaration is mounted, read-only, at a
+# container-only path, for the entrypoint to install from.
+assert_log "--mount type=bind,source=$contract_home/.cache/safe-pi/npm,target=$contract_home/.pi/agent/npm"
+assert_no_log "source=$contract_home/.pi/agent/npm,target=$contract_home/.pi/agent/npm"
+assert_log "--mount type=bind,source=$contract_home/.pi/agent/npm/package.json,target=/run/safe-pi/host-npm/package.json,readonly"
+assert_log "--mount type=bind,source=$contract_home/.pi/agent/npm/package-lock.json,target=/run/safe-pi/host-npm/package-lock.json,readonly"
+[[ -d "$contract_home/.cache/safe-pi/npm" ]] ||
+	fail "the sandbox package tree directory must be created as the invoking user"
 assert_log "--mount type=bind,source=$contract_home/.pi/agent/sessions,target=/run/safe-pi/sessions"
 assert_log "--mount type=bind,source=$contract_home/.agents/skills,target=$contract_home/.agents/skills,readonly"
 assert_log "--mount type=bind,source=$repo_root,target=$repo_root,readonly"
@@ -636,6 +647,44 @@ SAFE_PI_TEST_HOME="$contract_home" \
 	run_safe_pi --cwd "$repo_root/pi" -c || fail "checkout subdirectory run failed"
 assert_log "--mount type=bind,source=$repo_root,target=$repo_root,readonly"
 assert_log "--mount type=bind,source=$repo_root/pi,target=$repo_root/pi"
+
+# A host with no lock has nothing to declare: the sandbox package tree is still
+# bound, and nothing is mounted from the host's tree.
+nolock_home="$tmpdir/nolock-home"
+mkdir -p "$nolock_home/.pi/agent/npm" "$nolock_home/.pi/agent/sessions"
+printf '{}\n' >"$nolock_home/.pi/agent/npm/package.json"
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$nolock_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$invoked" -c || fail "run without a host lock failed"
+assert_log "--mount type=bind,source=$nolock_home/.cache/safe-pi/npm,target=$nolock_home/.pi/agent/npm"
+assert_log "target=/run/safe-pi/host-npm/package.json,readonly"
+assert_no_log "target=/run/safe-pi/host-npm/package-lock.json"
+rm -f "$nolock_home/.pi/agent/npm/package.json"
+reset_stubs
+FAKE_IMAGES="$current_tag"
+SAFE_PI_TEST_HOME="$nolock_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --cwd "$invoked" -c || fail "run without a host package tree failed"
+assert_log "--mount type=bind,source=$nolock_home/.cache/safe-pi/npm,target=$nolock_home/.pi/agent/npm"
+assert_no_log "target=/run/safe-pi/host-npm"
+
+# A dry run shows the package tree mounts and still creates nothing.
+dry_lock_home="$tmpdir/dry-lock-home"
+mkdir -p "$dry_lock_home/.pi/agent/npm"
+printf '{}\n' >"$dry_lock_home/.pi/agent/npm/package.json"
+printf '{}\n' >"$dry_lock_home/.pi/agent/npm/package-lock.json"
+reset_stubs
+dry_lock="$(SAFE_PI_TEST_HOME="$dry_lock_home" \
+	SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	run_safe_pi --dry-run -c)" || fail "dry run with a host lock failed"
+dry_lock="${dry_lock//\\/}" # the dry run shell-quotes the commas inside --mount
+grep -Fq "source=$dry_lock_home/.cache/safe-pi/npm,target=$dry_lock_home/.pi/agent/npm" <<<"$dry_lock" ||
+	fail "the dry run must show the package tree mount: $dry_lock"
+grep -Fq "target=/run/safe-pi/host-npm/package-lock.json,readonly" <<<"$dry_lock" ||
+	fail "the dry run must show the host's lock mount: $dry_lock"
+[[ ! -e "$dry_lock_home/.cache" ]] || fail "dry run created the sandbox package tree directory"
 
 # A dry run prints the invocation without touching the host.
 dry_home="$tmpdir/dry-home"

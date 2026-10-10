@@ -7,20 +7,24 @@
 #   1. resolves the locale onto one the image can run UTF-8 under;
 #   2. converges the environment declared in the mounted mise configuration, plus
 #      the working repository's own pins, into the toolchain volume;
-#   3. puts the declared tools' shims ahead of the image's own binaries;
-#   4. before a Pi start, checks that the Node Pi will run on satisfies Pi's
+#   3. converges the sandbox package tree (Pi's npm packages) from the host's
+#      package lock, so their native parts match the sandbox's platform;
+#   4. puts the declared tools' shims ahead of the image's own binaries;
+#   5. before a Pi start, checks that the Node Pi will run on satisfies Pi's
 #      engine requirement;
-#   5. executes the command.
+#   6. executes the command.
 #
 # Usage: safe-pi-entrypoint --prepare
 #        safe-pi-entrypoint command [arguments...]
 #
 # --prepare converges strictly and exits without starting anything. A command
 # converges fail-open: a failed convergence warns and the command still runs.
+# The two convergences are independent: one failing does not skip the other.
 set -euo pipefail
 
 readonly SCRIPT_NAME="safe-pi"
 readonly CONVERGE_STEP="mise install --yes"
+readonly NPM_CONVERGE_STEP="npm ci --legacy-peer-deps"
 
 warn() {
 	printf '%s: warning: %s\n' "$SCRIPT_NAME" "$1" >&2
@@ -88,6 +92,9 @@ for locale_var in LANG LC_ALL LC_CTYPE; do
 done
 
 # --- Declared tools first on PATH ---------------------------------------------
+# The package tree is installed with the image's own node and npm, so the PATH
+# the image started with is kept before the shims shadow it.
+IMAGE_PATH="$PATH"
 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
 export MISE_DATA_DIR
 # Mise's cache and state belong in the volume too: state there is what lets an
@@ -144,15 +151,84 @@ converge() {
 	)
 }
 
+# --- Converge the sandbox package tree -----------------------------------------
+# Pi's npm packages carry one native binding per platform, and the host's tree
+# holds only the host's (ADR 0009). The sandbox therefore keeps its own tree,
+# installed here from the host's package.json and package-lock.json, which the
+# wrapper mounts read-only. With no host lock nothing is declared, so there is
+# nothing to converge.
+SANDBOX_NPM_DIR="$HOME/.pi/agent/npm"
+HOST_NPM_DIR="${SAFE_PI_HOST_NPM_DIR:-/run/safe-pi/host-npm}"
+NPM_STAMP="$SANDBOX_NPM_DIR/.safe-pi-stamp"
+
+# The key: the host's declaration plus the Node ABI the native parts are built
+# for. A changed lock, or an image with another Node major, reinstalls.
+npm_key() {
+	local abi
+	abi="$(node -p process.versions.modules)" || return 1
+	node -e '
+		const crypto = require("crypto");
+		const fs = require("fs");
+		const hash = crypto.createHash("sha256");
+		hash.update("abi=" + process.argv[1] + "\0");
+		for (const file of process.argv.slice(2)) hash.update(fs.readFileSync(file)).update("\0");
+		process.stdout.write(hash.digest("hex"));
+	' "$abi" "$HOST_NPM_DIR/package.json" "$HOST_NPM_DIR/package-lock.json"
+}
+
+npm_tree_converged() { # $1 = key
+	[[ -f "$NPM_STAMP" && "$(cat "$NPM_STAMP" 2>/dev/null || true)" == "$1" ]]
+}
+
+# The tree may be converged by several containers at once. The lock serializes
+# them, so the second one waits and then finds the tree converged. The stamp is
+# removed before the install and written only after it succeeds, so an
+# interrupted or failed install is retried on the next start.
+converge_npm() {
+	[[ -f "$HOST_NPM_DIR/package-lock.json" && -f "$HOST_NPM_DIR/package.json" ]] || return 0
+	local key lock="$SANDBOX_NPM_DIR/.safe-pi-converge.lock"
+	mkdir -p "$SANDBOX_NPM_DIR" || return 1
+	key="$(npm_key)" || return 1
+	npm_tree_converged "$key" && return 0
+	(
+		exec 9>"$lock"
+		if ! flock -n 9; then
+			printf '%s: waiting for another sandbox to finish installing the Pi packages\n' "$SCRIPT_NAME" >&2
+			flock 9
+		fi
+		npm_tree_converged "$key" && exit 0
+		rm -f "$NPM_STAMP"
+		printf '%s: installing the Pi packages into the sandbox package tree\n' "$SCRIPT_NAME" >&2
+		cp "$HOST_NPM_DIR/package.json" "$HOST_NPM_DIR/package-lock.json" "$SANDBOX_NPM_DIR/" || exit 1
+		cd "$SANDBOX_NPM_DIR" || exit 1
+		# Install scripts stay enabled: these are the packages the host already
+		# trusted. --legacy-peer-deps is the flag Pi's own installs use, so the
+		# lock is honoured.
+		npm ci --legacy-peer-deps --no-fund --no-audit >&2 || exit 1
+		printf '%s' "$key" >"$NPM_STAMP"
+	)
+}
+
+converge_failed=0
 if ! converge; then
 	if ((prepare)); then
-		fail "toolchain convergence failed at '$CONVERGE_STEP'"
+		printf "%s: toolchain convergence failed at '%s'\n" "$SCRIPT_NAME" "$CONVERGE_STEP" >&2
+		converge_failed=1
+	else
+		warn "toolchain convergence failed at '$CONVERGE_STEP'; starting with the tools already in the volume"
 	fi
-	warn "toolchain convergence failed at '$CONVERGE_STEP'; starting with the tools already in the volume"
+fi
+if ! (PATH="$IMAGE_PATH" converge_npm); then
+	if ((prepare)); then
+		printf "%s: package tree convergence failed at '%s'\n" "$SCRIPT_NAME" "$NPM_CONVERGE_STEP" >&2
+		converge_failed=1
+	else
+		warn "package tree convergence failed at '$NPM_CONVERGE_STEP'; starting with the packages already in the tree"
+	fi
 fi
 
 if ((prepare)); then
-	exit 0
+	exit "$converge_failed"
 fi
 
 # --- Pi's Node engine requirement ---------------------------------------------

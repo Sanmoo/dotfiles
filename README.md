@@ -303,9 +303,14 @@ OTP. Bump those two pins by hand; the rest keep moving with `latest`.
 
 - Your repository, read-write, at the same absolute path — writes land on the
   host.
-- Your Pi configuration, credentials, sessions, skills, prompts, agents,
-  extensions, and packages, shared with the host Pi. Extensions and packages are
-  read-only inside the sandbox.
+- Your Pi configuration, credentials, sessions, skills, prompts, agents, and
+  extensions, shared with the host Pi. Extensions are read-only inside the
+  sandbox.
+- Pi's npm packages, as the sandbox's own **sandbox package tree**, installed
+  inside the sandbox from your host's `package.json` and `package-lock.json` so
+  their native parts match the sandbox's platform. It lives in
+  `~/.cache/safe-pi/npm` on the host; your host's own `~/.pi/agent/npm` is not
+  reachable from the sandbox.
 - Your shell's SSH agent and Herdr's socket, plus a sandbox reporter that
   reports the pane as `working`
   and `idle`. On macOS both sockets arrive through a socket relay over the
@@ -358,9 +363,18 @@ and the connection and directory are removed when the sandbox exits.
   resume command, naming the session that was running rather than the newest
   one in the directory, and Herdr types it into the restored pane's shell in
   the saved working directory.
-- `pi install` inside the sandbox fails on purpose, because extensions and
-  packages are read-only. Install on the host; the sandbox picks it up
-  immediately.
+- Extensions are read-only in the sandbox, but Pi's npm packages are not the
+  host's: the sandbox keeps its own package tree, because packages with native
+  parts carry one binding per platform and the host's tree holds only the
+  host's (on macOS, `darwin` bindings a Linux sandbox cannot load). On every
+  start the sandbox installs the tree from the host's `package.json` and
+  `package-lock.json` with `npm ci`, when those changed or the image's Node ABI
+  did; an unchanged start installs nothing and prints nothing. The first start
+  after the change installs it, about seven seconds. If the install fails,
+  `safe-pi` warns and starts with the tree it has (`--prepare` fails instead).
+  Install a package on the host and the next start picks it up. `pi install`
+  inside the sandbox works against the sandbox package tree and lasts only until
+  that tree is next converged.
 - Pi compiles its TypeScript extensions on first use and caches the compiled
   modules under `/tmp`, which the sandbox discards with the container. `safe-pi`
   therefore binds a persistent directory there — the sandbox's own, not the one
@@ -388,9 +402,14 @@ and the connection and directory are removed when the sandbox exits.
 - Toolchain volume: `safe-pi-toolchain-u<uid>`.
 - Extension transpile cache: `~/.cache/safe-pi/jiti` on the host, mounted at
   `/tmp/jiti` inside the sandbox.
+- Sandbox package tree: `~/.cache/safe-pi/npm` on the host, mounted at
+  `~/.pi/agent/npm` inside the sandbox. The host's own `~/.pi/agent/npm` is not
+  reachable from the sandbox; only its `package.json` and `package-lock.json`
+  are mounted, read-only.
 - Starting over: remove the volume to reinstall the declared environment, remove
   the image tags to rebuild the image; the next run recreates what is missing.
   Removing the transpile cache costs one recompilation and nothing else.
+  Removing the sandbox package tree costs one reinstall (about seven seconds).
 
 ### Troubleshooting
 
@@ -401,6 +420,8 @@ and the connection and directory are removed when the sandbox exits.
 | Cannot find the build context | The script was copied instead of installed by stow; point the override at the Dockerfile |
 | The first run is slower than described above | The image build or the convergence is running; it reports which one |
 | A start is about ten seconds slower than usual | The extension transpile cache is cold: the first run after it was removed, or after extensions changed |
+| A start installs the Pi packages | The host's package lock, or the image's Node ABI, changed since the sandbox package tree was last installed |
+| `package tree convergence failed at 'npm ci --legacy-peer-deps'` | The install failed (usually the network); the sandbox started with the tree it had, and the next start retries |
 | Pi fails with a Node engine error | The declared Node version does not satisfy Pi's requirement; adjust the declaration |
 | `safe-pi on macOS supports Colima only` | The Docker daemon is not a Colima one (Docker Desktop, OrbStack, plain Lima); start Colima and point the Docker context at it |
 | `SSH agent unavailable in the sandbox: ...` (macOS) | The relay to the Colima VM could not be opened or forwarded; the sandbox started without the agent. Check `colima status` and that `~/.colima/ssh_config` exists |
