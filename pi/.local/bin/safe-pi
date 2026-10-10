@@ -418,7 +418,7 @@ RELAY_DIR=""    # host directory holding the control socket and the results
 RELAY_PID=""
 RELAY_ALIAS=""  # Host alias in ~/.colima/ssh_config
 RELAY_CTL=""
-RELAY_VM_DIR="" # private directory inside the VM
+RELAY_VM_DIR="" # private directory inside the Daemon VM
 
 # Colima names its daemon `colima`, or `colima-<profile>`, which is also the
 # Host alias in the ssh_config it writes.
@@ -433,9 +433,15 @@ refuse_unsupported_daemon() {
 	die "safe-pi on macOS supports Colima only (the Docker daemon here is '${1:-unknown}')"
 }
 
+# Options every relay command carries; the dry run prints the same prefix.
+relay_ssh_prefix() { # sets RELAY_SSH_PREFIX
+	RELAY_SSH_PREFIX=(ssh -F "$HOME/.colima/ssh_config" -o BatchMode=yes -o ConnectTimeout=10
+		-o LogLevel=ERROR)
+}
+
 relay_ssh() { # $@ = ssh arguments; the host alias is the caller's
-	ssh -F "$HOME/.colima/ssh_config" -o BatchMode=yes -o ConnectTimeout=10 \
-		-o LogLevel=ERROR "$@"
+	relay_ssh_prefix
+	"${RELAY_SSH_PREFIX[@]}" "$@"
 }
 
 # The relay's commands, for one start. Held in arrays so that the real run and
@@ -464,12 +470,14 @@ relay_vm_socket() { # $1 = index
 open_relay() {
 	local i reason
 	local fail_all=""
-	if ! relay_ssh "${RELAY_MASTER[@]}" </dev/null >/dev/null 2>"$RELAY_DIR/err"; then
-		fail_all="$(relay_reason "$RELAY_DIR/err" "cannot open an SSH connection to the Colima VM")"
+	# The master keeps its stderr open for as long as it lives, so it gets a file
+	# of its own; the later commands' reasons must not be read from it.
+	if ! relay_ssh "${RELAY_MASTER[@]}" </dev/null >/dev/null 2>"$RELAY_DIR/master.err"; then
+		fail_all="$(relay_reason "$RELAY_DIR/master.err" "cannot open an SSH connection to the Colima Daemon VM")"
 	else
 		: >"$RELAY_DIR/master.ok"
 		if ! relay_ssh "${RELAY_MKDIR[@]}" </dev/null >/dev/null 2>"$RELAY_DIR/err"; then
-			fail_all="$(relay_reason "$RELAY_DIR/err" "cannot create the relay directory in the Colima VM")"
+			fail_all="$(relay_reason "$RELAY_DIR/err" "cannot create the relay directory in the Daemon VM")"
 		fi
 	fi
 	for i in "${!relay_names[@]}"; do
@@ -524,6 +532,8 @@ finish_relay() {
 
 close_relay() {
 	[[ -n "$RELAY_DIR" ]] || return 0
+	# An interrupted start must not wait out the background job's SSH timeouts.
+	kill "$RELAY_PID" 2>/dev/null || true
 	wait "$RELAY_PID" 2>/dev/null || true
 	if [[ -e "$RELAY_DIR/master.ok" || -S "$RELAY_CTL" ]]; then
 		relay_ssh -S "$RELAY_CTL" "$RELAY_ALIAS" -- rm -rf -- "$RELAY_VM_DIR" </dev/null >/dev/null 2>&1 || true
@@ -601,25 +611,29 @@ build_run_args() {
 
 # --- Dry run: print the invocation without touching Docker --------------------
 if ((DRY_RUN)); then
-	if [[ "$HOST_OS" == "Darwin" ]] && ((${#relay_names[@]})) && [[ "$MODE" != "prepare" ]]; then
+	if [[ "$HOST_OS" == "Darwin" ]]; then
 		# The profile is the one thing a dry run asks the daemon; with none
-		# reachable it assumes the default. The relay is printed, never run.
+		# reachable it assumes the default. An unsupported daemon is refused here
+		# as in a real run. The relay is printed, never run.
 		dry_name="$(docker info --format '{{.Name}}' 2>/dev/null || true)"
 		dry_alias="colima"
 		if [[ -n "$dry_name" ]]; then
 			dry_alias="$(colima_alias_of "$dry_name")" || refuse_unsupported_daemon "$dry_name"
 		fi
+	fi
+	if [[ "$HOST_OS" == "Darwin" ]] && ((${#relay_names[@]})) && [[ "$MODE" != "prepare" ]]; then
 		plan_relay "${TMPDIR:-/tmp}/safe-pi.XXXXXX" XXXXXX "$dry_alias"
-		printf 'ssh -F %q' "$HOME/.colima/ssh_config"
-		printf ' %q' "${RELAY_MASTER[@]}"
+		relay_ssh_prefix
+		printf '%q' "${RELAY_SSH_PREFIX[0]}"
+		printf ' %q' "${RELAY_SSH_PREFIX[@]:1}" "${RELAY_MASTER[@]}"
 		printf '\n'
-		printf 'ssh -F %q' "$HOME/.colima/ssh_config"
-		printf ' %q' "${RELAY_MKDIR[@]}"
+		printf '%q' "${RELAY_SSH_PREFIX[0]}"
+		printf ' %q' "${RELAY_SSH_PREFIX[@]:1}" "${RELAY_MKDIR[@]}"
 		printf '\n'
 		for i in "${!relay_names[@]}"; do
 			relay_forward_args "$i"
-			printf 'ssh -F %q' "$HOME/.colima/ssh_config"
-			printf ' %q' "${RELAY_FORWARD[@]}"
+			printf '%q' "${RELAY_SSH_PREFIX[0]}"
+			printf ' %q' "${RELAY_SSH_PREFIX[@]:1}" "${RELAY_FORWARD[@]}"
 			printf '\n'
 			relay_ok[i]=1
 		done

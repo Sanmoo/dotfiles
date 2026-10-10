@@ -923,6 +923,23 @@ grep -Fq -- "target=/run/safe-pi/ssh-agent.sock" <<<"$mac_dry" ||
 	fail "the dry run must print the relayed mount: $mac_dry"
 [[ -z "$(ls -A "$relay_tmp")" ]] || fail "a dry run must not leave a relay directory behind"
 
+# The refusal holds for a dry run too, even with nothing to relay.
+reset_stubs
+FAKE_IMAGES="$current_tag"
+FAKE_UNAME=Darwin
+FAKE_DAEMON_NAME="Docker Desktop"
+[[ "$(status_of run_mac --dry-run 2>/dev/null)" == "2" ]] || fail "a dry run on another macOS daemon should exit 2"
+reset_stubs
+FAKE_UNAME=Darwin
+FAKE_DAEMON_NAME="Docker Desktop"
+TMPDIR="$relay_tmp" SAFE_PI_TEST_HOME="$mac_home" SAFE_PI_TEST_SSH=unset SAFE_PI_TEST_HERDR=unset \
+	status_of run_safe_pi --dry-run >"$tmpdir/dry-refuse.status" 2>/dev/null || true
+[[ "$(cat "$tmpdir/dry-refuse.status")" == "2" ]] || fail "a socketless dry run on another macOS daemon should exit 2"
+
+# The dry run prints the options the real relay runs with.
+grep -Fq -- "-o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR" <<<"$mac_dry" ||
+	fail "the dry run must print the relay's ssh options: $mac_dry"
+
 # --prepare opens no relay.
 reset_stubs
 FAKE_IMAGES="$current_tag"
