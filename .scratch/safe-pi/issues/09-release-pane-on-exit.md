@@ -4,7 +4,7 @@
 
 **Blocked by:** 08 — Container-side Herdr integration for the sandbox (resolved)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 ## What is known
 
@@ -24,15 +24,11 @@
 - [x] The reporter never releases on `reload`, `resume`, `new`, or `fork`; those are session replacements where the new session reports instead.
 - [x] The reported agent label is one Herdr does not recognize (`safe-pi`), and `pane.report_metadata` sets `display_agent: "Pi"`, so the sidebar and border still read `Pi`.
 - [x] The release is best-effort: an unreachable socket is swallowed and costs at most 250 ms at quit; it never throws, never blocks longer, and never breaks Pi.
-- [ ] Reproduction on a real pane: Ctrl-C twice in `safe-pi`, then `herdr agent list` no longer lists the pane, without closing it.
-- [ ] A sandbox that dies without a shutdown event (SIGKILL/OOM/daemon stop) also clears, via Herdr's idle-shell safety net, about a second after the pane's shell returns.
-- [ ] Re-entry (`safe-pi -c`) still re-attributes the pane.
+- [x] Reproduction on a real pane: Ctrl-C twice in `safe-pi`, then `herdr agent list` no longer lists the pane, without closing it.
+- [x] A sandbox that dies without a shutdown event (SIGKILL/OOM/daemon stop) also clears, via Herdr's idle-shell safety net, about a second after the pane's shell returns.
+- [x] Re-entry (`safe-pi -c`) still re-attributes the pane.
 - [x] The host wrapper gains no release logic: the reporter stays the only writer on the `safe-pi` source. The image's `safe-pi.entrypoint` label is bumped so a cached image rebuilds with the new reporter.
 - [x] `pi/tests/pi-agent/herdr-reporter.test.ts` covers the release trigger, the non-triggers, the bounded await, and the agent-label constant; `tests/run --full` ends in `FULL GATE: PASS`.
-
-The three unticked boxes need a live Herdr pane: two are the end-to-end
-reproduction, and re-entry is Herdr's own newer-claim guard rather than
-reporter code.
 
 ## Comments
 
@@ -84,3 +80,11 @@ renamed to `releasePane`, a tighter deadline assertion) were applied in commit
 
 Remaining: the live-pane reproduction and the SIGKILL safety-net check, plus
 re-entry, which need a real Herdr pane and are left for a human.
+
+### Live-pane verification (maintainer)
+
+The maintainer ran the three checks on a real pane and all passed: Ctrl-C twice
+in `safe-pi` clears the pane from `herdr agent list` without closing it, a
+sandbox that dies without a shutdown event clears through Herdr's idle-shell
+safety net, and `safe-pi -c` re-attributes the pane. With those ticked, the
+ticket is resolved.
