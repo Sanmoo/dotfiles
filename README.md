@@ -40,6 +40,15 @@ Full gate — the Fast gate's files plus the slow-tier tests — and its last li
 sufficient: a task is not finished until `tests/run --full` reports
 `FULL GATE: PASS`.
 
+Every run also reports its duration budget: a per-unit ceiling for each tier
+(fast 5s, slow 60s) and a total for the gate being run (Fast 5s, Full 75s). A
+unit over its ceiling is marked `OVER BUDGET` as it finishes, and the summary
+names every breach. A breach is reported and never changes the exit status — a
+red suite means a broken assertion, not a slow machine — so the numbers are
+there to be read rather than to fail the run. Why they exist, and why the Full
+gate is allowed to cost tens of seconds, is in
+`docs/adr/0006-duration-is-reported-not-enforced.md`.
+
 Both commands work from any directory, bound every test with a timeout, and stop
 with a runner error (exit 2) when a required tool such as `bun` or `timeout` is
 missing. On macOS the gate needs two tools the stock system lacks — GNU coreutils
@@ -466,9 +475,11 @@ original agent directory is missing, set `PI_CODING_AGENT_DIR` to it.
 ### Verify
 
 - `bash tests/pi-deere-test.sh` checks the launcher's contract with a stubbed `pi`.
-- `bash tests/pi-deere-real-pi-test.sh` runs the real `pi` offline, with fake
-  credentials: shared resources, the Copilot default, exact session resume, the
-  two-way session round trip, and credential isolation.
+- `bash tests/pi-deere-real-pi-profile-test.sh`,
+  `-sessions-test.sh` and `-defaults-test.sh` run the real `pi` offline, with
+  fake credentials: shared resources, the Copilot default, exact session resume,
+  the two-way session round trip, and credential isolation. Each is its own gate
+  unit, and all three share `tests/lib/pi-deere-real-pi-harness.sh`.
 - Both run in `tests/run` and `tests/run --full`.
 
 A smoke test with the two real accounts is a manual step and is not automated:

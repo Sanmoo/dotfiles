@@ -70,6 +70,13 @@
 # so the verdict is always the last line of a Full gate run. There is no
 # fail-fast: one run reports every failure.
 #
+# Duration budgets: the runner declares a per-unit ceiling for each tier and a
+# total for the gate it is running, prints them in the summary, and marks a unit
+# that exceeds its ceiling with `OVER BUDGET`. A breach is reported and never
+# changes the exit status: a red suite must mean a broken assertion, not a slow
+# machine. The budgets are stated in .scratch/quality-gateway/spec.md and the
+# reasoning is in docs/adr/0006-duration-is-reported-not-enforced.md.
+#
 # Exit status:
 #   0   every unit passed
 #   1   at least one unit failed (a red suite)
@@ -87,8 +94,19 @@
 
 set -uo pipefail
 
-# Hard per-unit timeout, in seconds.
+# Hard per-unit timeout, in seconds. This is the bound that turns a hang into a
+# failure; it is not a budget, and a unit that reaches it has failed.
 UNIT_TIMEOUT=300
+
+# Declared duration budgets, in seconds: a per-unit ceiling for each tier and a
+# total for the gate being run. They are ceilings on what the suite costs, not
+# correctness bounds, so a breach is reported and never fatal — see the note on
+# duration budgets in this file's header. The two tiers differ by two orders of
+# magnitude by construction, which is why the ceilings are per tier.
+FAST_UNIT_BUDGET=5
+SLOW_UNIT_BUDGET=60
+FAST_TOTAL_BUDGET=5
+FULL_TOTAL_BUDGET=75
 
 # ---------------------------------------------------------------------------
 # Environment and repository location
@@ -349,6 +367,10 @@ trap cleanup EXIT
 RESULTS_DIR="$TMP_DIR/results"
 mkdir -- "$RESULTS_DIR" || runner_error 'cannot create the results directory'
 
+# Units that finished over their tier's ceiling, as "<label> <duration>s". Kept
+# for the summary so that a breach is visible in one place at the end of the run.
+OVER_BUDGET_UNITS=()
+
 # run_unit_worker <index> <tier> <label> <command...>
 # Background worker for one unit: runs it with stdin closed and a hard timeout,
 # then records its tier, duration, exit status and captured output under its own
@@ -374,6 +396,11 @@ run_unit_worker() {
 	printf '%s\n' "$index" >"$COMPLETION_FIFO"
 }
 
+# over_budget <seconds> <ceiling> is true when the duration exceeds the ceiling.
+over_budget() {
+	awk -v d="$1" -v c="$2" 'BEGIN { exit !(d > c) }'
+}
+
 # report_unit <index>
 # Prints a finished unit's verdict: a passing unit reports only its duration; a
 # failing unit also shows its captured output. The verdict is recorded for the
@@ -383,10 +410,21 @@ report_unit() {
 	local status='' tier='' duration='' rc='' label=''
 	IFS=$'\t' read -r status tier duration rc label <"$TMP_DIR/unit.$index.meta"
 
-	if [[ $status == PASS ]]; then
-		printf 'PASS %s [%s] (%ss)\n' "$label" "$tier" "$duration"
+	local ceiling='' over=''
+	if [[ $tier == slow ]]; then
+		ceiling=$SLOW_UNIT_BUDGET
 	else
-		printf 'FAIL %s [%s] (%ss, exit %s)\n' "$label" "$tier" "$duration" "$rc"
+		ceiling=$FAST_UNIT_BUDGET
+	fi
+	if over_budget "$duration" "$ceiling"; then
+		over=" OVER BUDGET (${tier} unit ceiling ${ceiling}s)"
+		OVER_BUDGET_UNITS+=("$label ${duration}s")
+	fi
+
+	if [[ $status == PASS ]]; then
+		printf 'PASS %s [%s] (%ss)%s\n' "$label" "$tier" "$duration" "$over"
+	else
+		printf 'FAIL %s [%s] (%ss, exit %s)%s\n' "$label" "$tier" "$duration" "$rc" "$over"
 		printf '%s\n' '----- output -----'
 		cat -- "$TMP_DIR/unit.$index.out"
 		# Keep the end marker on its own line even when the captured output does
@@ -506,6 +544,14 @@ done
 
 total=$(format_duration "$TOTAL_START" "$TOTAL_END")
 
+if [[ $MODE == full ]]; then
+	budget_scope='Full gate'
+	budget_total=$FULL_TOTAL_BUDGET
+else
+	budget_scope='Fast gate'
+	budget_total=$FAST_TOTAL_BUDGET
+fi
+
 printf '\n'
 if (( failed == 0 )); then
 	printf 'ALL PASSED: %d of %d units\n' "$passed" "$TOTAL_UNITS"
@@ -515,6 +561,24 @@ else
 		printf '  - %s\n' "$label"
 	done
 fi
+
+# The budget report is always printed, green or red: the number nobody looked at
+# is what let the Full gate grow from 12s to 115s without a single failure.
+budget_breaches=()
+if (( ${#OVER_BUDGET_UNITS[@]} > 0 )); then
+	budget_breaches=("${OVER_BUDGET_UNITS[@]}")
+fi
+if over_budget "$total" "$budget_total"; then
+	budget_breaches+=("$budget_scope ${total}s")
+fi
+printf 'duration budget (fast unit <=%ss, slow unit <=%ss, %s <=%ss): ' \
+	"$FAST_UNIT_BUDGET" "$SLOW_UNIT_BUDGET" "$budget_scope" "$budget_total"
+if (( ${#budget_breaches[@]} == 0 )); then
+	printf 'WITHIN\n'
+else
+	printf 'OVER — %s\n' "${budget_breaches[*]}"
+fi
+
 printf 'total wall clock: %ss\n' "$total"
 
 # The verdict is the last line of a Full gate run, printed after the wall
